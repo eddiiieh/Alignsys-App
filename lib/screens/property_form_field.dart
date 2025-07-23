@@ -98,7 +98,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
 
   @override
   Widget build(BuildContext context) {
-    switch (widget.property.dataType) {
+    switch (widget.property.propertyType) {
       case 1: // MFDatatypeText
         return TextFormField(
           controller: _controller,
@@ -367,7 +367,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
         return TextFormField(
           controller: _controller,
           decoration: InputDecoration(
-            labelText: '${widget.property.displayName} (Type: ${widget.property.dataType})',
+            labelText: '${widget.property.displayName} (Type: ${widget.property.propertyType})',
             hintText: 'Enter value',
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),

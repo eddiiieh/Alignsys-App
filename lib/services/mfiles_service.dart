@@ -161,6 +161,12 @@ class MFilesService extends ChangeNotifier {
 
     try {
 
+        // === PASTE DEBUG PRINT HERE ===
+      final requestJson = request.toJson();
+      print('Sending to M-Files API:');
+      print(json.encode(requestJson)); // Pretty-print the JSON
+      print('-----------------------'); // Separator for clarity
+      
       print('Creating object with request: ${json.encode(request.toJson())}');
       final response = await http.post(
         Uri.parse('$baseUrl/api/objectinstance/ObjectCreation'),

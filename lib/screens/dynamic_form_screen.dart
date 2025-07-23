@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/screens/property_form_field.dart';
@@ -6,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import '../services/mfiles_service.dart';
 import '../models/vault_object_type.dart';
 import '../models/object_class.dart';
+import '../models/class_property.dart';
 import '../models/object_creation_request.dart';
 
 class DynamicFormScreen extends StatefulWidget {
@@ -88,34 +90,34 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     }
 
     // Prepare property values
-    final propertyValues = <PropertyValueRequest>[];
+    final properties = <PropertyValueRequest>[];
     for (final entry in _formValues.entries) {
       final property = service.classProperties.firstWhere((p) => p.id == entry.key);
 
       // Debug print to check type
       print('Property ${entry.key} value type: ${entry.value.runtimeType}');
 
-      propertyValues.add(PropertyValueRequest(
-        propertyId: entry.key,
+      properties.add(PropertyValueRequest(
+        propId: entry.key,
         value: entry.value,
-        dataType: property.dataType,
+        propertytype: property.propertyType,
       ));
     }
 
     // 🔥 Ensure Object Name property (PropertyDef: 0) is present
-    final hasObjectName = propertyValues.any((p) => p.propertyId == 0);
+    final hasObjectName = properties.any((p) => p.propId == 0);
     if (!hasObjectName) {
       // Try to find a suitable name value from your form (first non-empty text field)
       final nameEntry = _formValues.entries.firstWhere(
         (e) => e.value != null && e.value.toString().trim().isNotEmpty,
         orElse: () => const MapEntry(0, 'Unnamed Object'),
       );
-      propertyValues.insert(
+      properties.insert(
         0,
         PropertyValueRequest(
-          propertyId: 0,
+          propId: 0,
           value: nameEntry.value,
-          dataType: 1, // MFDatatypeText
+          propertytype: 'MFDatatypeText', // MFDatatypeText
         ),
       );
     }
@@ -124,9 +126,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     final request = ObjectCreationRequest(
       objectTypeId: widget.objectType.id,
       classId: widget.objectClass.id,
-      propertyValues: propertyValues,
+      properties: properties,
       uploadId: uploadId,
     );
+
+    // Debug print
+    print('Submitting: ${json.encode(request.toJson())}');
 
     // Submit the request
     final success = await service.createObject(request);

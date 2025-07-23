@@ -11,6 +11,7 @@ class AppConstants {
   static const String objectCreationEndpoint = '$apiPath/objectinstance/ObjectCreation';
   
   // Data Types
+  /*
   static const int dataTypeText = 1;
   static const int dataTypeInteger = 2;
   static const int dataTypeDecimal = 3;
@@ -21,6 +22,7 @@ class AppConstants {
   static const int dataTypeLookup = 9;
   static const int dataTypeMultiLookup = 10;
   static const int dataTypeMultiLineText = 13;
+  */
   
   // UI Constants
   static const double defaultPadding = 16.0;
