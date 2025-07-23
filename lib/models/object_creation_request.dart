@@ -1,25 +1,25 @@
 class ObjectCreationRequest {
   final int objectTypeId;
   final int classId;
-  final List<PropertyValueRequest> propertyValues;
+  final List<PropertyValueRequest> properties;
   final String? uploadId;
 
   ObjectCreationRequest({
     required this.objectTypeId,
     required this.classId,
-    required this.propertyValues,
+    required this.properties,
     this.uploadId,
   });
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> json = {
-      'ObjectTypeId': objectTypeId,
-      'ClassId': classId,
-      'PropertyValues': propertyValues.map((pv) => pv.toJson()).toList(),
+      'objectID': objectTypeId,
+      'classID': classId,
+      'properties': properties.map((pv) => pv.toJson()).toList(),
     };
     
     if (uploadId != null) {
-      json['UploadId'] = uploadId;
+      json['uploadId'] = uploadId;
     }
     
     return json;
@@ -27,26 +27,51 @@ class ObjectCreationRequest {
 }
 
 class PropertyValueRequest {
-  final int propertyId;
+  final int propId;
   final dynamic value;
-  final int dataType;
+  final String propertytype;
 
   PropertyValueRequest({
-    required this.propertyId,
+    required this.propId,
     required this.value,
-    required this.dataType,
+    required this.propertytype,
   });
 
   Map<String, dynamic> toJson() {
     // M-Files expects a specific format for property values
     return {
-      'PropertyDef': propertyId,
-      'TypedValue': {
-        'DataType': dataType,
-        'Value': value,
-        'HasValue': value != null,
-      }
+      'propId': propId,
+      'value': value,
+      'propertytype': propertytype, // Convert propId to M-Files data type string
     };
+  }
+
+  dynamic _formatValue(dynamic value, String type) {
+    if (value == null) return null;
+    
+    if (type == 'MFDatatypeDate') {
+      return _formatDate(value);
+    }
+    return value; // Return unchanged for other types
+  }
+
+  String _formatDate(dynamic input) {
+    // If already in YYYY-MM-DD format, return as-is
+    if (input is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(input)) {
+      return input;
+    }
+    
+    // Handle DD-MM-YYYY format
+    if (input is String && input.contains('-')) {
+      final parts = input.split('-');
+      if (parts.length == 3) {
+        // Reorder to YYYY-MM-DD
+        return '${parts[2]}-${parts[1]}-${parts[0]}';
+      }
+    }
+    
+    // Fallback for other cases
+    return input.toString();
   }
 }
 
