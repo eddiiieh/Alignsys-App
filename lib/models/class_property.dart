@@ -1,6 +1,7 @@
 class ClassProperty {
   final int id;
   final String name;
+  final String title;
   final int propId;
   final String displayName;
   final String propertyType;
@@ -13,6 +14,7 @@ class ClassProperty {
   ClassProperty({
     required this.id,
     required this.name,
+    required this.title,
     required this.propId,
     required this.displayName,
     required this.propertyType,
@@ -26,9 +28,10 @@ class ClassProperty {
     return ClassProperty(
       id: (json['propId'] as num?)?.toInt() ?? 0,
       name: json['title'] ?? 'Unnamed Property',
+      title: json['title'] ?? 'Unnamed Property',
       propId: json['propId'] ?? 0,
       displayName: json['title'] ?? 'Unnamed Property',
-      propertyType: json['propertytype'] ?? 'MFDataTypeText', // Use the already parsed value
+      propertyType: json['propertytype'] ?? 'MFDatatypeText', // Use the already parsed value
       isRequired: json['isRequired'] ?? false,
       isAutomatic: json['isAutomatic'] ?? false,
       isHidden: json['isHidden'] ?? false,
