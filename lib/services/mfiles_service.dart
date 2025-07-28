@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import '../models/vault_object_type.dart';
 import '../models/object_class.dart';
 import '../models/class_property.dart';
+import '../models/lookup_item.dart';
 import '../models/object_creation_request.dart';
 
 class MFilesService extends ChangeNotifier {
@@ -13,6 +14,7 @@ class MFilesService extends ChangeNotifier {
   List<VaultObjectType> _objectTypes = [];
   List<ObjectClass> _objectClasses = [];
   List<ClassProperty> _classProperties = [];
+  List<ClassGroup> _classGroups = [];
   bool _isLoading = false;
   String? _error;
 
@@ -30,6 +32,19 @@ class MFilesService extends ChangeNotifier {
   void _setError(String? error) {
     _error = error;
     notifyListeners();
+  }
+
+    // Helper method to check if a class is in any group
+  bool isClassInAnyGroup(int classId) {
+    return _classGroups.any((group) => 
+        group.members.any((cls) => cls.id == classId));
+  }
+
+  // Helper method to get groups for a specific object type
+  List<ClassGroup> getClassGroupsForType(int objectTypeId) {
+    return _classGroups.where((group) => 
+        group.members.isNotEmpty && 
+        group.members.first.objectTypeId == objectTypeId).toList();
   }
 
   // 1. Get Vault Object Types
@@ -79,13 +94,25 @@ class MFilesService extends ChangeNotifier {
 
     if (response.statusCode == 200) {
       print('Object class API response: ${response.body}');
-      final Map<String, dynamic> data = json.decode(response.body);
-      final int objectTypeId = data['objectId'];
-      final List unGrouped = data['unGrouped'] ?? [];
-
-      _objectClasses = unGrouped
-          .map<ObjectClass>((item) => ObjectClass.fromJson(item, objectTypeId))
-          .toList();
+      final data = json.decode(response.body);
+      final responseData = ObjectClassesResponse.fromJson(data);
+      
+      // Clear existing classes and groups for this type
+      _objectClasses.removeWhere((cls) => cls.objectTypeId == objectTypeId);
+      _classGroups.removeWhere((group) => 
+          group.members.isNotEmpty && 
+          group.members.first.objectTypeId == objectTypeId);
+      
+      // Add all classes (both grouped and ungrouped)
+      _objectClasses.addAll(responseData.unGrouped);
+      
+      // Store the groups
+      _classGroups.addAll(responseData.grouped);
+      
+      // Add grouped classes to the main list too
+      for (var group in responseData.grouped) {
+        _objectClasses.addAll(group.members);
+      }
     } else {
       _setError('Failed to fetch object classes: ${response.statusCode}');
     }
@@ -122,7 +149,33 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  // 4. Upload File (for document objects)
+  // 4. Lookup Service Method
+  Future<List<LookupItem>> fetchLookupItems(int propertyId) async {
+  _setLoading(true);
+  _setError(null);
+
+  try {
+    final response = await http.get(
+      Uri.parse('$baseUrl/api/ValuelistInstance/$propertyId'),
+      headers: {'Content-Type': 'application/json'},
+    );
+
+    if (response.statusCode == 200) {
+      final List<dynamic> data = json.decode(response.body);
+      return data.map((item) => LookupItem.fromJson(item)).toList();
+    } else {
+      _setError('Failed to fetch lookup items: ${response.statusCode}');
+      return [];
+    }
+  } catch (e) {
+    _setError('Error fetching lookup items: $e');
+    return [];
+  } finally {
+    _setLoading(false);
+  }
+}
+
+  // 5. Upload File (for document objects)
   Future<String?> uploadFile(File file) async {
     _setLoading(true);
     _setError(null);
@@ -135,6 +188,7 @@ class MFilesService extends ChangeNotifier {
 
       request.files.add(await http.MultipartFile.fromPath('formFiles', file.path));
       request.headers['accept'] = '*/*';
+      request.headers['Content-Type'] = 'multipart/form-data';
 
       final response = await request.send();
       final responseBody = await response.stream.bytesToString();
@@ -154,7 +208,7 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  // 5. Create Object
+  // 6. Create Object
   Future<bool> createObject(ObjectCreationRequest request) async {
     _setLoading(true);
     _setError(null);
