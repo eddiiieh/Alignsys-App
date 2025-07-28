@@ -1,6 +1,12 @@
+// ignore_for_file: constant_pattern_never_matches_value_type
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/class_property.dart';
+import '../widgets/lookup_field.dart';
+import '../models/object_creation_request.dart';
+import '../services/mfiles_service.dart';
+
 
 class PropertyFormField extends StatefulWidget {
   final ClassProperty property;
@@ -303,40 +309,51 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
         );
 
       case 9: // MFDatatypeMultiSelectLookup
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.property.displayName, // Use widget.property.displayName instead of property.title
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          LookupField(
+            title: widget.property.displayName,
+            propertyId: widget.property.id,
+            isMultiSelect: true, // Multi-select for MFDatatypeMultiSelectLookup
+            onSelected: (selectedItems) {
+              widget.onChanged(selectedItems.map((i) => i.id).toList()); // Use widget.onChanged
+            },
+          ),
+        ],
+      );
       case 10: // MFDatatypeLookup
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.property.displayName, // Use widget.property.displayName instead of property.title
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          LookupField(
+            title: widget.property.displayName,
+            propertyId: widget.property.id,
+            isMultiSelect: false, // Single select for MFDatatypeLookup
+            onSelected: (selectedItems) {
+              widget.onChanged(selectedItems.isNotEmpty ? selectedItems.first.id : null); // Use widget.onChanged
+            },
+          ),
+        ],
+      );
         // For lookups, you'd typically need to fetch the available options
         // and display them in a dropdown. For now, treating as text input
-        return TextFormField(
-          controller: _controller,
-          decoration: InputDecoration(
-            labelText: widget.property.displayName,
-            hintText: 'Select ${widget.property.displayName.toLowerCase()}',
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-            filled: true,
-            fillColor: Colors.grey.shade50,
-            suffixIcon: const Icon(Icons.arrow_drop_down),
-          ),
-          readOnly: true,
-          validator: widget.property.isRequired
-              ? (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return '${widget.property.displayName} is required';
-                  }
-                  return null;
-                }
-              : null,
-          onTap: () {
-            // TODO: Implement lookup selection
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Lookup selection not implemented yet'),
-              ),
-            );
-          },
-        );
-
       case 11: // MFDatatypeMultiLineText
         return TextFormField(
           controller: _controller,

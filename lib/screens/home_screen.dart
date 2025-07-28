@@ -182,23 +182,75 @@ class _HomeScreenState extends State<HomeScreen> {
                           await context.read<MFilesService>().fetchObjectClasses(objectType.id);
                         }
                       },
-                      children: objectClasses.map((cls) => ListTile(
-                        leading: const Icon(Icons.folder_open, color: Colors.green),
-                        title: Text(cls.displayName),
-                        subtitle: Text('Class ID: ${cls.id}'),
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => DynamicFormScreen(
-                                objectType: objectType,
-                                objectClass: cls,
+                      children: [
+                        // First show ungrouped classes
+                        if (service.objectClasses
+                            .where((cls) => cls.objectTypeId == objectType.id)
+                            .any((cls) => !service.isClassInAnyGroup(cls.id)))
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: Padding(
+                              padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 4.0),
+                              child: Text(
+                                'General',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14, // Optional: adjust font size if needed
+                                ),
                               ),
                             ),
-                          );
-                        },
-                      )).toList(),
-                    );
+                          ),
+                        
+                        ...service.objectClasses
+                            .where((cls) => cls.objectTypeId == objectType.id)
+                            .where((cls) => !service.isClassInAnyGroup(cls.id))
+                            .map((cls) => ListTile(
+                              leading: const Icon(Icons.folder_open, color: Colors.green),
+                              title: Text(cls.displayName),
+                              subtitle: Text('Class ID: ${cls.id}'),
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => DynamicFormScreen(
+                                      objectType: objectType,
+                                      objectClass: cls,
+                                    ),
+                                  ),
+                                );
+                              },
+                            )).toList(),
+                            // Then show grouped classes
+                            ...service.getClassGroupsForType(objectType.id).map((group) => Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 16.0, top: 8.0),
+                                  child: Text(
+                                    group.classGroupName,
+                                    style: const TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                ...group.members.map((cls) => ListTile(
+                                  leading: const Icon(Icons.folder_open, color: Colors.green),
+                                  title: Text(cls.displayName),
+                                  subtitle: Text('Class ID: ${cls.id}'),
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => DynamicFormScreen(
+                                          objectType: objectType,
+                                          objectClass: cls,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                )).toList(),
+                              ],
+                            )).toList(),
+                          ],
+                        );                  
                   }).toList(),
                 ),
               ],

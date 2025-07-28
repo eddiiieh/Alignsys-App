@@ -25,3 +25,51 @@ class ObjectClass {
         'objectTypeId': objectTypeId,
       };
 }
+
+// Add this to your models/object_class.dart or create a new file
+class ClassGroup {
+  final int classGroupId;
+  final String classGroupName;
+  final List<ObjectClass> members;
+
+  ClassGroup({
+    required this.classGroupId,
+    required this.classGroupName,
+    required this.members,
+  });
+
+  factory ClassGroup.fromJson(Map<String, dynamic> json, int objectTypeId) {
+    return ClassGroup(
+      classGroupId: json['classGroupId'],
+      classGroupName: json['classGroupName'],
+      members: (json['members'] as List)
+          .map((item) => ObjectClass.fromJson(item, objectTypeId))
+          .toList(),
+    );
+  }
+}
+
+class ObjectClassesResponse {
+  final int objectId;
+  final List<ObjectClass> unGrouped;
+  final List<ClassGroup> grouped;
+
+  ObjectClassesResponse({
+    required this.objectId,
+    required this.unGrouped,
+    required this.grouped,
+  });
+
+  factory ObjectClassesResponse.fromJson(Map<String, dynamic> json) {
+    final objectTypeId = json['objectId'];
+    return ObjectClassesResponse(
+      objectId: objectTypeId,
+      unGrouped: (json['unGrouped'] as List)
+          .map((item) => ObjectClass.fromJson(item, objectTypeId))
+          .toList(),
+      grouped: (json['grouped'] as List)
+          .map((item) => ClassGroup.fromJson(item, objectTypeId))
+          .toList(),
+    );
+  }
+}

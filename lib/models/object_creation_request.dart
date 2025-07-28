@@ -22,58 +22,90 @@ class ObjectCreationRequest {
       json['uploadId'] = uploadId;
     }
     
-    return json;
+    return json; // ✅ Return the actual json object, not an empty one!
   }
 }
 
 class PropertyValueRequest {
   final int propId;
   final dynamic value;
-  final String propertytype;
+  final String propertyType;
 
   PropertyValueRequest({
     required this.propId,
     required this.value,
-    required this.propertytype,
+    required this.propertyType,
   });
 
   Map<String, dynamic> toJson() {
-    // M-Files expects a specific format for property values
     return {
       'propId': propId,
-      'value': value,
-      'propertytype': propertytype, // Convert propId to M-Files data type string
+      'value': _formatValueForAPI(value, propertyType),
+      'propertytype': propertyType,
     };
   }
 
-  dynamic _formatValue(dynamic value, String type) {
+  /*int _getDataTypeNumber(String propertyType) {
+    switch (propertyType) {
+      case 'MFDatatypeText':
+        return 1;
+      case 'MFDatatypeMultiLineText':
+        return 13;
+      case 'MFDatatypeDate':
+        return 5;
+      case 'MFDatatypeLookup':
+        return 9;
+      case 'MFDatatypeMultiSelectLookup':
+        return 10;
+      case 'MFDatatypeBoolean':
+        return 8;
+      case 'MFDatatypeInteger':
+        return 2;
+      case 'MFDatatypeFloating':
+        return 3;
+      default:
+        return 1; // Default to text
+    }
+  }*/
+
+  dynamic _formatValueForAPI(dynamic value, String propertyType) {
     if (value == null) return null;
     
-    if (type == 'MFDatatypeDate') {
-      return _formatDate(value);
+    switch (propertyType) {
+      case 'MFDatatypeLookup':
+        // For single lookup, send just the ID as string
+        return value.toString();
+        
+      case 'MFDatatypeMultiSelectLookup':
+        // For multi-select lookup, handle both List and single values
+        if (value is List) {
+          // Convert list of IDs to comma-separated string
+          return value.map((id) => id.toString()).join(',');
+        } else {
+          // Single value
+          return value.toString();
+        }
+        
+      case 'MFDatatypeDate':
+        // Keep date as string
+        return value.toString();
+        
+      case 'MFDatatypeBoolean':
+        // Convert boolean to string
+        if (value is bool) {
+          return value.toString();
+        }
+        return value.toString().toLowerCase() == 'true' ? 'true' : 'false';
+        
+      case 'MFDatatypeText':
+      case 'MFDatatypeMultiLineText':
+      default:
+        // All other types as strings
+        return value.toString();
     }
-    return value; // Return unchanged for other types
-  }
-
-  String _formatDate(dynamic input) {
-    // If already in YYYY-MM-DD format, return as-is
-    if (input is String && RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(input)) {
-      return input;
-    }
-    
-    // Handle DD-MM-YYYY format
-    if (input is String && input.contains('-')) {
-      final parts = input.split('-');
-      if (parts.length == 3) {
-        // Reorder to YYYY-MM-DD
-        return '${parts[2]}-${parts[1]}-${parts[0]}';
-      }
-    }
-    
-    // Fallback for other cases
-    return input.toString();
   }
 }
+
 
 // Alternative formats you might need to try if the above doesn't work:
 
