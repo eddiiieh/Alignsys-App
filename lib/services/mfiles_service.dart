@@ -7,9 +7,152 @@ import '../models/object_class.dart';
 import '../models/class_property.dart';
 import '../models/lookup_item.dart';
 import '../models/object_creation_request.dart';
+import '../models/vault.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class MFilesService extends ChangeNotifier {
-  static const String baseUrl = 'https://mfilesdemoapi.alignsys.tech';
+  String? accessToken;
+  String? refreshToken;
+  String? username;
+  List<Vault> vaults = [];
+
+  static const String baseUrl = 'https://api.alignsys.tech';
+
+  String? _accessToken;
+  String? _refreshToken;
+  Vault? _selectedVault;
+  List<Vault> _vaults = [];
+
+  Vault? get selectedVault => _selectedVault;
+  set selectedVault(Vault? vault) {
+    _selectedVault = vault;
+    notifyListeners();
+  }
+
+  Future<List<Vault>> fetchVaults() async {
+    // TODO: Implement actual fetching logic, e.g. API call
+    // For now, return an empty list or mock data
+    return [];
+  }
+
+  Future<void> saveTokens(String access, String refresh, {String? user}) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('access_token', access);
+    await prefs.setString('refresh_token', refresh);
+
+    accessToken = access;
+    refreshToken = refresh;
+
+    if (user != null) {
+    await prefs.setString('username', user);
+    username = user;
+  }
+  }
+
+  Future<bool> loadTokens() async {
+    final prefs = await SharedPreferences.getInstance();
+    accessToken = prefs.getString('access_token');
+    refreshToken = prefs.getString('refresh_token');
+    username = prefs.getString('username');
+
+    return accessToken != null && refreshToken != null;
+  }
+
+Future<void> logout() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.remove('access_token');
+  await prefs.remove('refresh_token');
+
+  accessToken = null;
+  refreshToken = null;
+}
+
+// 1. Login
+Future<bool> login(String email, String password, {String? domain}) async {
+  try {
+    final body = {
+      'username': email,
+      'password': password,
+      'auth_type': "email",
+    };
+
+    final response = await http.post(
+      Uri.parse('https://auth.alignsys.tech/api/token/'),
+      headers: {'Content-Type': 'application/json'},
+      body: json.encode(body),
+    );
+
+    print('LOGIN RAW RESPONSE: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+
+      if (data['access'] == null || data['refresh'] == null) {
+        throw Exception('Login failed. Tokens not returned.');
+      }
+
+      // Set tokens internally
+      _accessToken = data['access'];
+      _refreshToken = data['refresh'];
+
+      accessToken = data['access'];
+      refreshToken = data['refresh'];
+
+      return true; // login succeeded
+    } else if (response.statusCode == 401) {
+      throw Exception('Invalid credentials.');
+    } else if (response.statusCode == 403) {
+      throw Exception('Account forbidden. Possibly deactivated.');
+    } else {
+      throw Exception('Server error: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('Login exception: $e');
+    rethrow;
+  }
+}
+
+
+  // 2. Fetch vaults accessible to the user
+  Future<List<Vault>> getUserVaults() async {
+  if (_accessToken == null) {
+    throw Exception("User not logged in.");
+  }
+
+  final url = Uri.parse('https://auth.alignsys.tech/api/user/vaults/');
+
+  try {
+    final response = await http.get(
+      url,
+      headers: {
+        'Authorization': 'Bearer $_accessToken',
+        'Content-Type': 'application/json',
+      },
+    );
+
+    print("VAULT RESPONSE: ${response.statusCode}, ${response.body}");
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+
+      // Ensure data is a list
+      if (data is List) {
+        final vaults = data.map((v) => Vault.fromJson(v)).toList();
+        _vaults = vaults;
+        notifyListeners();
+        return vaults;
+      } else {
+        throw Exception("Unexpected vaults response format");
+      }
+    } else {
+      throw Exception("Failed to load vaults: ${response.statusCode}");
+    }
+  } catch (e) {
+    print("Vault fetch error: $e");
+    throw Exception("Could not fetch vaults.");
+  }
+}
+
 
   List<VaultObjectType> _objectTypes = [];
   List<ObjectClass> _objectClasses = [];
@@ -54,7 +197,7 @@ class MFilesService extends ChangeNotifier {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/MfilesObjects/GetVaultsObjectsTypes'),
+        Uri.parse('$baseUrl/api/MfilesObjects/GetVaultsObjects/_selectedVault/user'),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -88,7 +231,7 @@ class MFilesService extends ChangeNotifier {
 
   try {
     final response = await http.get(
-      Uri.parse('$baseUrl/api/MfilesObjects/GetObjectClasses/$objectTypeId'),
+      Uri.parse('$baseUrl/api/MfilesObjects/GetObjectClasses/${_selectedVault?.guid}/$objectTypeId'),
       headers: {'Content-Type': 'application/json'},
     );
 
@@ -131,7 +274,7 @@ class MFilesService extends ChangeNotifier {
 
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/api/MfilesObjects/ClassProps/$objectTypeId/$classId'),
+        Uri.parse('$baseUrl/api/MfilesObjects/ClassProps/${_selectedVault?.guid}/$objectTypeId/$classId'),
         headers: {'Content-Type': 'application/json'},
       );
 

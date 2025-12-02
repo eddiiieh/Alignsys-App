@@ -14,6 +14,7 @@ dependencies:
   provider: ^6.1.5
   json_annotation: ^4.9.0
   intl: ^0.20.2
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
@@ -27,7 +28,12 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/mfileslogo.png
+    - assets/alignsyslogo.png
     - assets/TechEdgeLogo.png
     # You can add more assets or use a folder:
     # - assets/
+
+flutter_launcher_icons:
+    android: true
+    ios: true
+    image_path: "assets/alignsyslogo.png"

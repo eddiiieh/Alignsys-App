@@ -53,35 +53,284 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     }
   }
 
-  Future<void> _submitForm() async {
-  if (!_formKey.currentState!.validate()) {
-    return;
-  }
-
-  final service = context.read<MFilesService>();
-  
-  // Check if required file is selected for document objects
-  if (widget.objectType.isDocument && _selectedFile == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Please select a file for document objects'),
-        backgroundColor: Colors.red.shade600,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
+  Future<void> _pickDate(ClassProperty property) async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _formValues[property.id] != null 
+          ? DateTime.parse(_formValues[property.id])
+          : DateTime.now(),
+      firstDate: DateTime(1800), // Extended back to 1800
+      lastDate: DateTime(2200),  // Extended forward to 2200
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: const Color(0xFF0A1541),
+            ),
+          ),
+          child: child!,
+        );
+      },
     );
-    return;
+    
+    if (date != null) {
+      setState(() {
+        _formValues[property.id] = date.toIso8601String();
+      });
+    }
   }
 
-  String? uploadId;
-  
-  // Upload file if document object
-  if (widget.objectType.isDocument && _selectedFile != null) {
-    uploadId = await service.uploadFile(_selectedFile!);
-    if (uploadId == null) {
+  Future<void> _pickTime(ClassProperty property) async {
+    final time = await showTimePicker(
+      context: context,
+      initialTime: _formValues[property.id] != null 
+          ? TimeOfDay.fromDateTime(DateTime.parse(_formValues[property.id]))
+          : TimeOfDay.now(),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: const Color(0xFF0A1541),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    
+    if (time != null) {
+      // For time-only, we'll use today's date as base
+      final now = DateTime.now();
+      final combinedDateTime = DateTime(
+        now.year,
+        now.month,
+        now.day,
+        time.hour,
+        time.minute,
+      );
+      
+      setState(() {
+        _formValues[property.id] = combinedDateTime.toIso8601String();
+      });
+    }
+  }
+
+  String _formatDate(String isoString) {
+    try {
+      final dateTime = DateTime.parse(isoString);
+      return DateFormat('MMM dd, yyyy').format(dateTime);
+    } catch (e) {
+      return 'Invalid date';
+    }
+  }
+
+  String _formatTime(String isoString) {
+    try {
+      final dateTime = DateTime.parse(isoString);
+      return DateFormat('hh:mm a').format(dateTime);
+    } catch (e) {
+      return 'Invalid time';
+    }
+  }
+
+  Widget _buildDateField(ClassProperty property) {
+    final hasValue = _formValues[property.id] != null;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          property.title,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: () => _pickDate(property),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.grey.shade50,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.calendar_today,
+                  color: hasValue ? const Color(0xFF0A1541) : Colors.grey.shade500,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    hasValue
+                        ? _formatDate(_formValues[property.id])
+                        : 'Select date',
+                    style: TextStyle(
+                      color: hasValue ? Colors.black87 : Colors.grey.shade500,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                if (hasValue)
+                  IconButton(
+                    icon: Icon(Icons.clear, color: Colors.grey.shade500, size: 20),
+                    onPressed: () {
+                      setState(() {
+                        _formValues[property.id] = null;
+                      });
+                    },
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: EdgeInsets.zero,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (property.isRequired && !hasValue)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'This field is required',
+              style: TextStyle(
+                color: Colors.red.shade600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildTimeField(ClassProperty property) {
+    final hasValue = _formValues[property.id] != null;
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          property.title,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: Colors.grey.shade700,
+          ),
+        ),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: () => _pickTime(property),
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade300),
+              borderRadius: BorderRadius.circular(8),
+              color: Colors.grey.shade50,
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.access_time,
+                  color: hasValue ? const Color(0xFF0A1541) : Colors.grey.shade500,
+                  size: 20,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    hasValue
+                        ? _formatTime(_formValues[property.id])
+                        : 'Select time',
+                    style: TextStyle(
+                      color: hasValue ? Colors.black87 : Colors.grey.shade500,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                if (hasValue)
+                  IconButton(
+                    icon: Icon(Icons.clear, color: Colors.grey.shade500, size: 20),
+                    onPressed: () {
+                      setState(() {
+                        _formValues[property.id] = null;
+                      });
+                    },
+                    constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                    padding: EdgeInsets.zero,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        if (property.isRequired && !hasValue)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              'This field is required',
+              style: TextStyle(
+                color: Colors.red.shade600,
+                fontSize: 12,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _submitForm() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    // Check for required date/time fields
+    final service = context.read<MFilesService>();
+    for (final property in service.classProperties) {
+      final titleLower = property.title.toLowerCase();
+      final isTimeField = property.propertyType == 'MFDatatypeTime' || 
+                         property.propertyType == 'MFDatatypeTimestamp' ||
+                         titleLower.contains('time');
+      final isDateField = property.propertyType == 'MFDatatypeDate' ||
+                         titleLower.contains('date');
+      
+      if (property.isRequired && 
+          (isTimeField || isDateField) &&
+          _formValues[property.id] == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${property.title} is required'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+        return;
+      }
+      
+      // Check for required text fields
+      if (property.isRequired && 
+          (property.propertyType == 'MFDatatypeText' || property.propertyType == 'MFDatatypeMultiLineText') &&
+          (_formValues[property.id] == null || _formValues[property.id].toString().trim().isEmpty)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${property.title} is required'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+        return;
+      }
+    }
+    
+    // Check if required file is selected for document objects
+    if (widget.objectType.isDocument && _selectedFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Failed to upload file'),
+          content: const Text('Please select a file for document objects'),
           backgroundColor: Colors.red.shade600,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -89,221 +338,267 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       );
       return;
     }
-  }
 
-  // Prepare property values - USE ORIGINAL VALUES, NOT CONVERTED ONES
-  final properties = <PropertyValueRequest>[];
-  
-  for (final entry in _formValues.entries) {
-    final property = service.classProperties.firstWhere((p) => p.id == entry.key);
-
-    // Debug print the original value
-    print('Property ${entry.key} original value: ${entry.value} (${entry.value.runtimeType})');
-
-    properties.add(PropertyValueRequest(
-      propId: entry.key,
-      value: entry.value, // ✅ Use the original value, let toJson() handle formatting
-      propertyType: property.propertyType,
-    ));
-  }
-
-  // 🔥 Ensure Object Name property (PropertyDef: 0) is present
-  final hasObjectName = properties.any((p) => p.propId == 0);
-  if (!hasObjectName) {
-    // Use Car Title as name, or fallback to 'Unnamed Object'
-    final objectName = _formValues[1120]?.toString() ?? 'Unnamed Object';
-    properties.insert(0, PropertyValueRequest(
-      propId: 0,
-      value: objectName,
-      propertyType: 'MFDatatypeText',
-    ));
-  }
-
-  // Create object request
-  final request = ObjectCreationRequest(
-    objectTypeId: widget.objectType.id,
-    classId: widget.objectClass.id,
-    properties: properties,
-    uploadId: uploadId,
-  );
-
-  // Debug print
-  print('Submitting: ${json.encode(request.toJson())}');
-
-  // Submit the request
-  final success = await service.createObject(request);
-  
-  if (success) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Object created successfully!'),
-        backgroundColor: Colors.green.shade600,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-    Navigator.pop(context);
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Failed to create object: ${service.error}'),
-        backgroundColor: Colors.red.shade600,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
-}
-
-  Widget _buildFormField(ClassProperty property) {
-  // Common field decoration
-  final decoration = InputDecoration(
-    labelText: property.title,
-    border: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(8),
-    ),
-    filled: true,
-    fillColor: Colors.grey.shade50,
-    contentPadding: const EdgeInsets.symmetric(
-      horizontal: 16,
-      vertical: 14,
-    ),
-  );
-
-  // Handle different property types
-  switch (property.propertyType) {
-    case 'MFDatatypeLookup': // For Driver (single select)
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(property.title, style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade700,
-          )),
-          const SizedBox(height: 8),
-          LookupField(
-            title: property.title,
-            propertyId: property.id,
-            isMultiSelect: false,
-            onSelected: (selectedItems) {
-              setState(() {
-                _formValues[property.id] = selectedItems.isNotEmpty 
-                    ? selectedItems.first.id 
-                    : null;
-              });
-            },
+    String? uploadId;
+    
+    // Upload file if document object
+    if (widget.objectType.isDocument && _selectedFile != null) {
+      uploadId = await service.uploadFile(_selectedFile!);
+      if (uploadId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Failed to upload file'),
+            backgroundColor: Colors.red.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
-        ],
-      );
+        );
+        return;
+      }
+    }
 
-    case 'MFDatatypeMultiSelectLookup': // For Staff (multi-select)
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(property.title, style: TextStyle(
-            fontWeight: FontWeight.bold,
-            color: Colors.grey.shade700,
-          )),
-          const SizedBox(height: 8),
-          LookupField(
-            title: property.title,
-            propertyId: property.id,
-            isMultiSelect: true,
-            onSelected: (selectedItems) {
-              setState(() {
-                _formValues[property.id] = selectedItems.map((i) => i.id).toList();
-              });
-            },
-          ),
-        ],
-      );
+    // Prepare property values - USE ORIGINAL VALUES, NOT CONVERTED ONES
+    final properties = <PropertyValueRequest>[];
+    
+    // First, ensure all required boolean fields have a value
+    for (final property in service.classProperties) {
+      if (property.propertyType == 'MFDatatypeBoolean' && !_formValues.containsKey(property.id)) {
+        _formValues[property.id] = false; // Default to false if not set
+        print('Setting default false for boolean field: ${property.title}');
+      }
+    }
+    
+    for (final entry in _formValues.entries) {
+      final property = service.classProperties.firstWhere((p) => p.id == entry.key);
 
-    case 'MFDatatypeText':
-      return TextFormField(
-        decoration: decoration,
-        validator: (value) {
-          if (property.isRequired && (value == null || value.isEmpty)) {
-            return 'This field is required';
-          }
-          return null;
-        },
-        onChanged: (value) {
-          setState(() {
-            _formValues[property.id] = value;
-          });
-        },
-      );
+      // Debug print the original value
+      print('Property ${entry.key} original value: ${entry.value} (${entry.value.runtimeType})');
 
-    case 'MFDatatypeMultiLineText':
-      return TextFormField(
-        decoration: decoration,
-        maxLines: 4,
-        validator: (value) {
-          if (property.isRequired && (value == null || value.isEmpty)) {
-            return 'This field is required';
-          }
-          return null;
-        },
-        onChanged: (value) {
-          setState(() {
-            _formValues[property.id] = value;
-          });
-        },
-      );
+      properties.add(PropertyValueRequest(
+        propId: entry.key,
+        value: entry.value, // ✅ Use the original value, let toJson() handle formatting
+        propertyType: property.propertyType,
+      ));
+    }
 
-    case 'MFDatatypeDate':
-      return TextFormField(
-        decoration: decoration,
-        readOnly: true,
-        onTap: () async {
-          final date = await showDatePicker(
-            context: context,
-            initialDate: DateTime.now(),
-            firstDate: DateTime(2000),
-            lastDate: DateTime(2100),
-          );
-          if (date != null) {
-            setState(() {
-              _formValues[property.id] = date.toIso8601String();
-            });
-          }
-        },
-        validator: (value) {
-          if (property.isRequired && value == null) {
-            return 'Please select a date';
-          }
-          return null;
-        },
-        controller: TextEditingController(
-          text: _formValues[property.id] != null
-              ? DateFormat('yyyy-MM-dd')
-                  .format(DateTime.parse(_formValues[property.id]))
-              : null,
+    // 🔥 Ensure Object Name property (PropertyDef: 0) is present
+    final hasObjectName = properties.any((p) => p.propId == 0);
+    if (!hasObjectName) {
+      // Use Car Title as name, or fallback to 'Unnamed Object'
+      final objectName = _formValues[1120]?.toString() ?? 'Unnamed Object';
+      properties.insert(0, PropertyValueRequest(
+        propId: 0,
+        value: objectName,
+        propertyType: 'MFDatatypeText',
+      ));
+    }
+
+    // Create object request
+    final request = ObjectCreationRequest(
+      objectTypeId: widget.objectType.id,
+      classId: widget.objectClass.id,
+      properties: properties,
+      uploadId: uploadId,
+    );
+
+    // Debug print
+    print('Submitting: ${json.encode(request.toJson())}');
+
+    // Submit the request
+    final success = await service.createObject(request);
+    
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Object created successfully!'),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       );
-
-    case 'MFDatatypeBoolean':
-      return CheckboxListTile(
-        title: Text(property.title),
-        value: _formValues[property.id] ?? false,
-        onChanged: (value) {
-          setState(() {
-            _formValues[property.id] = value;
-          });
-        },
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to create object: ${service.error}'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
       );
-
-    default:
-      return TextFormField(
-        decoration: decoration,
-        onChanged: (value) {
-          setState(() {
-            _formValues[property.id] = value;
-          });
-        },
-      );
+    }
   }
-}
+
+  Widget _buildFormField(ClassProperty property) {
+    // Debug print to see what property types we're getting
+    print('Property ${property.title} has type: ${property.propertyType}');
+    print('Checking cases - MFDatatypeTimestamp match: ${property.propertyType == 'MFDatatypeTimestamp'}');
+    
+    // Common field decoration
+    final decoration = InputDecoration(
+      labelText: property.title,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+      ),
+      filled: true,
+      fillColor: Colors.grey.shade50,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 14,
+      ),
+    );
+
+    // Handle different property types
+    switch (property.propertyType) {
+      case 'MFDatatypeLookup': // For Driver (single select)
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(property.title, style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            )),
+            const SizedBox(height: 8),
+            LookupField(
+              title: property.title,
+              propertyId: property.id,
+              isMultiSelect: false,
+              onSelected: (selectedItems) {
+                setState(() {
+                  _formValues[property.id] = selectedItems.isNotEmpty 
+                      ? selectedItems.first.id 
+                      : null;
+                });
+              },
+            ),
+          ],
+        );
+
+      case 'MFDatatypeMultiSelectLookup': // For Staff (multi-select)
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(property.title, style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.grey.shade700,
+            )),
+            const SizedBox(height: 8),
+            LookupField(
+              title: property.title,
+              propertyId: property.id,
+              isMultiSelect: true,
+              onSelected: (selectedItems) {
+                setState(() {
+                  _formValues[property.id] = selectedItems.map((i) => i.id).toList();
+                });
+              },
+            ),
+          ],
+        );
+
+      case 'MFDatatypeText':
+        return TextFormField(
+          decoration: decoration,
+          validator: (value) {
+            if (property.isRequired && (value == null || value.isEmpty)) {
+              return 'This field is required';
+            }
+            return null;
+          },
+          onChanged: (value) {
+            setState(() {
+              _formValues[property.id] = value;
+            });
+          },
+        );
+
+      case 'MFDatatypeInteger':
+        return TextFormField(
+          decoration: decoration,
+          keyboardType: TextInputType.number,
+          validator: (value) {
+            if (property.isRequired && (value == null || value.isEmpty)) {
+              return 'This field is required';
+            }
+            return null;
+          },
+          onChanged: (value) {
+            setState(() {
+              _formValues[property.id] = int.tryParse(value);
+            });
+          },
+        );
+
+      case 'MFDatatypeMultiLineText':
+        return TextFormField(
+          decoration: decoration,
+          maxLines: 4,
+          validator: (value) {
+            if (property.isRequired && (value == null || value.isEmpty)) {
+              return 'This field is required';
+            }
+            return null;
+          },
+          onChanged: (value) {
+            setState(() {
+              _formValues[property.id] = value;
+            });
+          },
+        );
+
+      case 'MFDatatypeDate':
+        return _buildDateField(property);
+
+      case 'MFDatatypeTime':
+        return _buildTimeField(property);
+
+      case 'MFDatatypeBoolean':
+        return Container(
+          margin: const EdgeInsets.symmetric(vertical: 8),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+            color: Colors.grey.shade50,
+          ),
+          child: CheckboxListTile(
+            title: Text(
+              property.title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            subtitle: property.isRequired 
+                ? Text(
+                    'Required',
+                    style: TextStyle(
+                      color: Colors.red.shade600,
+                      fontSize: 12,
+                    ),
+                  )
+                : null,
+            value: _formValues[property.id] ?? false,
+            onChanged: (value) {
+              setState(() {
+                _formValues[property.id] = value ?? false;
+              });
+              print('Boolean field ${property.title} set to: ${value ?? false}');
+            },
+            controlAffinity: ListTileControlAffinity.leading,
+          ),
+        );
+
+      default:
+        return TextFormField(
+          decoration: decoration,
+          onChanged: (value) {
+            setState(() {
+              _formValues[property.id] = value;
+            });
+          },
+        );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -328,7 +623,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(2),
                     child: Image.asset(
-                      'assets/mfileslogo.png',
+                      'assets/alignsyslogo.png',
                       height: 36,
                       fit: BoxFit.cover,
                     ),
