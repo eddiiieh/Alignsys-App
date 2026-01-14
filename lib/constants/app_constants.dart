@@ -1,14 +1,23 @@
 class AppConstants {
   // API Configuration
-  static const String baseUrl = 'https://mfilesdemoapi.alignsys.tech';
+  static const String baseUrl = 'https://api.alignsys.tech';
   static const String apiPath = '/api';
   
   // Endpoints
-  static const String objectTypesEndpoint = '$apiPath/MfilesObjects/GetVaultsObjectsTypes';
-  static const String objectClassesEndpoint = '$apiPath/MfilesObjects/GetObjectClasses';
-  static const String classPropsEndpoint = '$apiPath/MfilesObjects/ClassProps';
-  static const String fileUploadEndpoint = '$apiPath/objectinstance/FilesUploadAsync';
-  static const String objectCreationEndpoint = '$apiPath/objectinstance/ObjectCreation';
+  static const String getVaultObjectTypes =
+    '$apiPath/MfilesObjects/GetVaultsObjects/{vaultGuid}/{userId}';
+
+  static const String getObjectClasses =
+    '$apiPath/MfilesObjects/GetObjectClasses/{vaultGuid}/{objectTypeId}/{userId}';
+
+  static const String getClassProps =
+    '$apiPath/MfilesObjects/ClassProps/{vaultGuid}/{objectTypeId}/{classId}/{userId}';
+
+  static const String postFileUploadAsync = 
+    '$apiPath/objectinstance/FilesUploadAsync';
+
+  static const String postObjectCreation = 
+    '$apiPath/objectinstance/ObjectCreation';
   
   // Data Types
   /*

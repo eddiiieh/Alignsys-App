@@ -9,7 +9,7 @@ class SplashScreen extends StatefulWidget {
 
   const SplashScreen({
     Key? key,
-    this.minDuration = const Duration(seconds: 2),
+    this.minDuration = const Duration(seconds: 5),
     this.logoAssetPath,
   }) : super(key: key);
 
