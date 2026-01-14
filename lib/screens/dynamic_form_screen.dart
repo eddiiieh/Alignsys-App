@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:mfiles_app/screens/property_form_field.dart';
 import 'package:mfiles_app/widgets/lookup_field.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -16,11 +15,11 @@ class DynamicFormScreen extends StatefulWidget {
   const DynamicFormScreen({
     super.key,
     required this.objectType,
-    required this.objectClass,
+    this.objectClass, // Made optional - user will select it
   });
 
-  final ObjectClass objectClass;
   final VaultObjectType objectType;
+  final ObjectClass? objectClass; // Optional now
 
   @override
   State<DynamicFormScreen> createState() => _DynamicFormScreenState();
@@ -31,16 +30,51 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   final Map<int, dynamic> _formValues = {};
   File? _selectedFile;
   String? _selectedFileName;
+  ObjectClass? _selectedClass;
+  bool _isLoadingClasses = false;
+  bool _classesLoaded = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MFilesService>().fetchClassProperties(
-            widget.objectType.id,
-            widget.objectClass.id,
-          );
+    _selectedClass = widget.objectClass; // Use provided class if available
+    
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final service = context.read<MFilesService>();
+      
+      // Fetch classes for this object type
+      setState(() {
+        _isLoadingClasses = true;
+      });
+      
+      await service.fetchObjectClasses(widget.objectType.id);
+      
+      setState(() {
+        _isLoadingClasses = false;
+        _classesLoaded = true;
+      });
+      
+      // If a class is selected, fetch its properties
+      if (_selectedClass != null) {
+        await service.fetchClassProperties(
+          widget.objectType.id,
+          _selectedClass!.id,
+        );
+      }
     });
+  }
+
+  Future<void> _onClassSelected(ObjectClass objectClass) async {
+    setState(() {
+      _selectedClass = objectClass;
+      _formValues.clear(); // Clear form when class changes
+    });
+    
+    // Fetch properties for the selected class
+    await context.read<MFilesService>().fetchClassProperties(
+      widget.objectType.id,
+      objectClass.id,
+    );
   }
 
   Future<void> _pickFile() async {
@@ -59,8 +93,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       initialDate: _formValues[property.id] != null 
           ? DateTime.parse(_formValues[property.id])
           : DateTime.now(),
-      firstDate: DateTime(1800), // Extended back to 1800
-      lastDate: DateTime(2200),  // Extended forward to 2200
+      firstDate: DateTime(1800),
+      lastDate: DateTime(2200),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -99,7 +133,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
     
     if (time != null) {
-      // For time-only, we'll use today's date as base
       final now = DateTime.now();
       final combinedDateTime = DateTime(
         now.year,
@@ -282,110 +315,64 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   }
 
   Future<void> _submitForm() async {
-    if (!_formKey.currentState!.validate()) {
-      return;
-    }
-
-    // Check for required date/time fields
-    final service = context.read<MFilesService>();
-    for (final property in service.classProperties) {
-      final titleLower = property.title.toLowerCase();
-      final isTimeField = property.propertyType == 'MFDatatypeTime' || 
-                         property.propertyType == 'MFDatatypeTimestamp' ||
-                         titleLower.contains('time');
-      final isDateField = property.propertyType == 'MFDatatypeDate' ||
-                         titleLower.contains('date');
-      
-      if (property.isRequired && 
-          (isTimeField || isDateField) &&
-          _formValues[property.id] == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${property.title} is required'),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-        );
-        return;
-      }
-      
-      // Check for required text fields
-      if (property.isRequired && 
-          (property.propertyType == 'MFDatatypeText' || property.propertyType == 'MFDatatypeMultiLineText') &&
-          (_formValues[property.id] == null || _formValues[property.id].toString().trim().isEmpty)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${property.title} is required'),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-        );
-        return;
-      }
-    }
-    
-    // Check if required file is selected for document objects
-    if (widget.objectType.isDocument && _selectedFile == null) {
+    if (_selectedClass == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text('Please select a file for document objects'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          content: const Text('Please select a class first'),
+          backgroundColor: Colors.orange.shade600,
         ),
       );
       return;
     }
 
+    if (!_formKey.currentState!.validate()) return;
+
+    final service = context.read<MFilesService>();
+
+    // Required file check for document objects
     String? uploadId;
-    
-    // Upload file if document object
-    if (widget.objectType.isDocument && _selectedFile != null) {
+    if (widget.objectType.isDocument) {
+      if (_selectedFile == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Please select a file for document objects'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+        return;
+      }
       uploadId = await service.uploadFile(_selectedFile!);
       if (uploadId == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to upload file'),
+            content: const Text('File upload failed'),
             backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           ),
         );
         return;
       }
     }
 
-    // Prepare property values - USE ORIGINAL VALUES, NOT CONVERTED ONES
-    final properties = <PropertyValueRequest>[];
-    
-    // First, ensure all required boolean fields have a value
-    for (final property in service.classProperties) {
-      if (property.propertyType == 'MFDatatypeBoolean' && !_formValues.containsKey(property.id)) {
-        _formValues[property.id] = false; // Default to false if not set
-        print('Setting default false for boolean field: ${property.title}');
-      }
-    }
-    
-    for (final entry in _formValues.entries) {
-      final property = service.classProperties.firstWhere((p) => p.id == entry.key);
+    // Map user inputs to PropertyValueRequest
+    final List<PropertyValueRequest> properties = [];
 
-      // Debug print the original value
-      print('Property ${entry.key} original value: ${entry.value} (${entry.value.runtimeType})');
+    for (final prop in service.classProperties) {
+      final value = _formValues[prop.id];
+
+      // Skip null values for optional fields
+      if (value == null && !prop.isRequired) continue;
 
       properties.add(PropertyValueRequest(
-        propId: entry.key,
-        value: entry.value, // ✅ Use the original value, let toJson() handle formatting
-        propertyType: property.propertyType,
+        propId: prop.id,
+        value: value,
+        propertyType: prop.propertyType,
       ));
     }
 
-    // 🔥 Ensure Object Name property (PropertyDef: 0) is present
-    final hasObjectName = properties.any((p) => p.propId == 0);
-    if (!hasObjectName) {
-      // Use Car Title as name, or fallback to 'Unnamed Object'
-      final objectName = _formValues[1120]?.toString() ?? 'Unnamed Object';
+    // Ensure Name property is included
+    final hasName = properties.any((p) => p.propId == 0);
+    if (!hasName) {
+      final objectName = _formValues[0] ?? 'Unnamed Object';
       properties.insert(0, PropertyValueRequest(
         propId: 0,
         value: objectName,
@@ -393,48 +380,43 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       ));
     }
 
-    // Create object request
+    // Build the creation request
     final request = ObjectCreationRequest(
-      objectTypeId: widget.objectType.id,
-      classId: widget.objectClass.id,
+      objectID: 0,
+      classID: _selectedClass!.id,
       properties: properties,
+      vaultGuid: service.vaultGuid,
+      userID: service.userId ?? 0, 
       uploadId: uploadId,
     );
 
-    // Debug print
-    print('Submitting: ${json.encode(request.toJson())}');
+    print('Submitting object creation: ${jsonEncode(request.toJson())}');
 
-    // Submit the request
     final success = await service.createObject(request);
-    
+
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Object created successfully!'),
-          backgroundColor: Colors.green.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      );
-      Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Object created successfully!'),
+            backgroundColor: Colors.green.shade600,
+          ),
+        );
+        Navigator.pop(context);
+      }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to create object: ${service.error}'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to create object: ${service.error}'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+      }
     }
   }
 
   Widget _buildFormField(ClassProperty property) {
-    // Debug print to see what property types we're getting
-    print('Property ${property.title} has type: ${property.propertyType}');
-    print('Checking cases - MFDatatypeTimestamp match: ${property.propertyType == 'MFDatatypeTimestamp'}');
-    
-    // Common field decoration
     final decoration = InputDecoration(
       labelText: property.title,
       border: OutlineInputBorder(
@@ -448,9 +430,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       ),
     );
 
-    // Handle different property types
     switch (property.propertyType) {
-      case 'MFDatatypeLookup': // For Driver (single select)
+      case 'MFDatatypeLookup':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -474,7 +455,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           ],
         );
 
-      case 'MFDatatypeMultiSelectLookup': // For Staff (multi-select)
+      case 'MFDatatypeMultiSelectLookup':
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -582,7 +563,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
               setState(() {
                 _formValues[property.id] = value ?? false;
               });
-              print('Boolean field ${property.title} set to: ${value ?? false}');
             },
             controlAffinity: ListTileControlAffinity.leading,
           ),
@@ -598,6 +578,194 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           },
         );
     }
+  }
+
+  Widget _buildClassSelector() {
+    return Consumer<MFilesService>(
+      builder: (context, service, child) {
+        if (_isLoadingClasses) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: const Center(
+              child: Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Loading classes...'),
+                ],
+              ),
+            ),
+          );
+        }
+
+        final objectClasses = service.objectClasses
+            .where((cls) => cls.objectTypeId == widget.objectType.id)
+            .toList();
+
+        if (objectClasses.isEmpty) {
+          return Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.info_outline, color: Colors.orange.shade700, size: 48),
+                const SizedBox(height: 16),
+                Text(
+                  'No classes available for this object type',
+                  style: TextStyle(color: Colors.orange.shade700),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          );
+        }
+
+        // Group classes
+        final ungroupedClasses = objectClasses
+            .where((cls) => !service.isClassInAnyGroup(cls.id))
+            .toList();
+        final classGroups = service.getClassGroupsForType(widget.objectType.id);
+
+        return Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.shade100,
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.folder_open,
+                    color: const Color(0xFF0A1541),
+                    size: 24,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Select Class',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Choose the type of ${widget.objectType.displayName} to create',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Ungrouped classes
+              if (ungroupedClasses.isNotEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 8.0),
+                  child: Text(
+                    'General',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ),
+                ...ungroupedClasses.map((cls) => _buildClassOption(cls)),
+                const SizedBox(height: 8),
+              ],
+
+              // Grouped classes
+              ...classGroups.map((group) => Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                        child: Text(
+                          group.classGroupName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ),
+                      ...group.members.map((cls) => _buildClassOption(cls)),
+                    ],
+                  )),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildClassOption(ObjectClass cls) {
+    final isSelected = _selectedClass?.id == cls.id;
+
+    return InkWell(
+      onTap: () => _onClassSelected(cls),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF0A1541).withOpacity(0.1) : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF0A1541) : Colors.grey.shade300,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              isSelected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              color: isSelected ? const Color(0xFF0A1541) : Colors.grey.shade400,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                cls.displayName,
+                style: TextStyle(
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                  color: isSelected ? const Color(0xFF0A1541) : Colors.black87,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            if (isSelected)
+              const Icon(
+                Icons.check_circle,
+                color: Color(0xFF0A1541),
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -653,76 +821,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 ),
               ],
             ),
-            actions: [
-            ],
           ),
         ),
         body: Consumer<MFilesService>(
           builder: (context, service, child) {
-            if (service.isLoading && service.classProperties.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (service.error != null && service.classProperties.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      color: Colors.red,
-                      size: 64,
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error: ${service.error}',
-                      style: const TextStyle(color: Colors.red),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        service.clearError();
-                        service.fetchClassProperties(
-                          widget.objectType.id,
-                          widget.objectClass.id,
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0A1541),
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      ),
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            if (service.classProperties.isEmpty) {
-              return const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Colors.grey,
-                      size: 64,
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      'No properties found for this class',
-                      style: TextStyle(color: Colors.grey, fontSize: 16),
-                    ),
-                  ],
-                ),
-              );
-            }
-
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
@@ -738,7 +840,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     children: [
                       Icon(
                         widget.objectType.isDocument ? Icons.description : Icons.folder,
-                        color: Colors.blue,
+                        color: const Color(0xFF0A1541),
                         size: 32,
                       ),
                       const SizedBox(width: 12),
@@ -747,7 +849,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
-                              'Create ${widget.objectClass.displayName}',
+                              'Create ${widget.objectType.displayName}',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -755,7 +857,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              'Object Type: ${widget.objectType.displayName}',
+                              _selectedClass != null 
+                                  ? 'Class: ${_selectedClass!.displayName}'
+                                  : 'Select a class to continue',
                               style: TextStyle(
                                 color: Colors.grey.shade600,
                                 fontSize: 14,
@@ -769,169 +873,195 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 ),
                 const SizedBox(height: 16),
 
-                // File Upload Section (for document objects)
-                if (widget.objectType.isDocument) ...[
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.shade100,
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.attach_file, color: Colors.blue),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'File Upload',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.grey.shade200),
+                // Class Selection Section
+                _buildClassSelector(),
+                const SizedBox(height: 16),
+
+                // Only show the rest of the form if a class is selected
+                if (_selectedClass != null) ...[
+                  // File Upload Section (for document objects)
+                  if (widget.objectType.isDocument) ...[
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.shade100,
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
                           ),
-                          child: Row(
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
                             children: [
-                              Expanded(
-                                child: Text(
-                                  _selectedFileName ?? 'No file selected',
-                                  style: TextStyle(
-                                    color: _selectedFileName != null
-                                        ? Colors.green.shade700
-                                        : Colors.grey.shade600,
-                                    fontWeight: _selectedFileName != null
-                                        ? FontWeight.w500
-                                        : FontWeight.normal,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              ElevatedButton.icon(
-                                onPressed: _pickFile,
-                                icon: const Icon(Icons.folder_open, size: 18),
-                                label: const Text('Browse'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF0A1541),
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              const Icon(Icons.attach_file, color: Color(0xFF0A1541)),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'File Upload',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
                                 ),
                               ),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                // Properties Section
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.shade100,
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Form(
-                    key: _formKey,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.settings, color: Colors.blue),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Properties',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w600,
-                              ),
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.grey.shade200),
                             ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    _selectedFileName ?? 'No file selected',
+                                    style: TextStyle(
+                                      color: _selectedFileName != null
+                                          ? Colors.green.shade700
+                                          : Colors.grey.shade600,
+                                      fontWeight: _selectedFileName != null
+                                          ? FontWeight.w500
+                                          : FontWeight.normal,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                ElevatedButton.icon(
+                                  onPressed: _pickFile,
+                                  icon: const Icon(Icons.folder_open, size: 18),
+                                  label: const Text('Browse'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFF0A1541),
+                                    foregroundColor: Colors.white,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Properties Section
+                  if (service.isLoading && service.classProperties.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: const Center(
+                        child: Column(
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('Loading properties...'),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        
-                        // Property form fields
-                        ...service.classProperties
-                            .where((property) => !property.isHidden)
-                            .map((property) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 16),
-                                  child: _buildFormField(property),
-                                )),
-                      ],
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(height: 24),
-                
-                // Submit button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton.icon(
-                    onPressed: service.isLoading ? null : _submitForm,
-                    icon: service.isLoading
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Icon(Icons.save, size: 20),
-                    label: Text(
-                      service.isLoading ? 'Creating...' : 'Create Object',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
                       ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF0A1541),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
+                    )
+                  else if (service.classProperties.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.grey.shade200),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.shade100,
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      elevation: 2,
+                      child: Form(
+                        key: _formKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.settings, color: Color(0xFF0A1541)),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Properties',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 16),
+                            
+                            // Property form fields
+                            ...service.classProperties
+                                .where((property) => !property.isHidden)
+                                .map((property) => Padding(
+                                      padding: const EdgeInsets.only(bottom: 16),
+                                      child: _buildFormField(property),
+                                    )),
+                          ],
+                        ),
+                      ),
+                    ),
+                  
+                  const SizedBox(height: 24),
+                  
+                  // Submit button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton.icon(
+                      onPressed: service.isLoading ? null : _submitForm,
+                      icon: service.isLoading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.save, size: 20),
+                      label: Text(
+                        service.isLoading ? 'Creating...' : 'Create Object',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0A1541),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                      ),
                     ),
                   ),
-                ),
-                
-                const SizedBox(height: 16),
+                  
+                  const SizedBox(height: 16),
+                ],
               ],
             );
           },

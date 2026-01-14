@@ -23,6 +23,93 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  void _showCreateMenu(BuildContext context) async {
+    final service = context.read<MFilesService>();
+    final RenderBox button = context.findRenderObject() as RenderBox;
+    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
+    
+    // Position the menu below the Create button
+    final RelativeRect position = RelativeRect.fromLTRB(
+      buttonPosition.dx + button.size.width - 200, // Align right edge
+      buttonPosition.dy + button.size.height,
+      0,
+      0,
+    );
+
+    // Show all object types
+    if (service.objectTypes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No object types available. Please wait for data to load.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    // Calculate appropriate height - max 8 items visible, then scroll
+    final maxMenuHeight = MediaQuery.of(context).size.height * 0.6; // 60% of screen height
+    final itemHeight = 56.0; // Approximate height per menu item
+    final maxItems = 8;
+    final menuHeight = (service.objectTypes.length * itemHeight).clamp(0.0, maxItems * itemHeight);
+
+    showMenu<dynamic>(
+      context: context,
+      position: position,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 8,
+      constraints: BoxConstraints(
+        minWidth: 200,
+        maxWidth: 200,
+        maxHeight: maxMenuHeight,
+      ),
+      items: [
+        // Show ALL object types - navigate directly to DynamicFormScreen
+        ...service.objectTypes.map((objectType) {
+          return PopupMenuItem<dynamic>(
+            value: objectType,
+            child: Row(
+              children: [
+                Icon(
+                  objectType.isDocument ? Icons.description : Icons.folder,
+                  size: 20,
+                  color: const Color.fromRGBO(25, 76, 129, 1),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    objectType.displayName,
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: Colors.grey,
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ],
+    ).then((selectedObjectType) {
+      if (selectedObjectType != null) {
+        // Navigate directly to DynamicFormScreen with the selected object type
+        // The form screen will handle class selection
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => DynamicFormScreen(
+              objectType: selectedObjectType,
+            ),
+          ),
+        );
+      }
+    });
+  }
+
   void _showProfileMenu(BuildContext context) {
     final service = context.read<MFilesService>();
     final RenderBox button = context.findRenderObject() as RenderBox;
@@ -302,20 +389,22 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             actions: [
-              // New button
-              TextButton.icon(
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                ),
-                onPressed: () {
-                  Navigator.pushNamed(context, '/new');
+              // Create button with overflow menu
+              Builder(
+                builder: (BuildContext context) {
+                  return TextButton.icon(
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    ),
+                    onPressed: () => _showCreateMenu(context),
+                    icon: const Icon(Icons.add, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
+                    label: const Text(
+                      'Create',
+                      style: TextStyle(fontSize: 14, color: Color.fromRGBO(25, 76, 129, 1)),
+                    ),
+                  );
                 },
-                icon: const Icon(Icons.add, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-                label: const Text(
-                  'Create',
-                  style: TextStyle(fontSize: 14, color: Color.fromRGBO(25, 76, 129, 1)),
-                ),
               ),
               const SizedBox(width: 0),
               // Profile button with dropdown menu

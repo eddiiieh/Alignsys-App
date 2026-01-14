@@ -1,28 +1,34 @@
 class ObjectCreationRequest {
-  final int objectTypeId;
-  final int classId;
+  final int objectID;
+  final int classID;
   final List<PropertyValueRequest> properties;
+  final String vaultGuid;
   final String? uploadId;
+  final int userID;
 
   ObjectCreationRequest({
-    required this.objectTypeId,
-    required this.classId,
+    required this.objectID,
+    required this.classID,
     required this.properties,
+    required this.vaultGuid,
+    required this.userID,
     this.uploadId,
   });
 
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> json = {
-      'objectID': objectTypeId,
-      'classID': classId,
+      'objectID': objectID,
+      'classID': classID,
       'properties': properties.map((pv) => pv.toJson()).toList(),
+      'vaultGuid': vaultGuid,
+      'userID': userID,
     };
-    
+
     if (uploadId != null) {
       json['uploadId'] = uploadId;
     }
-    
-    return json; // ✅ Return the actual json object, not an empty one!
+
+    return json;
   }
 }
 

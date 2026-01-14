@@ -83,21 +83,51 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
   }
 
   void _proceedToVault() async {
-    if (_selectedVault != null) {
-      final mFilesService = context.read<MFilesService>();
-      mFilesService.selectedVault = _selectedVault!;
+  if (_selectedVault != null) {
+    final mFilesService = context.read<MFilesService>();
+    mFilesService.selectedVault = _selectedVault!;
 
-      if (_rememberMe) {
-        // Save selected vault GUID
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('selected_vault_guid', _selectedVault!.guid);
+    if (_rememberMe) {
+      // Save selected vault GUID
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('selected_vault_guid', _selectedVault!.guid);
+    }
+
+    // Fetch M-Files user ID for the selected vault
+    setState(() => _loading = true);
+    
+    try {
+      print('🔍 Fetching M-Files user ID for selected vault...');
+      await mFilesService.fetchMFilesUserId();
+      
+      if (mFilesService.mfilesUserId != null) {
+        print('✅ M-Files user ID set: ${mFilesService.mfilesUserId}');
+      } else {
+        print('⚠️ M-Files user ID not set, using fallback');
       }
-
+      
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');
       }
+    } catch (e) {
+      print('❌ Error setting up vault: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error setting up vault: $e'),
+            backgroundColor: Colors.red.shade700,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -135,22 +165,21 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
                           fit: BoxFit.cover,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'Welcome Back',
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                const Text(
+                        'Welcome back',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Color.fromRGBO(25, 75, 129, 1),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 24),
-
+                const SizedBox(height: 8),
+                
                 // Login Form Card
                 Container(
                   padding: const EdgeInsets.all(24),

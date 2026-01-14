@@ -26,7 +26,7 @@ class ObjectClass {
       };
 }
 
-// Add this to your models/object_class.dart or create a new file
+// Add this to your models/object_class.dart
 class ClassGroup {
   final int classGroupId;
   final String classGroupName;
