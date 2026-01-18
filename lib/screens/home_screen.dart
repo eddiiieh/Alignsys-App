@@ -3,6 +3,8 @@ import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
 import '../models/vault.dart';
+import '../models/view_item.dart';
+import '../models/view_object.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -11,353 +13,52 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  Map<int, bool> _expandedTypes = {};
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  final List<String> tabs = ['Home', 'Recent', 'Assigned', 'Deleted', 'Reports'];
   String _searchQuery = '';
+
+  static const double _sectionSpacing = 12;
 
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: tabs.length, vsync: this);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<MFilesService>().fetchObjectTypes();
+      _loadInitialData();
     });
   }
 
-  void _showCreateMenu(BuildContext context) async {
+  Future<void> _loadInitialData() async {
     final service = context.read<MFilesService>();
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-    final buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
-    
-    // Position the menu below the Create button
-    final RelativeRect position = RelativeRect.fromLTRB(
-      buttonPosition.dx + button.size.width - 200, // Align right edge
-      buttonPosition.dy + button.size.height,
-      0,
-      0,
-    );
+    await service.fetchObjectTypes();
+    await service.fetchAllViews();
+    await service.fetchRecentObjects();
+  }
 
-    // Show all object types
-    if (service.objectTypes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No object types available. Please wait for data to load.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+  void _onTabChanged(int index) {
+    final service = context.read<MFilesService>();
+    final tab = tabs[index];
+    service.setActiveTab(tab);
+
+    switch (tab) {
+      case 'Recent':
+        service.fetchRecentObjects();
+        break;
+      case 'Assigned':
+        service.fetchAssignedObjects();
+        break;
+      default:
+        break;
     }
-
-    // Calculate appropriate height - max 8 items visible, then scroll
-    final maxMenuHeight = MediaQuery.of(context).size.height * 0.6; // 60% of screen height
-    final itemHeight = 56.0; // Approximate height per menu item
-    final maxItems = 8;
-    final menuHeight = (service.objectTypes.length * itemHeight).clamp(0.0, maxItems * itemHeight);
-
-    showMenu<dynamic>(
-      context: context,
-      position: position,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 8,
-      constraints: BoxConstraints(
-        minWidth: 200,
-        maxWidth: 200,
-        maxHeight: maxMenuHeight,
-      ),
-      items: [
-        // Show ALL object types - navigate directly to DynamicFormScreen
-        ...service.objectTypes.map((objectType) {
-          return PopupMenuItem<dynamic>(
-            value: objectType,
-            child: Row(
-              children: [
-                Icon(
-                  objectType.isDocument ? Icons.description : Icons.folder,
-                  size: 20,
-                  color: const Color.fromRGBO(25, 76, 129, 1),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    objectType.displayName,
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                ),
-                const Icon(
-                  Icons.chevron_right,
-                  size: 18,
-                  color: Colors.grey,
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      ],
-    ).then((selectedObjectType) {
-      if (selectedObjectType != null) {
-        // Navigate directly to DynamicFormScreen with the selected object type
-        // The form screen will handle class selection
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => DynamicFormScreen(
-              objectType: selectedObjectType,
-            ),
-          ),
-        );
-      }
-    });
   }
 
-  void _showProfileMenu(BuildContext context) {
-    final service = context.read<MFilesService>();
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-    final buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
-    
-    // Position the menu directly below the profile icon, aligned to the right
-    final RelativeRect position = RelativeRect.fromLTRB(
-      buttonPosition.dx + button.size.width - 220, // 280 is menu width, align right edge
-      buttonPosition.dy + button.size.height, // directly below the button
-      0,
-      0,
-    );
-
-    showMenu<String>(
-      context: context,
-      position: position,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 8,
-      constraints: const BoxConstraints(
-        minWidth: 220,
-        maxWidth: 220,
-      ),
-      items: [
-        // Email Section
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.person, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Account',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                service.username ?? 'Unknown',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const Divider(height: 16),
-            ],
-          ),
-        ),
-        
-        // Vault Selection Section
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.storage, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Current Vault',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.grey,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                service.selectedVault?.name ?? 'None',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black87,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-        
-        // Switch Vault Option
-        PopupMenuItem<String>(
-          value: 'switch_vault',
-          child: const Row(
-            children: [
-              Icon(Icons.swap_horiz, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-              SizedBox(width: 12),
-              Text('Switch Vault'),
-            ],
-          ),
-        ),
-        
-        const PopupMenuDivider(),
-        
-        // Logout Option
-        PopupMenuItem<String>(
-          value: 'logout',
-          child: const Row(
-            children: [
-              Icon(Icons.logout, size: 20, color: Colors.red),
-              SizedBox(width: 12),
-              Text(
-                'Log Out',
-                style: TextStyle(color: Colors.red),
-              ),
-            ],
-          ),
-        ),
-      ],
-    ).then((value) {
-      if (value == 'switch_vault') {
-        _showVaultSwitchDialog(context);
-      } else if (value == 'logout') {
-        _handleLogout(context);
-      }
-    });
-  }
-
-  void _showVaultSwitchDialog(BuildContext context) {
-    final service = context.read<MFilesService>();
-    
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Switch Vault'),
-        content: FutureBuilder<List<Vault>>(
-          future: service.getUserVaults(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                height: 100,
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-            
-            if (snapshot.hasError) {
-              return Text('Error loading vaults: ${snapshot.error}');
-            }
-            
-            final vaults = snapshot.data ?? [];
-            
-            if (vaults.isEmpty) {
-              return const Text('No vaults available');
-            }
-            
-            return SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: vaults.length,
-                itemBuilder: (context, index) {
-                  final vault = vaults[index];
-                  final isSelected = service.selectedVault?.guid == vault.guid;
-                  
-                  return ListTile(
-                    leading: Icon(
-                      Icons.storage,
-                      color: isSelected 
-                          ? const Color.fromRGBO(25, 76, 129, 1)
-                          : Colors.grey,
-                    ),
-                    title: Text(
-                      vault.name,
-                      style: TextStyle(
-                        fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                        color: isSelected 
-                            ? const Color.fromRGBO(25, 76, 129, 1)
-                            : Colors.black87,
-                      ),
-                    ),
-                    trailing: isSelected 
-                        ? const Icon(
-                            Icons.check_circle,
-                            color: Color.fromRGBO(25, 76, 129, 1),
-                          )
-                        : null,
-                    onTap: isSelected
-                        ? null
-                        : () async {
-                            Navigator.pop(context);
-                            service.selectedVault = vault;
-                            await service.fetchObjectTypes();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Switched to ${vault.name}'),
-                                  backgroundColor: const Color.fromRGBO(25, 76, 129, 1),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          },
-                  );
-                },
-              ),
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _handleLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Log Out'),
-        content: const Text('Are you sure you want to log out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              context.read<MFilesService>().logout();
-              Navigator.pushReplacementNamed(context, '/login');
-            },
-            child: const Text('Log Out'),
-          ),
-        ],
-      ),
-    );
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   @override
@@ -365,248 +66,290 @@ class _HomeScreenState extends State<HomeScreen> {
     return SafeArea(
       top: false,
       child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: PreferredSize(
-          preferredSize: const Size.fromHeight(52),
-          child: AppBar(
-            backgroundColor: const Color.fromARGB(255, 251, 251, 251),
-            elevation: 0,
-            titleSpacing: 0,
-            title: Row(
-              children: [
-                // Alignsys logo
-                Padding(
-                  padding: const EdgeInsets.only(left: 12.0, right: 8.0),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(2),
-                    child: Image.asset(
-                      'assets/alignsyslogo.png',
-                      height: 32,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),            
-              ],
+        backgroundColor: Colors.grey.shade50,
+        appBar: AppBar(
+          backgroundColor: const Color.fromARGB(255, 251, 251, 251),
+          elevation: 0,
+          toolbarHeight: 56,
+          titleSpacing: 12,
+          title: ClipRRect(
+            borderRadius: BorderRadius.circular(2),
+            child: Image.asset(
+              'assets/alignsyslogo.png',
+              height: 32,
+              fit: BoxFit.cover,
             ),
-            actions: [
-              // Create button with overflow menu
-              Builder(
-                builder: (BuildContext context) {
-                  return TextButton.icon(
-                    style: TextButton.styleFrom(
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    ),
-                    onPressed: () => _showCreateMenu(context),
-                    icon: const Icon(Icons.add, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-                    label: const Text(
-                      'Create',
-                      style: TextStyle(fontSize: 14, color: Color.fromRGBO(25, 76, 129, 1)),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(width: 0),
-              // Profile button with dropdown menu
-              Builder(
-                builder: (BuildContext context) {
-                  return IconButton(
-                    icon: const Icon(Icons.person, color: Color.fromRGBO(25, 76, 129, 1)),
-                    onPressed: () => _showProfileMenu(context),
-                  );
-                },
-              ),
-              const SizedBox(width: 12),
-            ],
           ),
+          actions: [
+            TextButton.icon(
+              onPressed: () => _showCreateMenu(context),
+              icon: const Icon(Icons.add,
+                  size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
+              label: const Text(
+                'Create',
+                style: TextStyle(
+                    fontSize: 14,
+                    color: Color.fromRGBO(25, 76, 129, 1)),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.person,
+                  color: Color.fromRGBO(25, 76, 129, 1)),
+              onPressed: () => _showProfileMenu(context),
+            ),
+            const SizedBox(width: 8),
+          ],
         ),
-
-        body: Consumer<MFilesService>(
-          builder: (context, service, child) {
-            if (service.isLoading && service.objectTypes.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (service.error != null && service.objectTypes.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.error_outline, color: Colors.red, size: 64),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Error: ${service.error}',
-                      style: const TextStyle(color: Colors.red),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () {
-                        service.clearError();
-                        service.fetchObjectTypes();
-                      },
-                      child: const Text('Retry'),
-                    ),
-                  ],
-                ),
-              );
-            }
-
-            final filteredObjectTypes = service.objectTypes
-                .where((type) => type.displayName.toLowerCase().contains(_searchQuery.toLowerCase()))
-                .toList();
-
-            return ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Search
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12.0),
-                  child: TextField(
-                    decoration: InputDecoration(
-                      hintText: 'Search object or object class...',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                    ),
-                    onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                      });
-                    },
-                  ),
-                ),
-
-                // --- USER INFO CARD ---
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'User: ${service.username ?? "Unknown"}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Vault: ${service.selectedVault?.name ?? "None"}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // --- OBJECT TYPES ---
-                ExpansionTile(
-                  leading: const Icon(Icons.folder, color: Colors.blue),
-                  title: const Text(
-                    "Object Types",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  children: filteredObjectTypes.map((objectType) {
-                    final isExpanded = _expandedTypes[objectType.id] ?? false;
-                    final objectClasses = service.objectClasses
-                        .where((cls) => cls.objectTypeId == objectType.id)
-                        .toList();
-
-                    return ExpansionTile(
-                      key: ValueKey(objectType.id),
-                      title: Text(objectType.displayName),
-                      subtitle: Text('ID: ${objectType.id}'),
-                      leading: Icon(
-                        objectType.isDocument ? Icons.description : Icons.folder,
-                        color: Colors.blue,
-                      ),
-                      initiallyExpanded: isExpanded,
-                      onExpansionChanged: (expanded) async {
-                        setState(() {
-                          _expandedTypes[objectType.id] = expanded;
-                        });
-
-                        if (expanded && objectClasses.isEmpty) {
-                          await context.read<MFilesService>().fetchObjectClasses(objectType.id);
-                        }
-                      },
-                      children: [
-                        // Ungrouped classes
-                        if (service.objectClasses
-                            .where((cls) => cls.objectTypeId == objectType.id)
-                            .any((cls) => !service.isClassInAnyGroup(cls.id)))
-                          Padding(
-                            padding: const EdgeInsets.only(left: 16.0, top: 8.0, bottom: 4.0),
-                            child: Text(
-                              'General',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                        ...service.objectClasses
-                            .where((cls) => cls.objectTypeId == objectType.id)
-                            .where((cls) => !service.isClassInAnyGroup(cls.id))
-                            .map((cls) => ListTile(
-                                  leading: const Icon(Icons.folder_open, color: Colors.green),
-                                  title: Text(cls.displayName),
-                                  subtitle: Text('Class ID: ${cls.id}'),
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) => DynamicFormScreen(
-                                          objectType: objectType,
-                                          objectClass: cls,
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ))
-                            .toList(),
-                        // Grouped classes
-                        ...service.getClassGroupsForType(objectType.id).map((group) => Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.only(left: 16.0, top: 8.0),
-                                  child: Text(
-                                    group.classGroupName,
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                ...group.members.map((cls) => ListTile(
-                                      leading: const Icon(Icons.folder_open, color: Colors.green),
-                                      title: Text(cls.displayName),
-                                      subtitle: Text('Class ID: ${cls.id}'),
-                                      onTap: () {
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(
-                                            builder: (_) => DynamicFormScreen(
-                                              objectType: objectType,
-                                              objectClass: cls,
-                                            ),
-                                          ),
-                                        );
-                                      },
-                                    )),
-                              ],
-                            )),
-                      ],
-                    );
-                  }).toList(),
-                ),
-              ],
-            );
-          },
+        body: Column(
+          children: [
+            _buildSearchBar(),
+            SizedBox(height: _sectionSpacing),
+            _buildTabBar(),
+            SizedBox(height: _sectionSpacing),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildHomeTab(),
+                  _buildRecentTab(),
+                  _buildAssignedTab(),
+                  _buildDeletedTab(),
+                  _buildReportsTab(),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
+
+  Widget _buildSearchBar() {
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: TextField(
+      decoration: InputDecoration(
+        hintText: 'Search...',
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: Color.fromRGBO(25, 76, 129, 1),
+            width: 2,
+          ),
+        ),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        contentPadding:
+            const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        suffixIcon: IconButton(
+          icon: const Icon(
+            Icons.search,
+            color: Color.fromRGBO(25, 76, 129, 1),
+          ),
+          onPressed: _executeSearch,
+        ),
+      ),
+      onChanged: (value) {
+        _searchQuery = value.trim();
+      },
+      onSubmitted: (_) => _executeSearch(),
+    ),
+  );
+}
+
+
+  Widget _buildTabBar() {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: TabBar(
+        controller: _tabController,
+        isScrollable: true,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        labelPadding: const EdgeInsets.only(right: 24),
+        labelColor: const Color.fromRGBO(25, 76, 129, 1),
+        unselectedLabelColor: Colors.grey,
+        indicatorColor: const Color.fromRGBO(25, 76, 129, 1),
+        indicatorWeight: 3,
+        labelStyle:
+            const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        tabs: const [
+          Tab(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.home, size: 18),
+                SizedBox(width: 6),
+                Text('Home'),
+              ],
+            ),
+          ),
+          Tab(text: 'Recent'),
+          Tab(text: 'Assigned'),
+          Tab(text: 'Deleted'),
+          Tab(text: 'Reports'),
+        ],
+        onTap: _onTabChanged,
+      ),
+    );
+  }
+
+  Widget _buildHomeTab() {
+    return Consumer<MFilesService>(
+      builder: (context, service, _) {
+        if (service.isLoading && service.allViews.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (service.error != null && service.allViews.isEmpty) {
+          return Center(child: Text(service.error!));
+        }
+
+        return RefreshIndicator(
+          onRefresh: service.fetchAllViews,
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (service.commonViews.isNotEmpty) ...[
+                _buildSectionHeader('Common Views', Icons.star),
+                const SizedBox(height: 12),
+                ...service.commonViews.map(_buildViewCard),
+                const SizedBox(height: 24),
+              ],
+              _buildSectionHeader('Other Views', Icons.folder_outlined),
+              const SizedBox(height: 12),
+              if (service.otherViews.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Center(
+                      child: Text('No views available',
+                          style: TextStyle(color: Colors.grey))),
+                )
+              else
+                ...service.otherViews.map(_buildViewCard),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildRecentTab() {
+    return _buildObjectList(
+      selector: (s) => s.recentObjects,
+      emptyIcon: Icons.history,
+      emptyText: 'No recent objects',
+      onRefresh: (s) => s.fetchRecentObjects(),
+    );
+  }
+
+  Widget _buildAssignedTab() {
+    return _buildObjectList(
+      selector: (s) => s.assignedObjects,
+      emptyIcon: Icons.assignment,
+      emptyText: 'No assigned objects',
+      onRefresh: (s) => s.fetchAssignedObjects(),
+    );
+  }
+
+  Widget _buildDeletedTab() {
+    return const Center(child: Text('Deleted objects - no results found'));
+  }
+
+  Widget _buildReportsTab() {
+    return const Center(child: Text('Reports - no results found'));
+  }
+
+  Widget _buildObjectList({
+    required List<ViewObject> Function(MFilesService) selector,
+    required IconData emptyIcon,
+    required String emptyText,
+    required Future<void> Function(MFilesService) onRefresh,
+  }) {
+    return Consumer<MFilesService>(
+      builder: (context, service, _) {
+        final objects = selector(service);
+
+        if (service.isLoading && objects.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (objects.isEmpty) {
+          return Center(child: Text(emptyText));
+        }
+
+        return RefreshIndicator(
+          onRefresh: () => onRefresh(service),
+          child: ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: objects.length,
+            itemBuilder: (context, index) =>
+                _buildObjectCard(objects[index]),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: const Color.fromRGBO(25, 76, 129, 1), size: 20),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Color.fromRGBO(25, 76, 129, 1)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildViewCard(ViewItem view) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        title: Text(view.name),
+        subtitle: Text('${view.count} items'),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      ),
+    );
+  }
+
+  Widget _buildObjectCard(ViewObject obj) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        title: Text(obj.title),
+        subtitle: Text(obj.objectType),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+      ),
+    );
+  }
+
+  void _showCreateMenu(BuildContext context) {}
+  void _showProfileMenu(BuildContext context) {}
+
+  Future<void> _executeSearch() async {
+  if (_searchQuery.isEmpty) return;
+
+  final service = context.read<MFilesService>();
+  await service.searchVault(_searchQuery);
+
+  if (_tabController.index != 1) {
+    _tabController.animateTo(1);
+  }
+}
+
 }

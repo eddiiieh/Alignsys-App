@@ -42,11 +42,13 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    // Ensure minimum splash duration
+    // Ensure minimum splash duration (5 seconds)
     Future.wait([
       Future.delayed(widget.minDuration),
       _checkAutoLogin(),
-    ]);
+    ]).then((_) {
+      // Navigation handled in _checkAutoLogin
+    });
   }
 
   Future<void> _checkAutoLogin() async {
@@ -66,6 +68,9 @@ class _SplashScreenState extends State<SplashScreen>
             (v) => v.guid == selectedVaultGuid,
             orElse: () => vaults.first,
           );
+
+          // Fetch M-Files user ID for auto-login
+          await mFilesService.fetchMFilesUserId();
 
           if (!mounted) return;
           Navigator.pushReplacementNamed(context, '/home');
@@ -89,7 +94,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   Widget _buildLogo() {
     return Image.asset(
-      widget.logoAssetPath ?? 'assets/alignsyslogo.png',
+      widget.logoAssetPath ?? 'assets/alignsysop.png',
       width: 120,
       height: 120,
       fit: BoxFit.contain,
@@ -98,47 +103,35 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              theme.primaryColor,
-              theme.primaryColorDark,
+      backgroundColor: const Color(0xFF072F5F), // Changed to #072F5F
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AnimatedBuilder(
+                animation: _controller,
+                builder: (context, child) => Transform.scale(
+                  scale: _scale.value,
+                  child: Opacity(
+                    opacity: _opacity.value,
+                    child: child,
+                  ),
+                ),
+                child: _buildLogo(),
+              ),
+              const SizedBox(height: 32),
+              const SizedBox(
+                width: 40,
+                height: 40,
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  strokeWidth: 3.0,
+                  strokeCap: StrokeCap.round, // Makes it smooth/rounded
+                ),
+              ),
             ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) => Transform.scale(
-                    scale: _scale.value,
-                    child: Opacity(
-                      opacity: _opacity.value,
-                      child: child,
-                    ),
-                  ),
-                  child: _buildLogo(),
-                ),
-                const SizedBox(height: 20),
-                const SizedBox(
-                  width: 36,
-                  height: 36,
-                  child: CircularProgressIndicator(
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
-                    strokeWidth: 2.5,
-                  ),
-                ),
-              ],
-            ),
           ),
         ),
       ),

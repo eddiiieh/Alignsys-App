@@ -26,6 +26,7 @@ class MainApp extends StatelessWidget {
         // Start with splash screen; it handles auto-login
         home: const SplashScreen(),
         routes: {
+          '/splash': (context) => const SplashScreen(),
           '/login': (context) => const LoginVaultScreen(),
           '/home': (context) => const HomeScreen(),
         },
