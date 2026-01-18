@@ -9,6 +9,8 @@ import '../models/class_property.dart';
 import '../models/lookup_item.dart';
 import '../models/object_creation_request.dart';
 import '../models/vault.dart';
+import '../models/view_item.dart';
+import '../models/view_object.dart';
 
 class MFilesService extends ChangeNotifier {
   // Auth
@@ -315,6 +317,49 @@ class MFilesService extends ChangeNotifier {
     return _classesByObjectType[objectTypeId]?.grouped ?? [];
   }
 
+  // SEARCH VAULT OBJECTS
+  Future<void> searchVault(String query) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      return;
+    }
+
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      final encodedQuery = Uri.encodeComponent(query);
+
+      final url = Uri.parse(
+        '$baseUrl/api/objectinstance/Search/'
+        '${selectedVault!.guid}/$encodedQuery/$mfilesUserId',
+      );
+
+      print('🔍 Searching vault: $url');
+
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer $accessToken'},
+      );
+
+      print('📨 Search response: ${response.statusCode}');
+      print('📨 Search body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List;
+        recentObjects = data.map((e) => ViewObject.fromJson(e)).toList();
+        notifyListeners();
+      } else {
+        _setError('Search failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Search error: $e');
+      _setError('Search error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+
   // FILE UPLOAD
   Future<String?> uploadFile(File file) async {
     _setLoading(true);
@@ -434,5 +479,177 @@ class MFilesService extends ChangeNotifier {
     } finally {
       _setLoading(false);
     }
+  }
+
+  List<ViewItem> allViews = [];
+  List<ViewItem> commonViews = [];
+  List<ViewItem> otherViews = [];
+  List<ViewObject> recentObjects = [];
+  List<ViewObject> assignedObjects = [];
+  String currentTab = 'Home';
+
+  // Fetch all views
+  Future<void> fetchAllViews() async {
+  if (selectedVault == null || mfilesUserId == null) return;
+
+  _setLoading(true);
+  _setError(null);
+
+  try {
+    final url = Uri.parse(
+      '$baseUrl/api/Views/GetViews/${selectedVault!.guid}/$mfilesUserId',
+    );
+
+    print('🔍 Fetching views from: $url');
+
+    final response = await http.get(
+      url,
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+
+    print('📨 Views Response: ${response.statusCode}');
+    print('📨 Views Body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as Map<String, dynamic>;
+      
+      // Parse commonViews
+      if (data['commonViews'] != null) {
+        final commonViewsList = data['commonViews'] as List;
+        commonViews = commonViewsList.map((e) => ViewItem.fromJson(e)).toList();
+        print('✅ Fetched ${commonViews.length} common views');
+      }
+      
+      // Parse otherViews (if they exist in response)
+      if (data['otherViews'] != null) {
+        final otherViewsList = data['otherViews'] as List;
+        otherViews = otherViewsList.map((e) => ViewItem.fromJson(e)).toList();
+        print('✅ Fetched ${otherViews.length} other views');
+      } else {
+        // If no otherViews in response, set to empty
+        otherViews = [];
+        print('ℹ️ No other views in response');
+      }
+      
+      // Combine all views
+      allViews = [...commonViews, ...otherViews];
+      print('✅ Total views: ${allViews.length}');
+      
+      notifyListeners();
+    } else {
+      _setError('Failed to fetch views: ${response.statusCode}');
+    }
+  } catch (e) {
+    print('❌ Error fetching views: $e');
+    _setError('Error fetching views: $e');
+  } finally {
+    _setLoading(false);
+  }
+}
+  // Fetch recent objects
+  Future<void> fetchRecentObjects() async {
+    if (selectedVault == null || mfilesUserId == null) return;
+
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      final url = Uri.parse(
+        '$baseUrl/api/Views/GetRecent/${selectedVault!.guid}/$mfilesUserId',
+      );
+
+      print('🔍 Fetching recent objects from: $url');
+
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer $accessToken'},
+      );
+
+      print('📨 Recent Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List;
+        recentObjects = data.map((e) => ViewObject.fromJson(e)).toList();
+        print('✅ Fetched ${recentObjects.length} recent objects');
+        notifyListeners();
+      } else {
+        _setError('Failed to fetch recent objects: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching recent objects: $e');
+      _setError('Error fetching recent objects: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Fetch assigned objects
+  Future<void> fetchAssignedObjects() async {
+    if (selectedVault == null || mfilesUserId == null) return;
+
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      final url = Uri.parse(
+        '$baseUrl/api/Views/GetAssigned/${selectedVault!.guid}/$mfilesUserId',
+      );
+
+      print('🔍 Fetching assigned objects from: $url');
+
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer $accessToken'},
+      );
+
+      print('📨 Assigned Response: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List;
+        assignedObjects = data.map((e) => ViewObject.fromJson(e)).toList();
+        print('✅ Fetched ${assignedObjects.length} assigned objects');
+        notifyListeners();
+      } else {
+        _setError('Failed to fetch assigned objects: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('❌ Error fetching assigned objects: $e');
+      _setError('Error fetching assigned objects: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // Get objects in a specific view
+  Future<List<ViewObject>> fetchObjectsInView(int viewId, List<int> objectIds) async {
+    if (selectedVault == null || mfilesUserId == null) return [];
+
+    try {
+      final url = Uri.parse(
+        '$baseUrl/api/Views/GetViewObjects/${selectedVault!.guid}/$viewId/${objectIds.join(',')}/$mfilesUserId',
+      );
+
+      print('🔍 Fetching objects in view $viewId');
+
+      final response = await http.get(
+        url,
+        headers: {'Authorization': 'Bearer $accessToken'},
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List;
+        return data.map((e) => ViewObject.fromJson(e)).toList();
+      }
+      return [];
+    } catch (e) {
+      print('❌ Error fetching view objects: $e');
+      return [];
+    }
+  }
+
+  // Set active tab
+  void setActiveTab(String tab) {
+    currentTab = tab;
+    notifyListeners();
   }
 }
