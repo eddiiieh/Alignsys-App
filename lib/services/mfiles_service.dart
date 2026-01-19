@@ -652,4 +652,123 @@ class MFilesService extends ChangeNotifier {
     currentTab = tab;
     notifyListeners();
   }
+
+  // Fetch objects for a specific view
+  Future<List<ViewObject>> fetchObjectsForView(int viewId) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) return [];
+
+  final url = Uri.parse('$baseUrl/api/Views/GetObjectsInView').replace(
+    queryParameters: {
+      'VaultGuid': selectedVault!.guid,
+      'viewid': viewId.toString(),
+      'UserID': mfilesUserId.toString(),
+    },
+  );
+
+  print('🔍 GetObjectsInView URL: $url');
+
+  final resp = await http.get(
+    url,
+    headers: {'Authorization': 'Bearer $accessToken'},
+  );
+
+  print('📨 GetObjectsInView status: ${resp.statusCode}');
+  print('📨 GetObjectsInView body: ${resp.body}');
+
+  if (resp.statusCode != 200) {
+    throw Exception('GetObjectsInView failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  final data = json.decode(resp.body) as List;
+
+  return data.map<ViewObject>((e) {
+    final m = e as Map<String, dynamic>;
+
+    DateTime? dt(String? s) => s == null ? null : DateTime.tryParse(s);
+
+    return ViewObject(
+      id: (m['id'] as num?)?.toInt() ?? 0,
+      title: (m['title'] as String?) ?? '',
+
+      objectTypeId: (m['objectTypeId'] as num?)?.toInt() ?? 0,
+      classId: (m['classId'] as num?)?.toInt() ?? 0,
+      versionId: (m['versionId'] as num?)?.toInt() ?? 0,
+
+      objectTypeName: (m['objectTypeName'] as String?) ?? '',
+      classTypeName: (m['classTypeName'] as String?) ?? '',
+      displayId: (m['displayID'] as String?) ?? (m['displayId'] as String?) ?? '',
+
+      createdUtc: dt(m['createdUtc'] as String?),
+      lastModifiedUtc: dt(m['lastModifiedUtc'] as String?),
+    );
+  }).toList();
+}
+
+
+Future<List<Map<String, dynamic>>> fetchObjectViewProps({
+  required int objectId,
+  required int classId,
+}) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+    throw Exception('Session not ready');
+  }
+
+  final url = Uri.parse(
+    '$baseUrl/api/objectinstance/GetObjectViewProps/'
+    '${selectedVault!.guid}/$objectId/$classId/$mfilesUserId',
+  );
+
+  final resp = await http.get(url, headers: {'Authorization': 'Bearer $accessToken'});
+
+  if (resp.statusCode != 200) {
+    throw Exception('GetObjectViewProps failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  final decoded = json.decode(resp.body);
+  if (decoded is List) return decoded.cast<Map<String, dynamic>>();
+  if (decoded is Map && decoded['props'] is List) {
+    return (decoded['props'] as List).cast<Map<String, dynamic>>();
+  }
+  if (decoded is Map && decoded['properties'] is List) {
+    return (decoded['properties'] as List).cast<Map<String, dynamic>>();
+  }
+
+  throw Exception('Unexpected GetObjectViewProps shape: ${resp.body}');
+}
+
+Future<void> updateObjectProps({
+  required int objectId,
+  required int objectTypeId,
+  required int classId,
+  required List<Map<String, dynamic>> props, // [{id,value,datatype}]
+}) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+    throw Exception('Session not ready');
+  }
+
+  final url = Uri.parse('$baseUrl/api/objectinstance/UpdateObjectProps');
+
+  final body = {
+    "objectid": objectId,
+    "objectypeid": objectTypeId,
+    "classid": classId,
+    "props": props,
+    "vaultGuid": selectedVault!.guid,
+    "userID": mfilesUserId,
+  };
+
+  final resp = await http.post(
+    url,
+    headers: {
+      'Authorization': 'Bearer $accessToken',
+      'Content-Type': 'application/json',
+    },
+    body: json.encode(body),
+  );
+
+  if (resp.statusCode == 200 || resp.statusCode == 204) return;
+
+  throw Exception('UpdateObjectProps failed: ${resp.statusCode} ${resp.body}');
+}
+
 }

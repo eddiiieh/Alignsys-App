@@ -15,7 +15,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  bool _loading = false;
+  bool _loading = false;           // login + fetch vaults
+  bool _proceedLoading = false;    // proceed to vault only
   bool _showPassword = false;
   bool _rememberMe = false;
   List<Vault> _vaults = [];
@@ -37,31 +38,15 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
 
     try {
       final success = await mFilesService.login(username, password);
+      if (!success) throw Exception('Login failed. Check credentials.');
 
-      if (!success) {
-        throw Exception('Login failed. Check credentials.');
-      }
-
-      // Save tokens if "Remember Me" is checked
-      if (_rememberMe) {
-        await mFilesService.saveTokens(
-          mFilesService.accessToken!,
-          mFilesService.refreshToken!,
-          user: username,
-        );
-      }
-
-      // Fetch vaults
       final vaults = await mFilesService.getUserVaults();
-      if (vaults.isEmpty) {
-        throw Exception('No vaults available for this user.');
-      }
+      if (vaults.isEmpty) throw Exception('No vaults available for this user.');
 
       setState(() {
         _vaults = vaults;
         _selectedVault = vaults.first;
       });
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -74,43 +59,25 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
           ),
         );
       }
-      print('Login error: $e');
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _loading = false);
     }
   }
 
   void _proceedToVault() async {
-  if (_selectedVault != null) {
+    if (_selectedVault == null) return;
+
     final mFilesService = context.read<MFilesService>();
     mFilesService.selectedVault = _selectedVault!;
 
-    if (_rememberMe) {
-      // Save selected vault GUID
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('selected_vault_guid', _selectedVault!.guid);
-    }
+    setState(() => _proceedLoading = true);
 
-    // Fetch M-Files user ID for the selected vault
-    setState(() => _loading = true);
-    
     try {
-      print('🔍 Fetching M-Files user ID for selected vault...');
       await mFilesService.fetchMFilesUserId();
-      
-      if (mFilesService.mfilesUserId != null) {
-        print('✅ M-Files user ID set: ${mFilesService.mfilesUserId}');
-      } else {
-        print('⚠️ M-Files user ID not set, using fallback');
-      }
-      
       if (mounted) {
         Navigator.pushReplacementNamed(context, '/home');
       }
     } catch (e) {
-      print('❌ Error setting up vault: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -122,12 +89,9 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (mounted) setState(() => _proceedLoading = false);
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -265,35 +229,6 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
                       ),
                       const SizedBox(height: 12),
 
-                      // Remember Me
-                      Row(
-                        children: [
-                          SizedBox(
-                            height: 24,
-                            width: 24,
-                            child: Checkbox(
-                              value: _rememberMe,
-                              onChanged: (val) {
-                                setState(() => _rememberMe = val!);
-                              },
-                              activeColor: const Color.fromRGBO(25, 76, 129, 1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Remember Me',
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
                       // Login Button
                       _loading
                           ? const Center(
@@ -419,7 +354,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
                         ),
                         const SizedBox(height: 16),
                         ElevatedButton(
-                          onPressed: _selectedVault == null ? null : _proceedToVault,
+                          onPressed: (_selectedVault == null || _proceedLoading) ? null : _proceedToVault,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color.fromRGBO(25, 76, 129, 1),
                             foregroundColor: Colors.white,
@@ -430,13 +365,22 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
                             elevation: 2,
                             disabledBackgroundColor: Colors.grey.shade300,
                           ),
-                          child: const Text(
-                            'Proceed to Vault',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                          child: _proceedLoading
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  ),
+                                )
+                              : const Text(
+                                  'Proceed to Vault',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
                         ),
                       ],
                     ),
