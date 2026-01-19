@@ -30,6 +30,7 @@ flutter:
   assets:
     - assets/alignsyslogo.png
     - assets/TechEdgeLogo.png
+    - assets/alignsysop.png 
     # You can add more assets or use a folder:
     # - assets/
 
