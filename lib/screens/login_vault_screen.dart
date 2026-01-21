@@ -371,7 +371,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
                                   width: 20,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2.5,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    valueColor: AlwaysStoppedAnimation<Color>(Color.fromRGBO(25, 76, 129, 1)),
                                   ),
                                 )
                               : const Text(

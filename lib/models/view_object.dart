@@ -34,11 +34,16 @@ class ViewObject {
 
   factory ViewObject.fromJson(Map<String, dynamic> json) {
     return ViewObject(
-      id: (json['id'] as num?)?.toInt() ?? (json['objectId'] as num?)?.toInt() ?? 0,
+      id: (json['id'] as num?)?.toInt()
+      ?? int.tryParse((json['displayID'] as String?) ?? '')
+      ?? int.tryParse((json['displayId'] as String?) ?? '')
+      ?? 0,
       title: (json['title'] as String?) ?? '',
 
       objectTypeId: (json['objectTypeId'] as num?)?.toInt() ?? 0,
-      classId: (json['classId'] as num?)?.toInt() ?? 0,
+      classId: (json['classID'] as num?)?.toInt()
+        ?? (json['classId'] as num?)?.toInt()
+        ?? 0,
       versionId: (json['versionId'] as num?)?.toInt() ?? 0,
 
       objectTypeName: (json['objectTypeName'] as String?) ?? '',

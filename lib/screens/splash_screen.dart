@@ -93,11 +93,13 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Widget _buildLogo() {
-    return Image.asset(
-      widget.logoAssetPath ?? 'assets/alignsysop.png',
-      width: 160,
-      height: 160,
-      fit: BoxFit.contain,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.asset(
+        widget.logoAssetPath ?? 'assets/alignsysop.png',
+        height: 58,
+        fit: BoxFit.contain,
+      ),
     );
   }
 

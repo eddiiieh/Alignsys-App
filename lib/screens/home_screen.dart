@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
+import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
@@ -14,17 +16,18 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final List<String> tabs = ['Home', 'Recent', 'Assigned', 'Deleted', 'Reports'];
   String _searchQuery = '';
 
   static const double _sectionSpacing = 12;
 
-  // Flat section toggles (tab-like headers)
   bool _commonExpanded = true;
   bool _otherExpanded = true;
+
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
 
   @override
   void initState() {
@@ -55,6 +58,9 @@ class _HomeScreenState extends State<HomeScreen>
       case 'Assigned':
         service.fetchAssignedObjects();
         break;
+      case 'Deleted':
+        service.fetchDeletedObjects();
+        break;
       default:
         break;
     }
@@ -63,7 +69,16 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _tabController.dispose();
+    _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
+  }
+
+  // NEW: Date Modified formatter
+  String _formatModified(DateTime? dt) {
+    if (dt == null) return '—';
+    final local = dt.toLocal();
+    return DateFormat('dd MMM yyyy, HH:mm').format(local);
   }
 
   @override
@@ -73,16 +88,23 @@ class _HomeScreenState extends State<HomeScreen>
       child: Scaffold(
         backgroundColor: Colors.grey.shade50,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF072F5F),
+          backgroundColor: const Color(0xFF0A1541),
           elevation: 0,
           toolbarHeight: 64,
           titleSpacing: 12,
-          title: ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: Image.asset(
-              'assets/alignsysop.png',
-              height: 34,
-              fit: BoxFit.cover,
+          title: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/alignsysop.png',
+                height: 34,
+                fit: BoxFit.cover,
+              ),
             ),
           ),
           actions: [
@@ -116,9 +138,9 @@ class _HomeScreenState extends State<HomeScreen>
         body: Column(
           children: [
             _buildSearchBar(),
-            SizedBox(height: _sectionSpacing),
+            const SizedBox(height: _sectionSpacing),
             _buildTabBar(),
-            SizedBox(height: _sectionSpacing),
+            const SizedBox(height: _sectionSpacing),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -138,9 +160,14 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildSearchBar() {
+    final hasText = _searchController.text.trim().isNotEmpty;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocus,
+        textInputAction: TextInputAction.search,
         decoration: InputDecoration(
           hintText: 'Search...',
           border: OutlineInputBorder(
@@ -160,17 +187,40 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           filled: true,
           fillColor: Colors.grey.shade50,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          suffixIcon: IconButton(
-            icon: const Icon(
-              Icons.search,
-              color: Color.fromRGBO(25, 76, 129, 1),
-            ),
-            onPressed: _executeSearch,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+
+          // ✅ Keep everything in suffixIcon slot (stable height)
+          suffixIconConstraints: BoxConstraints(
+            minHeight: 40,
+            minWidth: hasText ? 88 : 48, // enough for (X + search) or (search)
+          ),
+          suffixIcon: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (hasText)
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  tooltip: 'Clear',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() => _searchQuery = '');
+                    _searchFocus.requestFocus();
+                  },
+                ),
+              IconButton(
+                icon: const Icon(Icons.search, color: Color.fromRGBO(25, 76, 129, 1)),
+                tooltip: 'Search',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+                onPressed: _executeSearch,
+              ),
+              const SizedBox(width: 4),
+            ],
           ),
         ),
-        onChanged: (value) => _searchQuery = value.trim(),
+        onChanged: (value) => setState(() => _searchQuery = value.trim()),
         onSubmitted: (_) => _executeSearch(),
       ),
     );
@@ -217,7 +267,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // -----------------------------
-  // HOME TAB: flat headers + lists
+  // HOME TAB
   // -----------------------------
   Widget _buildHomeTab() {
     return Consumer<MFilesService>(
@@ -239,8 +289,7 @@ class _HomeScreenState extends State<HomeScreen>
                 title: 'Common Views',
                 count: service.commonViews.length,
                 expanded: _commonExpanded,
-                onToggle: () =>
-                    setState(() => _commonExpanded = !_commonExpanded),
+                onToggle: () => setState(() => _commonExpanded = !_commonExpanded),
                 items: service.commonViews,
                 emptyText: 'No common views',
                 leadingIcon: Icons.star,
@@ -291,10 +340,7 @@ class _HomeScreenState extends State<HomeScreen>
                     if (items.isEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Text(
-                          emptyText,
-                          style: TextStyle(color: Colors.grey.shade600),
-                        ),
+                        child: Text(emptyText, style: TextStyle(color: Colors.grey.shade600)),
                       )
                     else
                       ..._buildFlatViewRows(items),
@@ -320,8 +366,7 @@ class _HomeScreenState extends State<HomeScreen>
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            Icon(icon,
-                size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+            Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -333,15 +378,9 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ),
-            Text(
-              '($count)',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-            ),
+            Text('($count)', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
             const SizedBox(width: 6),
-            Icon(
-              expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-              color: Colors.grey.shade700,
-            ),
+            Icon(expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.grey.shade700),
           ],
         ),
       ),
@@ -349,7 +388,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   List<Widget> _buildFlatViewRows(List<ViewItem> views) {
-    final List<Widget> rows = [];
+    final rows = <Widget>[];
     for (int i = 0; i < views.length; i++) {
       final view = views[i];
       rows.add(_buildFlatViewRow(view));
@@ -365,33 +404,28 @@ class _HomeScreenState extends State<HomeScreen>
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => ViewDetailsScreen(view: view),
-          ),
+          MaterialPageRoute(builder: (_) => ViewDetailsScreen(view: view)),
         );
       },
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12),
         child: Row(
           children: [
-            const Icon(Icons.grid_view_rounded,
-                size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+            const Icon(Icons.grid_view_rounded, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
                 view.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
               ),
             ),
             const SizedBox(width: 10),
-            Text(
-              '${view.count}',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-            const SizedBox(width: 8),
+            if (view.count > 0) ...[
+              Text('${view.count}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+              const SizedBox(width: 8),
+            ],
             Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
           ],
         ),
@@ -400,7 +434,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // -----------------------------
-  // OTHER TABS: compact object rows
+  // OTHER TABS: show Name + Date Modified
   // -----------------------------
   Widget _buildRecentTab() {
     return _buildObjectList(
@@ -420,12 +454,24 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // NOTE: You currently don't have deleted/report objects in your service.
+  // Keeping these as-is. If you add lists + fetch methods, wire them into _buildObjectList().
   Widget _buildDeletedTab() {
-    return const Center(child: Text('No deleted objects'));
-  }
+  return _buildObjectList(
+    selector: (s) => s.deletedObjects, // list in your service
+    emptyIcon: Icons.delete_outline,
+    emptyText: 'No deleted objects',
+    onRefresh: (s) => s.fetchDeletedObjects(),
+  );
+}
 
   Widget _buildReportsTab() {
-    return const Center(child: Text('No reports found'));
+    return _buildObjectList(
+    selector: (s) => s.reportObjects,
+    emptyIcon: Icons.analytics_outlined,
+    emptyText: 'No reports found',
+    onRefresh: (s) => s.fetchReportObjects(),
+  );
   }
 
   Widget _buildObjectList({
@@ -463,60 +509,69 @@ class _HomeScreenState extends State<HomeScreen>
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: objects.length,
-            itemBuilder: (context, index) =>
-                _buildCompactObjectRow(objects[index]),
+            itemBuilder: (context, index) => _buildCompactObjectRow(objects[index]),
           ),
         );
       },
     );
   }
 
-  Widget _buildCompactObjectRow(ViewObject obj) {
-    return InkWell(
-      onTap: () {
-        //ADD NAVIG PUSH TO OBJECT DETAILS SCREEN
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.description_outlined,
-                size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    obj.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    obj.objectTypeName.isNotEmpty ? obj.objectTypeName : obj.classTypeName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style:
-                        TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-          ],
-        ),
+  // UPDATED: show Name + Date Modified (remove type line)
+  // UPDATED: show Name + (ObjectType | Last Modified) when type exists
+Widget _buildCompactObjectRow(ViewObject obj) {
+  final type = obj.objectTypeName.trim(); // e.g. "Assignment"
+  final modified = _formatModified(obj.lastModifiedUtc);
+
+  final subtitle = type.isEmpty
+      ? 'Modified: $modified'
+      : '$type | $modified';
+
+  return InkWell(
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
+      );
+    },
+    child: Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
       ),
-    );
-  }
+      child: Row(
+        children: [
+          const Icon(Icons.description_outlined, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  obj.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle, // <-- changed line
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+        ],
+      ),
+    ),
+  );
+}
+
 
   Future<void> _executeSearch() async {
     if (_searchQuery.isEmpty) return;
@@ -532,8 +587,7 @@ class _HomeScreenState extends State<HomeScreen>
   void _showCreateMenu(BuildContext context) async {
     final service = context.read<MFilesService>();
     final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay =
-        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
     final buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
 
     final RelativeRect position = RelativeRect.fromLTRB(
@@ -546,8 +600,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (service.objectTypes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content:
-              Text('No object types available. Please wait for data to load.'),
+          content: Text('No object types available. Please wait for data to load.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -579,8 +632,7 @@ class _HomeScreenState extends State<HomeScreen>
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(objectType.displayName,
-                    style: const TextStyle(fontSize: 14)),
+                child: Text(objectType.displayName, style: const TextStyle(fontSize: 14)),
               ),
               const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
             ],
@@ -591,9 +643,7 @@ class _HomeScreenState extends State<HomeScreen>
       if (selectedObjectType != null) {
         Navigator.push(
           context,
-          MaterialPageRoute(
-            builder: (_) => DynamicFormScreen(objectType: selectedObjectType),
-          ),
+          MaterialPageRoute(builder: (_) => DynamicFormScreen(objectType: selectedObjectType)),
         );
       }
     });
@@ -601,208 +651,172 @@ class _HomeScreenState extends State<HomeScreen>
 
   void _showProfileMenu(BuildContext context) {
     final service = context.read<MFilesService>();
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay =
-        Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-    final buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
 
-    final RelativeRect position = RelativeRect.fromLTRB(
-      buttonPosition.dx + button.size.width - 220,
-      buttonPosition.dy + button.size.height,
-      0,
-      0,
-    );
-
-    showMenu<String>(
+    showModalBottomSheet(
       context: context,
-      position: position,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 8,
-      constraints: const BoxConstraints(minWidth: 220, maxWidth: 220),
-      items: [
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: const [
-                  Icon(Icons.person,
-                      size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-                  SizedBox(width: 8),
-                  Text('Account',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                service.username ?? 'Unknown',
-                style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w500),
-              ),
-              const Divider(height: 16),
-            ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
           ),
-        ),
-        PopupMenuItem<String>(
-          enabled: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: const [
-                  Icon(Icons.storage,
-                      size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-                  SizedBox(width: 8),
-                  Text('Current Vault',
-                      style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.grey)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                service.selectedVault?.name ?? 'None',
-                style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.black87,
-                    fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem<String>(
-          value: 'switch_vault',
-          child: const Row(
-            children: [
-              Icon(Icons.swap_horiz,
-                  size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
-              SizedBox(width: 12),
-              Text('Switch Vault'),
-            ],
-          ),
-        ),
-        const PopupMenuDivider(),
-        PopupMenuItem<String>(
-          value: 'logout',
-          child: const Row(
-            children: [
-              Icon(Icons.logout, size: 20, color: Colors.red),
-              SizedBox(width: 12),
-              Text('Log Out', style: TextStyle(color: Colors.red)),
-            ],
-          ),
-        ),
-      ],
-    ).then((value) {
-      if (value == 'switch_vault') {
-        _showVaultSwitchDialog(context);
-      } else if (value == 'logout') {
-        _handleLogout(context);
-      }
-    });
-  }
+          
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // drag handle
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+                const SizedBox(height: 14),
 
-  void _showVaultSwitchDialog(BuildContext context) {
-    final service = context.read<MFilesService>();
-
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Switch Vault'),
-        content: FutureBuilder<List<Vault>>(
-          future: service.getUserVaults(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const SizedBox(
-                  height: 100,
-                  child: Center(child: CircularProgressIndicator()));
-            }
-
-            if (snapshot.hasError) {
-              return Text('Error loading vaults: ${snapshot.error}');
-            }
-
-            final vaults = snapshot.data ?? [];
-
-            if (vaults.isEmpty) {
-              return const Text('No vaults available');
-            }
-
-            return SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: vaults.length,
-                itemBuilder: (context, index) {
-                  final vault = vaults[index];
-                  final isSelected = service.selectedVault?.guid == vault.guid;
-
-                  return ListTile(
-                    leading: Icon(
-                      Icons.storage,
-                      color: isSelected
-                          ? const Color.fromRGBO(25, 76, 129, 1)
-                          : Colors.grey,
+                // header
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0A1541).withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.person, color: Color(0xFF0A1541)),
                     ),
-                    title: Text(
-                      vault.name,
-                      style: TextStyle(
-                        fontWeight:
-                            isSelected ? FontWeight.bold : FontWeight.normal,
-                        color: isSelected
-                            ? const Color.fromRGBO(25, 76, 129, 1)
-                            : Colors.black87,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            service.username ?? 'Unknown',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Account',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
                       ),
                     ),
-                    trailing: isSelected
-                        ? const Icon(Icons.check_circle,
-                            color: Color.fromRGBO(25, 76, 129, 1))
-                        : null,
-                    onTap: isSelected
-                        ? null
-                        : () async {
-                            Navigator.pop(context);
-                            service.selectedVault = vault;
-                            await service.fetchMFilesUserId();
-                            await service.fetchObjectTypes();
-                            await service.fetchAllViews();
-                            if (context.mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Switched to ${vault.name}'),
-                                  backgroundColor:
-                                      const Color.fromRGBO(25, 76, 129, 1),
-                                  duration: const Duration(seconds: 2),
-                                ),
-                              );
-                            }
-                          },
-                  );
-                },
-              ),
-            );
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+                  ],
+                ),
+
+                const SizedBox(height: 14),
+                Divider(height: 1, color: Colors.grey.shade200),
+                const SizedBox(height: 14),
+
+                // vault dropdown (no popup dialog)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Current Vault',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                FutureBuilder<List<Vault>>(
+                  future: service.getUserVaults(),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        alignment: Alignment.centerLeft,
+                        child: const LinearProgressIndicator(minHeight: 2),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return Text('Error loading vaults: ${snapshot.error}');
+                    }
+
+                    final vaults = snapshot.data ?? [];
+                    if (vaults.isEmpty) return const Text('No vaults available');
+
+                    final selectedGuid = service.selectedVault?.guid;
+
+                    return DropdownButtonFormField<String>(
+                      value: selectedGuid,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      ),
+                      items: vaults.map((v) {
+                        return DropdownMenuItem<String>(
+                          value: v.guid,
+                          child: Text(v.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (guid) async {
+                        if (guid == null) return;
+                        if (guid == service.selectedVault?.guid) return;
+
+                        final newVault = vaults.firstWhere((v) => v.guid == guid);
+
+                        // switch vault in-place (no popup)
+                        service.selectedVault = newVault;
+                        await service.fetchMFilesUserId();
+                        await service.fetchObjectTypes();
+                        await service.fetchAllViews();
+                        await service.fetchRecentObjects();
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Switched to ${newVault.name}'),
+                              backgroundColor: const Color.fromRGBO(25, 76, 129, 1),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      },
+                    );
+                  },
+                ),
+
+                const SizedBox(height: 14),
+                Divider(height: 1, color: Colors.grey.shade200),
+                const SizedBox(height: 8),
+
+                // actions
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.logout, color: Colors.red),
+                  title: const Text('Log Out', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _handleLogout(context);
+                  },
+                ),
+
+                const SizedBox(height: 6),
+              ],
+            ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
-
+  
   void _handleLogout(BuildContext context) {
     showDialog(
       context: context,
@@ -816,10 +830,7 @@ class _HomeScreenState extends State<HomeScreen>
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
             onPressed: () {
               Navigator.pop(context);
               context.read<MFilesService>().logout();
