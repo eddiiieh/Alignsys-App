@@ -17,9 +17,76 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   bool _editMode = false;
   bool _saving = false;
+  bool _detailsExpanded = true;
 
   // propId -> edited vm
   final Map<int, _PropVm> _dirty = {};
+
+  // Optional: show friendly datatype labels instead of MFDataType*
+  // If you want to hide types completely, just return '' in _friendlyDatatype().
+  static const Map<String, String> _datatypeLabel = {
+    'MFDataTypeText': 'Text',
+    'MFDataTypeInteger': 'Number',
+    'MFDataTypeFloating': 'Decimal',
+    'MFDataTypeBoolean': 'Yes/No',
+    'MFDataTypeDate': 'Date',
+    'MFDataTypeTime': 'Time',
+    'MFDataTypeTimestamp': 'Date & time',
+    'MFDataTypeLookup': 'Lookup',
+    'MFDataTypeMultiSelectLookup': 'Multi-select',
+  };
+
+  String _friendlyDatatype(String raw) {
+    // return '' to hide datatype completely
+    return _datatypeLabel[raw] ?? '';
+  }
+
+  // NOTE: To eliminate "Property 100" dynamically for all object types,
+  // the backend MUST include property names (e.g., "propertyName") in the response.
+  // If it doesn't, there is no way to know the label without an extra "definitions" endpoint.
+  String _friendlyPropLabel(_PropVm p) {
+    final n = p.name.trim();
+    final isFallback = n.startsWith('Property ');
+    if (!isFallback && n.isNotEmpty) return n;
+
+    // Fallback: still show something readable (no "Property 100" plain)
+    return 'Property (${p.id})';
+  }
+
+  String _valueToText(dynamic v) {
+    if (v == null) return '';
+    if (v is String) return v;
+    if (v is num || v is bool) return v.toString();
+
+    if (v is List) {
+      return v.map(_valueToText).where((s) => s.trim().isNotEmpty).join(', ');
+    }
+
+    if (v is Map) {
+      // Prefer these keys in this order (handles {id: 31, title: Car} -> Car)
+      for (final key in const [
+        'displayValue',
+        'title',
+        'name',
+        'caption',
+        'text',
+        'label',
+      ]) {
+        final x = v[key];
+        if (x is String && x.trim().isNotEmpty) return x;
+        if (x is num || x is bool) return x.toString();
+      }
+
+      // Common wrapper: { value: ... }
+      if (v.containsKey('value')) return _valueToText(v['value']);
+
+      // Last resort: make a compact string without curly-brace dump
+      if (v.containsKey('id')) return 'ID ${v['id']}';
+      return '';
+    }
+
+    return v.toString();
+  }
 
   @override
   void didChangeDependencies() {
@@ -28,11 +95,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   Future<List<_PropVm>> _loadProps() async {
+
+    debugPrint('OPEN obj.id=${widget.obj.id}, classId=${widget.obj.classId}, title=${widget.obj.title}');
+    
     final svc = context.read<MFilesService>();
     final raw = await svc.fetchObjectViewProps(
       objectId: widget.obj.id,
       classId: widget.obj.classId,
     );
+
+    // IMPORTANT:
+    // If your backend does NOT return property names, you'll still get Property (id) fallbacks.
+    // Real fix: backend should include propertyName/title for each prop OR expose a definitions endpoint.
     return raw.map(_PropVm.fromJsonLoose).toList();
   }
 
@@ -47,6 +121,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       final payloadProps = _dirty.values.map((p) {
         return {
           "id": p.id,
+          // NOTE: This is still string-based updates. Lookup/multiselect/date/bool will need typed editors later.
           "value": p.editedValue ?? p.value ?? "",
           "datatype": p.datatype,
         };
@@ -148,7 +223,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               children: [
                 _headerCard(obj),
                 const SizedBox(height: 12),
-                _detailsCard(obj),
+                _detailsCard(obj), // dropdown
                 const SizedBox(height: 12),
                 _metadataCard(props),
                 const SizedBox(height: 12),
@@ -173,10 +248,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(obj.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                Text(
+                  obj.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 4),
                 Text(
                   '${obj.classTypeName} • ID ${obj.displayId} • v${obj.versionId}',
@@ -194,20 +271,23 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   Widget _detailsCard(ViewObject obj) {
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          _kv('Object ID', obj.id.toString()),
-          _kv('Object Type', obj.objectTypeName),
-          _kv('Class', obj.classTypeName),
-          _kv('Version', obj.versionId.toString()),
-          _kv('Created', _fmt(obj.createdUtc)),
-          _kv('Last modified', _fmt(obj.lastModifiedUtc)),
-        ],
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          initiallyExpanded: _detailsExpanded,
+          onExpansionChanged: (v) => setState(() => _detailsExpanded = v),
+          title: const Text('Details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          children: [
+            _kv('Object ID', obj.id.toString()),
+            _kv('Object Type', obj.objectTypeName),
+            _kv('Class', obj.classTypeName),
+            _kv('Version', obj.versionId.toString()),
+            _kv('Created', _fmt(obj.createdUtc)),
+            _kv('Last modified', _fmt(obj.lastModifiedUtc)),
+          ],
+        ),
       ),
     );
   }
@@ -231,27 +311,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          ...props.map((p) => _propField(p)).toList(),
+          ...props.map(_propField).toList(),
         ],
       ),
     );
   }
 
   Widget _propField(_PropVm p) {
-    final currentValue = _dirty[p.id]?.editedValue ?? p.value ?? '';
+    final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
+    final currentText = _valueToText(rawCurrent);
 
-    // Minimal editor: TextField for all datatypes (works immediately).
-    // Next step will add datatype-specific editors (lookup/date/bool/number).
-    final controller = TextEditingController(text: currentValue.toString());
+    final label = _friendlyPropLabel(p);
+    final typeLabel = _friendlyDatatype(p.datatype); // '' => hidden
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
-      child: TextField(
+      child: TextFormField(
         enabled: _editMode,
-        controller: controller,
+        initialValue: currentText,
         decoration: InputDecoration(
-          labelText: p.name,
-          helperText: p.datatype,
+          labelText: label,
+          helperText: typeLabel.isEmpty ? null : typeLabel, // hides MFDataType* noise
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           isDense: true,
         ),
@@ -259,8 +339,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           if (!_editMode) return;
 
           setState(() {
-            final normalizedOriginal = (p.value ?? '').toString();
-            if (v == normalizedOriginal) {
+            final originalText = _valueToText(p.value);
+            if (v == originalText) {
               _dirty.remove(p.id);
             } else {
               _dirty[p.id] = p.copyWith(editedValue: v);
@@ -300,8 +380,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             child: Text(k, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
           ),
           Expanded(
-            child: Text(v.isEmpty ? '-' : v,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            child: Text(
+              v.isEmpty ? '-' : v,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),

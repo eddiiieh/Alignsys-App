@@ -1,5 +1,6 @@
 class ObjectCreationRequest {
   final int objectID;
+  final int objectTypeID; // ADD
   final int classID;
   final List<PropertyValueRequest> properties;
   final String vaultGuid;
@@ -8,6 +9,7 @@ class ObjectCreationRequest {
 
   ObjectCreationRequest({
     required this.objectID,
+    required this.objectTypeID, // ADD
     required this.classID,
     required this.properties,
     required this.vaultGuid,
@@ -18,19 +20,19 @@ class ObjectCreationRequest {
   Map<String, dynamic> toJson() {
     final Map<String, dynamic> json = {
       'objectID': objectID,
+      'objectTypeID': objectTypeID, // ADD
       'classID': classID,
       'properties': properties.map((pv) => pv.toJson()).toList(),
       'vaultGuid': vaultGuid,
       'userID': userID,
     };
 
-    if (uploadId != null) {
-      json['uploadId'] = uploadId;
-    }
-
+    if (uploadId != null) json['uploadId'] = uploadId;
     return json;
   }
 }
+
+
 
 class PropertyValueRequest {
   final int propId;
@@ -46,72 +48,38 @@ class PropertyValueRequest {
   Map<String, dynamic> toJson() {
     return {
       'propId': propId,
-      'value': _formatValueForAPI(value, propertyType),
+      'value': _formatValueForAPI(value, propertyType), // USE IT
       'propertytype': propertyType,
     };
   }
 
-  /*int _getDataTypeNumber(String propertyType) {
-    switch (propertyType) {
-      case 'MFDatatypeText':
-        return 1;
-      case 'MFDatatypeMultiLineText':
-        return 13;
-      case 'MFDatatypeDate':
-        return 5;
-      case 'MFDatatypeLookup':
-        return 9;
-      case 'MFDatatypeMultiSelectLookup':
-        return 10;
-      case 'MFDatatypeBoolean':
-        return 8;
-      case 'MFDatatypeInteger':
-        return 2;
-      case 'MFDatatypeFloating':
-        return 3;
-      default:
-        return 1; // Default to text
-    }
-  }*/
+  static String _formatValueForAPI(dynamic value, String propertyType) {
+    if (value == null) return '';
 
-  dynamic _formatValueForAPI(dynamic value, String propertyType) {
-    if (value == null) return null;
-    
     switch (propertyType) {
       case 'MFDatatypeLookup':
-        // For single lookup, send just the ID as string
-        return value.toString();
-        
+        return value.toString(); // "18"
+
       case 'MFDatatypeMultiSelectLookup':
-        // For multi-select lookup, handle both List and single values
-        if (value is List) {
-          // Convert list of IDs to comma-separated string
-          return value.map((id) => id.toString()).join(',');
-        } else {
-          // Single value
-          return value.toString();
-        }
-        
-      case 'MFDatatypeDate':
-        // Keep date as string
+        // web client sends string; for multiple, send comma-separated
+        if (value is List) return value.map((id) => id.toString()).join(',');
         return value.toString();
-        
+
       case 'MFDatatypeBoolean':
-        // Convert boolean to string
-        if (value is bool) {
-          return value.toString();
-        }
-        return value.toString().toLowerCase() == 'true' ? 'true' : 'false';
-        
-      case 'MFDatatypeText':
-      case 'MFDatatypeMultiLineText':
+        if (value is bool) return value ? 'true' : 'false';
+        final s = value.toString().toLowerCase();
+        return (s == 'true' || s == '1') ? 'true' : 'false';
+
+      case 'MFDatatypeDate':
+        // enforce YYYY-MM-DD even if an ISO datetime sneaks in
+        final s = value.toString();
+        return s.contains('T') ? s.split('T').first : s;
+
       default:
-        // All other types as strings
         return value.toString();
     }
   }
 }
-
 
 // Alternative formats you might need to try if the above doesn't work:
 
@@ -143,19 +111,19 @@ class PropertyValueRequestAlternative {
     
     switch (dataType) {
       case 1: // Text
-        return value.toString();
+        return value;
       case 2: // Integer
-        return value is int ? value : int.tryParse(value.toString()) ?? 0;
+        return value is int ? value : int.tryParse(value) ?? 0;
       case 3: // Floating
-        return value is double ? value : double.tryParse(value.toString()) ?? 0.0;
+        return value is double ? value : double.tryParse(value) ?? 0.0;
       case 5: // Date
         // Value should already be formatted as YYYY-MM-DD from PropertyFormField
-        return value.toString();
+        return value;
       case 7: // DateTime/Timestamp
         // Value should already be formatted as YYYY-MM-DDTHH:MM:SS.000Z from PropertyFormField
-        return value.toString();
+        return value;
       case 8: // Boolean
-        return value is bool ? value : (value.toString().toLowerCase() == 'true');
+        return value is bool ? value : (value.toLowerCase() == 'true');
       default:
         return value;
     }

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:mfiles_app/models/view_content_item.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/vault_object_type.dart';
 import '../models/object_class.dart';
@@ -29,7 +30,8 @@ class MFilesService extends ChangeNotifier {
     if (selectedVault == null) {
       throw Exception('No vault selected');
     }
-    return selectedVault!.guid;
+    // Remove curly braces from GUID - M-Files often rejects them
+  return selectedVault!.guid;
   }
 
   /// Returns the M-Files user ID (not auth user ID)
@@ -47,6 +49,12 @@ class MFilesService extends ChangeNotifier {
 
   // Class properties
   List<ClassProperty> classProperties = [];
+
+  // Deleted objects
+  List<ViewObject> deletedObjects = [];
+
+  // Report objects
+  List<ViewObject> reportObjects = [];
 
   // Loading/Error
   bool isLoading = false;
@@ -293,6 +301,12 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
         classProperties = data.map((e) => ClassProperty.fromJson(e)).toList();
+        
+        // ADD THIS DEBUG CODE
+        print('📋 Properties for class $classId:');
+        for (final prop in classProperties) {
+          print('   ID: ${prop.id}, Title: "${prop.title}", Type: ${prop.propertyType}, Required: ${prop.isRequired}');
+        }
       } else {
         _setError('Failed to fetch class properties: ${response.statusCode}');
       }
@@ -432,54 +446,90 @@ class MFilesService extends ChangeNotifier {
 
   // CREATE OBJECT - Updated to use mfilesUserId
   Future<bool> createObject(ObjectCreationRequest request) async {
-    _setLoading(true);
-    _setError(null);
-    try {
-      // Replace the auth userId with M-Files userId
-      final updatedRequest = ObjectCreationRequest(
-        objectID: request.objectID,
-        classID: request.classID,
-        properties: request.properties,
-        vaultGuid: request.vaultGuid,
-        userID: mfilesUserId ?? request.userID, // Use M-Files user ID
-        uploadId: request.uploadId,
-      );
+  _setLoading(true);
+  _setError(null);
 
-      final url = Uri.parse('$baseUrl/api/objectinstance/ObjectCreation');
-      
-      print('🚀 Creating object at: $url');
-      print('📦 Request body: ${json.encode(updatedRequest.toJson())}');
-      
-      final response = await http.post(
-        url,
-        headers: {
-          'Authorization': 'Bearer $accessToken', 
-          'Content-Type': 'application/json'
-        },
-        body: json.encode(updatedRequest.toJson()),
-      );
-      
-      print('📨 Response Status: ${response.statusCode}');
-      print('📨 Response Body: ${response.body}');
-      print('📨 Response Headers: ${response.headers}');
-      
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final responseData = json.decode(response.body);
-        print('✅ Object created successfully: $responseData');
-        return true;
-      } else {
-        _setError('Server returned ${response.statusCode}: ${response.body}');
-        print('❌ Failed: ${response.statusCode} - ${response.body}');
-        return false;
-      }
-    } catch (e) {
-      _setError('Error creating object: $e');
-      print('❌ Exception: $e');
+  try {
+    if (selectedVault == null) {
+      _setError('No vault selected');
       return false;
-    } finally {
-      _setLoading(false);
     }
+    if (accessToken == null) {
+      _setError('Not authenticated');
+      return false;
+    }
+    if (mfilesUserId == null) {
+      _setError('M-Files user ID not set');
+      return false;
+    }
+
+    final url = Uri.parse('$baseUrl/api/objectinstance/ObjectCreation');
+
+    final vaultGuidWithBraces = selectedVault!.guid; // KEEP braces, your API expects them here
+
+    // Decide which payload format to use:
+    // - Non-document objects (no uploadId): use FLAT payload (matches Alignsys web client; avoids title error)
+    // - Document objects (uploadId exists): use WRAPPED payload (VaultGuid/UserID/mfilesCreate)
+    final bool isDocumentCreate = request.uploadId != null;
+
+    final Map<String, dynamic> body;
+
+    if (!isDocumentCreate) {
+      // ✅ FLAT payload (WORKS for Cars/Staff based on your test)
+      body = {
+        "objectTypeID": request.objectTypeID,
+        "objectID": request.objectID,
+        "classID": request.classID,
+        "properties": request.properties.map((p) => p.toJson()).toList(),
+        "vaultGuid": vaultGuidWithBraces,
+        "userID": mfilesUserId,
+      };
+    } else {
+      // ✅ WRAPPED payload (use for documents if your backend requires it)
+      body = {
+        "VaultGuid": vaultGuidWithBraces,
+        "UserID": mfilesUserId,
+        "mfilesCreate": {
+          "objectID": request.objectID,
+          "classID": request.classID,
+          "properties": request.properties.map((p) => p.toJson()).toList(),
+          "uploadId": request.uploadId,
+        },
+      };
+    }
+
+    print('🚀 Creating object at: $url');
+    print('📦 Request body: ${jsonEncode(body)}');
+
+    final response = await http.post(
+      url,
+      headers: {
+        'Authorization': 'Bearer $accessToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode(body),
+    );
+
+    print('📨 Response Status: ${response.statusCode}');
+    print('📨 Response Body: ${response.body}');
+    print('📨 Response Headers: ${response.headers}');
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      print('✅ Object created successfully: ${response.body}');
+      return true;
+    }
+
+    _setError('Server returned ${response.statusCode}: ${response.body}');
+    return false;
+  } catch (e) {
+    _setError('Error creating object: $e');
+    return false;
+  } finally {
+    _setLoading(false);
   }
+}
+
+
 
   List<ViewItem> allViews = [];
   List<ViewItem> commonViews = [];
@@ -548,40 +598,55 @@ class MFilesService extends ChangeNotifier {
 }
   // Fetch recent objects
   Future<void> fetchRecentObjects() async {
-    if (selectedVault == null || mfilesUserId == null) return;
+  if (selectedVault == null || mfilesUserId == null) return;
 
-    _setLoading(true);
-    _setError(null);
+  _setLoading(true);
+  _setError(null);
 
-    try {
-      final url = Uri.parse(
-        '$baseUrl/api/Views/GetRecent/${selectedVault!.guid}/$mfilesUserId',
-      );
+  try {
+    final url = Uri.parse(
+      '$baseUrl/api/Views/GetRecent/${selectedVault!.guid}/$mfilesUserId',
+    );
 
-      print('🔍 Fetching recent objects from: $url');
+    print('🔍 Fetching recent objects from: $url');
 
-      final response = await http.get(
-        url,
-        headers: {'Authorization': 'Bearer $accessToken'},
-      );
+    final response = await http.get(
+      url,
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
 
-      print('📨 Recent Response: ${response.statusCode}');
+    print('📨 Recent Response: ${response.statusCode}');
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body) as List;
-        recentObjects = data.map((e) => ViewObject.fromJson(e)).toList();
-        print('✅ Fetched ${recentObjects.length} recent objects');
-        notifyListeners();
-      } else {
-        _setError('Failed to fetch recent objects: ${response.statusCode}');
-      }
-    } catch (e) {
-      print('❌ Error fetching recent objects: $e');
-      _setError('Error fetching recent objects: $e');
-    } finally {
-      _setLoading(false);
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List;
+
+      // Parse
+      final fetched = data
+          .map((e) => ViewObject.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      // Sort newest → oldest
+      fetched.sort((a, b) {
+        final ad = a.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+        final bd = b.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+        return bd.compareTo(ad);
+      });
+
+      // Assign once
+      recentObjects = fetched;
+
+      print('✅ Fetched ${recentObjects.length} recent objects (sorted newest first)');
+      notifyListeners();
+    } else {
+      _setError('Failed to fetch recent objects: ${response.statusCode}');
     }
+  } catch (e) {
+    print('❌ Error fetching recent objects: $e');
+    _setError('Error fetching recent objects: $e');
+  } finally {
+    _setLoading(false);
   }
+}
 
   // Fetch assigned objects
   Future<void> fetchAssignedObjects() async {
@@ -749,8 +814,8 @@ Future<void> updateObjectProps({
   final url = Uri.parse('$baseUrl/api/objectinstance/UpdateObjectProps');
 
   final body = {
-    "objectid": objectId,
     "objectypeid": objectTypeId,
+    "objectid": objectId,
     "classid": classId,
     "props": props,
     "vaultGuid": selectedVault!.guid,
@@ -769,6 +834,140 @@ Future<void> updateObjectProps({
   if (resp.statusCode == 200 || resp.statusCode == 204) return;
 
   throw Exception('UpdateObjectProps failed: ${resp.statusCode} ${resp.body}');
+}
+
+//Drill-down service call for group folders
+Future<List<ViewContentItem>> fetchObjectsInViewRaw(int viewId) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) return [];
+
+  final url = Uri.parse('$baseUrl/api/Views/GetObjectsInView').replace(
+    queryParameters: {
+      'VaultGuid': selectedVault!.guid,
+      'viewid': viewId.toString(),
+      'UserID': mfilesUserId.toString(),
+    },
+  );
+
+  final resp = await http.get(url, headers: {'Authorization': 'Bearer $accessToken'});
+  if (resp.statusCode != 200) {
+    throw Exception('GetObjectsInView failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  final data = json.decode(resp.body) as List;
+  return data.map((e) => ViewContentItem.fromJson(e as Map<String, dynamic>)).toList();
+}
+
+// Fetch objects for a specific view property
+Future<List<ViewObject>> fetchViewPropObjects({
+  required int viewId,
+  required String propId,
+  required String propDatatype,
+  required String value,
+}) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) return [];
+
+  final url = Uri.parse('$baseUrl/api/Views/GetViewPropObjects');
+
+  final rawVault = selectedVault!.guid;
+final cleanVault = rawVault.replaceAll(RegExp(r'[{}]'), '');
+
+  final body = {
+    // vault variants
+    "vaultGuid": cleanVault,
+    "VaultGuid": cleanVault,
+    "vaultGUID": cleanVault,
+
+    // user variants
+    "userID": mfilesUserId,
+    "UserID": mfilesUserId,
+
+    // view id variants
+    "viewId": viewId,
+    "viewID": viewId,
+    "viewid": viewId,
+    "ViewId": viewId,
+    "ViewID": viewId,
+    "Viewid": viewId,
+
+    // property info
+    "propId": propId,
+    "PropId": propId,
+    "propDatatype": propDatatype,
+    "PropDatatype": propDatatype,
+
+    // grouping value
+    "value": value,
+    "Value": value,
+  };
+
+  print('GetViewPropObjects viewId=$viewId propId=$propId datatype=$propDatatype value=$value');
+  print('GetViewPropObjects body=$body');
+
+  print('POST URL: $url');
+
+
+  final resp = await http.post(
+    url,
+    headers: {
+      'Authorization': 'Bearer $accessToken',
+      'Content-Type': 'application/json',
+    },
+    body: json.encode(body),
+  );
+
+  if (resp.statusCode != 200) {
+    throw Exception('GetViewPropObjects failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  final data = json.decode(resp.body) as List;
+  return data.map((e) => ViewObject.fromJson(e as Map<String, dynamic>)).toList();
+}
+
+// Fetch deleted objects - Updated to use mfilesUserId
+Future<void> fetchDeletedObjects() async {
+  if (selectedVault == null || mfilesUserId == null) return;
+
+  _setLoading(true);
+  _setError(null);
+
+  try {
+    final url = Uri.parse(
+      '$baseUrl/api/ObjectDeletion/GetDeletedObject/'
+      '${selectedVault!.guid}/$mfilesUserId',
+    );
+
+    final response = await http.get(
+      url,
+      headers: {'Authorization': 'Bearer $accessToken'},
+    );
+
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body) as List;
+
+      deletedObjects = data
+          .map((e) => ViewObject.fromJson(e as Map<String, dynamic>))
+          .toList();
+
+      notifyListeners();
+    } else {
+      _setError('Failed to fetch deleted objects: ${response.statusCode}');
+    }
+  } catch (e) {
+    _setError('Error fetching deleted objects: $e');
+  } finally {
+    _setLoading(false);
+  }
+}
+// Fetch report objects (stub implementation) for icon purposes now only (endpoint missing)
+  Future<void> fetchReportObjects() async {
+  reportObjects = [];
+  notifyListeners();
+}
+
+Future<List<Map<String, dynamic>>> fetchLookupOptions(int propertyId) async {
+  // TODO: replace with your actual endpoint
+  // Return: [{ "id": 1, "name": "David Larry" }, ...]
+  throw UnimplementedError('Wire fetchLookupOptions(propertyId: $propertyId) to your API');
 }
 
 }
