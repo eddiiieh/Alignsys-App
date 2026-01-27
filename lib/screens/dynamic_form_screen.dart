@@ -74,9 +74,28 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
   }
 
-  InputDecoration _deco(String label, {String? helper}) {
+  // ✅ Label widget that adds a red asterisk for required fields
+  Widget _labelWithRequired(String label, bool required) {
+    if (!required) return Text(label);
+
+    return RichText(
+      text: TextSpan(
+        text: label,
+        style: const TextStyle(color: Colors.black87),
+        children: const [
+          TextSpan(
+            text: ' *',
+            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ Updated to support required asterisk
+  InputDecoration _deco(String label, {String? helper, bool required = false}) {
     return InputDecoration(
-      labelText: label,
+      label: _labelWithRequired(label, required),
       helperText: helper,
       isDense: true,
       filled: true,
@@ -113,9 +132,17 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+        // ✅ required asterisk here too
+        RichText(
+          text: TextSpan(
+            text: label,
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+            children: required
+                ? const [
+                    TextSpan(text: ' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800)),
+                  ]
+                : const [],
+          ),
         ),
         const SizedBox(height: 6),
         Container(
@@ -137,11 +164,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 child: Row(
                   children: [
                     Text(
-                      hasValue ? valueText : 'Select',
+                      hasValue ? valueText : '',
                       style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
                     const SizedBox(width: 4),
-                    Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600),
                   ],
                 ),
               ),
@@ -257,7 +283,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       onTap: () => _pickDate(p),
       borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
-        decoration: _deco(p.title),
+        decoration: _deco(p.title, required: p.isRequired), // ✅ asterisk here
         child: Row(
           children: [
             Expanded(
@@ -281,7 +307,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       onTap: () => _pickTime(p),
       borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
-        decoration: _deco(p.title),
+        decoration: _deco(p.title, required: p.isRequired), // ✅ asterisk here
         child: Row(
           children: [
             Expanded(
@@ -300,7 +326,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   // ---------- Fields ----------
   Widget _buildField(ClassProperty property) {
     switch (property.propertyType) {
-      // ✅ dropdown-looking, uses existing LookupField selection flow
       case 'MFDatatypeLookup':
         final hasValue = _formValues[property.id] != null;
         return _dropdownShell(
@@ -344,7 +369,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       case 'MFDatatypeText':
         return TextFormField(
-          decoration: _deco(property.title),
+          decoration: _deco(property.title, required: property.isRequired), // ✅
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
             return null;
@@ -354,7 +379,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       case 'MFDatatypeMultiLineText':
         return TextFormField(
-          decoration: _deco(property.title),
+          decoration: _deco(property.title, required: property.isRequired), // ✅
           maxLines: 4,
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
@@ -365,7 +390,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       case 'MFDatatypeInteger':
         return TextFormField(
-          decoration: _deco(property.title),
+          decoration: _deco(property.title, required: property.isRequired), // ✅
           keyboardType: TextInputType.number,
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
@@ -381,14 +406,13 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       case 'MFDatatypeTime':
         return _timeField(property);
 
-      // ✅ boolean dropdown (Yes/No) — applies to Car “Purchased brand new”
       case 'MFDatatypeBoolean':
         final current = _formValues[property.id];
         final bool? currentBool = current is bool ? current : null;
 
         return DropdownButtonFormField<bool>(
           value: currentBool,
-          decoration: _deco(property.title),
+          decoration: _deco(property.title, required: property.isRequired), // ✅
           icon: const Icon(Icons.keyboard_arrow_down),
           items: const [
             DropdownMenuItem(value: true, child: Text('Yes')),
@@ -403,7 +427,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       default:
         return TextFormField(
-          decoration: _deco(property.title),
+          decoration: _deco(property.title, required: property.isRequired), // ✅
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
             return null;
@@ -562,7 +586,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             icon: const Icon(Icons.arrow_back, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
-          // ✅ keep it like your original: logo only, correct margin, no extra title text
           title: Padding(
             padding: const EdgeInsets.only(left: 12.0, right: 8.0),
             child: ClipRRect(
@@ -582,7 +605,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // Header card
                 _card(
                   child: Row(
                     children: [
@@ -613,7 +635,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 ),
                 const SizedBox(height: 12),
 
-                // ✅ Select Class dropdown like your screenshot
                 _card(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -625,7 +646,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                       else
                         DropdownButtonFormField<int>(
                           value: _selectedClass?.id,
-                          decoration: _deco('Class'),
+                          decoration: _deco('Class'), // (class selection not marked required)
                           icon: const Icon(Icons.keyboard_arrow_down),
                           isExpanded: true,
                           items: objectClasses
@@ -692,7 +713,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                         children: [
                           const Text('Properties', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
                           const SizedBox(height: 10),
-
                           if (service.isLoading && service.classProperties.isEmpty)
                             const Padding(
                               padding: EdgeInsets.symmetric(vertical: 16),
@@ -710,7 +730,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-
                   SizedBox(
                     width: double.infinity,
                     height: 50,
