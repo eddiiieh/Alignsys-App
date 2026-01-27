@@ -467,36 +467,14 @@ class MFilesService extends ChangeNotifier {
 
     final vaultGuidWithBraces = selectedVault!.guid; // KEEP braces, your API expects them here
 
-    // Decide which payload format to use:
-    // - Non-document objects (no uploadId): use FLAT payload (matches Alignsys web client; avoids title error)
-    // - Document objects (uploadId exists): use WRAPPED payload (VaultGuid/UserID/mfilesCreate)
-    final bool isDocumentCreate = request.uploadId != null;
-
-    final Map<String, dynamic> body;
-
-    if (!isDocumentCreate) {
-      // ✅ FLAT payload (WORKS for Cars/Staff based on your test)
-      body = {
-        "objectTypeID": request.objectTypeID,
-        "objectID": request.objectID,
-        "classID": request.classID,
-        "properties": request.properties.map((p) => p.toJson()).toList(),
-        "vaultGuid": vaultGuidWithBraces,
-        "userID": mfilesUserId,
-      };
-    } else {
-      // ✅ WRAPPED payload (use for documents if your backend requires it)
-      body = {
-        "VaultGuid": vaultGuidWithBraces,
-        "UserID": mfilesUserId,
-        "mfilesCreate": {
-          "objectID": request.objectID,
-          "classID": request.classID,
-          "properties": request.properties.map((p) => p.toJson()).toList(),
-          "uploadId": request.uploadId,
-        },
-      };
-    }
+    final body = {
+    "objectID": request.objectID,
+    "classID": request.classID,
+    "properties": request.properties.map((p) => p.toJson()).toList(),
+    "vaultGuid": vaultGuidWithBraces,
+    "uploadId": request.uploadId ?? "string",
+    "userID": mfilesUserId,
+  };
 
     print('🚀 Creating object at: $url');
     print('📦 Request body: ${jsonEncode(body)}');
@@ -620,6 +598,10 @@ class MFilesService extends ChangeNotifier {
     if (response.statusCode == 200) {
       final data = json.decode(response.body) as List;
 
+      for (final e in data.take(1)) {
+        debugPrint('VIEW OBJECT RAW (Recent) → $e');
+      }
+
       // Parse
       final fetched = data
           .map((e) => ViewObject.fromJson(e as Map<String, dynamic>))
@@ -671,6 +653,9 @@ class MFilesService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
+        for (final e in data.take(1)) {
+          debugPrint('VIEW OBJECT RAW (Assigned) → $e');
+        }
         assignedObjects = data.map((e) => ViewObject.fromJson(e)).toList();
         print('✅ Fetched ${assignedObjects.length} assigned objects');
         notifyListeners();
@@ -701,10 +686,17 @@ class MFilesService extends ChangeNotifier {
         headers: {'Authorization': 'Bearer $accessToken'},
       );
 
+      debugPrint('OBJECT LIST FETCH HIT: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        return data.map((e) => ViewObject.fromJson(e)).toList();
+
+        return data.map((e) {
+          debugPrint('VIEW OBJECT RAW → $e');
+          return ViewObject.fromJson(e);
+        }).toList();
       }
+
       return [];
     } catch (e) {
       print('❌ Error fetching view objects: $e');
@@ -746,27 +738,14 @@ class MFilesService extends ChangeNotifier {
 
   final data = json.decode(resp.body) as List;
 
-  return data.map<ViewObject>((e) {
-    final m = e as Map<String, dynamic>;
+  for (final e in data.take(1)) {
+    debugPrint('VIEW OBJECT RAW (fetchObjectsForView) → $e');
+  }
 
-    DateTime? dt(String? s) => s == null ? null : DateTime.tryParse(s);
+  return data
+      .map((e) => ViewObject.fromJson(e as Map<String, dynamic>))
+      .toList();
 
-    return ViewObject(
-      id: (m['id'] as num?)?.toInt() ?? 0,
-      title: (m['title'] as String?) ?? '',
-
-      objectTypeId: (m['objectTypeId'] as num?)?.toInt() ?? 0,
-      classId: (m['classId'] as num?)?.toInt() ?? 0,
-      versionId: (m['versionId'] as num?)?.toInt() ?? 0,
-
-      objectTypeName: (m['objectTypeName'] as String?) ?? '',
-      classTypeName: (m['classTypeName'] as String?) ?? '',
-      displayId: (m['displayID'] as String?) ?? (m['displayId'] as String?) ?? '',
-
-      createdUtc: dt(m['createdUtc'] as String?),
-      lastModifiedUtc: dt(m['lastModifiedUtc'] as String?),
-    );
-  }).toList();
 }
 
 
@@ -801,40 +780,77 @@ Future<List<Map<String, dynamic>>> fetchObjectViewProps({
   throw Exception('Unexpected GetObjectViewProps shape: ${resp.body}');
 }
 
-Future<void> updateObjectProps({
-  required int objectId,
-  required int objectTypeId,
-  required int classId,
-  required List<Map<String, dynamic>> props, // [{id,value,datatype}]
-}) async {
-  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-    throw Exception('Session not ready');
+  Future<bool> updateObjectProps({
+      required int objectId,
+      required int objectTypeId,
+      required int classId,
+      required List<Map<String, dynamic>> props, // [{id, value, datatype}]
+    }) async {
+      _setLoading(true);
+      _setError(null);
+
+      try {
+        if (selectedVault == null) {
+          _setError('No vault selected');
+          return false;
+        }
+        if (accessToken == null) {
+          _setError('Not authenticated');
+          return false;
+        }
+        if (mfilesUserId == null) {
+          _setError('M-Files user ID not set');
+          return false;
+        }
+
+        final url = Uri.parse('$baseUrl/api/objectinstance/UpdateObjectProps');
+
+        final body = {
+          "objectid": objectId,
+          "objectypeid": objectTypeId,
+          "objecttypeid": objectTypeId,
+          "classid": classId,
+          "props": props.map((p) {
+            return {
+              "id": p["id"],
+              "value": (p["value"] ?? "").toString(),
+              "datatype": (p["datatype"] ?? "MFDatatypeText")
+              .toString()
+              .replaceAll('MFDataType', 'MFDatatype'),
+            };
+          }).toList(),
+          "vaultGuid": selectedVault!.guid, // keep braces if vault guid includes them
+          "userID": mfilesUserId,
+        };
+
+        print('🛠️ UpdateObjectProps body: ${jsonEncode(body)}');
+
+        final resp = await http.put(
+          url,
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+            'Content-Type': 'application/json',
+            'accept': '*/*',
+          },
+          body: jsonEncode(body),
+        );
+
+        if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) return true;
+        print('🧾 UpdateObjectProps status: ${resp.statusCode}');
+        print('🧾 UpdateObjectProps body: ${resp.body}');
+        print('🧾 UpdateObjectProps headers: ${resp.headers}');
+
+
+        _setError('Server returned ${resp.statusCode}: ${resp.body}');
+        return false;
+      } catch (e) {
+        _setError('Error updating object: $e');
+        return false;
+      } finally {
+        _setLoading(false);
+      }
   }
 
-  final url = Uri.parse('$baseUrl/api/objectinstance/UpdateObjectProps');
-
-  final body = {
-    "objectypeid": objectTypeId,
-    "objectid": objectId,
-    "classid": classId,
-    "props": props,
-    "vaultGuid": selectedVault!.guid,
-    "userID": mfilesUserId,
-  };
-
-  final resp = await http.post(
-    url,
-    headers: {
-      'Authorization': 'Bearer $accessToken',
-      'Content-Type': 'application/json',
-    },
-    body: json.encode(body),
-  );
-
-  if (resp.statusCode == 200 || resp.statusCode == 204) return;
-
-  throw Exception('UpdateObjectProps failed: ${resp.statusCode} ${resp.body}');
-}
 
 //Drill-down service call for group folders
 Future<List<ViewContentItem>> fetchObjectsInViewRaw(int viewId) async {
@@ -920,6 +936,9 @@ final cleanVault = rawVault.replaceAll(RegExp(r'[{}]'), '');
   }
 
   final data = json.decode(resp.body) as List;
+    for (final e in data.take(1)) {
+    debugPrint('VIEW OBJECT RAW (GetObjectsInView) → $e');
+  }
   return data.map((e) => ViewObject.fromJson(e as Map<String, dynamic>)).toList();
 }
 

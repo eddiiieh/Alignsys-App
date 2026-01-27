@@ -33,25 +33,39 @@ class ViewObject {
   }
 
   factory ViewObject.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v) {
+      if (v == null) return 0;
+      if (v is num) return v.toInt();
+      if (v is String) return int.tryParse(v) ?? 0;
+      return 0;
+    }
+
+    // 👇 ADD THIS DEBUG LINE RIGHT HERE
+    print(
+      'PARSE ViewObject → '
+      'id=${json['id']} '
+      'displayID=${json['displayID']} '
+      'objectID=${json['objectID']} '
+      'classID=${json['classID']}',
+    );
+
     return ViewObject(
-      id: (json['id'] as num?)?.toInt()
-      ?? int.tryParse((json['displayID'] as String?) ?? '')
-      ?? int.tryParse((json['displayId'] as String?) ?? '')
-      ?? 0,
+      id: asInt(json['id']) != 0
+          ? asInt(json['id'])
+          : asInt(json['displayID']),
       title: (json['title'] as String?) ?? '',
 
-      objectTypeId: (json['objectTypeId'] as num?)?.toInt() ?? 0,
-      classId: (json['classID'] as num?)?.toInt()
-        ?? (json['classId'] as num?)?.toInt()
-        ?? 0,
-      versionId: (json['versionId'] as num?)?.toInt() ?? 0,
+      objectTypeId: asInt(json['objectID']),
+      classId: asInt(json['classID']),
+      versionId: asInt(json['versionId']),
 
       objectTypeName: (json['objectTypeName'] as String?) ?? '',
       classTypeName: (json['classTypeName'] as String?) ?? '',
-      displayId: (json['displayID'] as String?) ?? (json['displayId'] as String?) ?? '',
+      displayId: (json['displayID']?.toString()) ?? '',
 
       createdUtc: _dt(json['createdUtc']),
       lastModifiedUtc: _dt(json['lastModifiedUtc']),
     );
   }
+
 }
