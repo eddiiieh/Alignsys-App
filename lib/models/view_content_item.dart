@@ -1,8 +1,8 @@
 class ViewContentItem {
   final String type;
 
-  //object fields (present for object versions)
-  final int id; // object id for object versions; -1 for folders
+  // object fields
+  final int id;
   final String title;
   final int objectTypeId;
   final int classId;
@@ -13,10 +13,10 @@ class ViewContentItem {
   final DateTime? createdUtc;
   final DateTime? lastModifiedUtc;
 
-  //grouping fields
+  // grouping fields
   final int viewId;
-  final String? propId;        // e.g. "42"
-  final String? propDatatype;  // e.g. "MFDatatypeLookup"
+  final String? propId;          // was int?
+  final String? propDatatype;
 
   ViewContentItem({
     required this.type,
@@ -37,6 +37,8 @@ class ViewContentItem {
 
   bool get isObject => type == 'MFFolderContentItemTypeObjectVersion' && id > 0;
   bool get isGroupFolder => type == 'MFFolderContentItemTypePropertyFolder';
+  bool get isViewFolder => type == 'MFFolderContentItemTypeViewFolder' && id > 0;
+
 
   static DateTime? _dt(dynamic v) {
     if (v == null) return null;
@@ -44,7 +46,25 @@ class ViewContentItem {
     return null;
   }
 
+  static int? _intNullable(dynamic v) {
+    if (v == null) return null;
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    final s = v.toString().trim();
+    if (s.isEmpty) return null;
+    return int.tryParse(s);
+  }
+
+  static int? _validPropId(dynamic v) {
+    final x = _intNullable(v);
+    if (x == null) return null;
+    if (x <= 0) return null; // 0/-1 are invalid for grouping
+    return x;
+  }
+
   factory ViewContentItem.fromJson(Map<String, dynamic> m) {
+    final rawPropId = m['propId'] ?? m['propID'] ?? m['propertyId'] ?? m['propertyID'];
+
     return ViewContentItem(
       type: (m['type'] as String?) ?? '',
       id: (m['id'] as num?)?.toInt() ?? -1,
@@ -58,7 +78,7 @@ class ViewContentItem {
       createdUtc: _dt(m['createdUtc']),
       lastModifiedUtc: _dt(m['lastModifiedUtc']),
       viewId: (m['viewId'] as num?)?.toInt() ?? -1,
-      propId: m['propId']?.toString(),
+      propId: rawPropId?.toString(),           // keep "05"
       propDatatype: m['propDatatype']?.toString(),
     );
   }

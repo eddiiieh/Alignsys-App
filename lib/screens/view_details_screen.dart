@@ -1,25 +1,28 @@
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
+import 'package:mfiles_app/screens/view_items_screen.dart';
 import 'package:provider/provider.dart';
+
 import '../services/mfiles_service.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../models/view_content_item.dart';
 
 class ViewDetailsScreen extends StatefulWidget {
-  final ViewItem view;
   const ViewDetailsScreen({super.key, required this.view});
+
+  final ViewItem view;
 
   @override
   State<ViewDetailsScreen> createState() => _ViewDetailsScreenState();
 }
 
 class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
+  String _filter = '';
   late Future<List<ViewContentItem>> _future;
-
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
-  String _filter = '';
 
   @override
   void didChangeDependencies() {
@@ -43,6 +46,31 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     });
   }
 
+  void _refreshThisView() {
+    setState(() {
+      _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
+    });
+  }
+
+  // Hide raw types completely, and never show "Group" / "MFFolderContentItemTypeViewFolder".
+  // For objects: show ObjectTypeName or ClassTypeName.
+  // For folders/groups: show nothing (null) OR a meaningful label if you ever add one.
+  String? _subtitleLabel(ViewContentItem item) {
+    if (item.isObject) {
+      final t = (item.objectTypeName ?? '').trim();
+      if (t.isNotEmpty) return t;
+      final c = (item.classTypeName ?? '').trim();
+      if (c.isNotEmpty) return c;
+      return null;
+    }
+
+    // ✅ FIX: Hide Group + ViewFolder tags in UI
+    if (item.isGroupFolder) return null;
+
+    // Hide any other raw backend type strings too
+    return null;
+  }
+
   List<ViewContentItem> _applyFilter(List<ViewContentItem> items) {
     final q = _filter.trim().toLowerCase();
     if (q.isEmpty) return items;
@@ -50,14 +78,203 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     return items.where((o) {
       final title = o.title.toLowerCase();
 
-      final typeLabel = o.isObject
-          ? ((o.objectTypeName?.isNotEmpty ?? false)
-              ? o.objectTypeName!
-              : (o.classTypeName ?? ''))
-          : (o.isGroupFolder ? 'group' : o.type);
+      // ✅ FIX: searching should not depend on raw type or "group"
+      final label = _subtitleLabel(o)?.toLowerCase() ?? '';
 
-      return title.contains(q) || typeLabel.toLowerCase().contains(q);
+      return title.contains(q) || label.contains(q);
     }).toList();
+  }
+
+  Widget _buildInViewSearchBar() {
+    return Container(
+      color: Colors.grey.shade50,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      child: TextField(
+        controller: _searchController,
+        decoration: InputDecoration(
+          hintText: 'Search in ${widget.view.name}...',
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color.fromRGBO(25, 76, 129, 1), width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          suffixIcon: _filter.isEmpty
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear),
+                  onPressed: () {
+                    setState(() {
+                      _filter = '';
+                      _searchController.clear();
+                    });
+                  },
+                ),
+        ),
+        onChanged: (v) => setState(() => _filter = v),
+      ),
+    );
+  }
+
+  Widget _buildRow(ViewContentItem item) {
+    final subtitle = _subtitleLabel(item);
+
+    // ✅ Keep folder icon for group folders, but don't show the "Group" tag text.
+    final icon = (item.isGroupFolder || item.isViewFolder)
+    ? Icons.folder_outlined
+    : Icons.description_outlined;
+
+
+    return InkWell(
+      onTap: () {
+        debugPrint('🧩 TAPPED ITEM');
+        debugPrint('type: ${item.type}');
+        debugPrint('id: ${item.id}');
+        debugPrint('viewId: ${item.viewId}');
+        debugPrint('propId: ${item.propId}');
+        debugPrint('propDatatype: ${item.propDatatype}');
+        debugPrint('isGroup: ${item.isGroupFolder}');
+        debugPrint('title: ${item.title}');
+
+        _handleTap(item);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+
+                  // ✅ FIX: Only render subtitle if we have a real label (no raw types, no "Group")
+                  if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _handleTap(ViewContentItem item) async {
+    if (item.isObject) {
+      final obj = ViewObject(
+        id: item.id,
+        title: item.title,
+        objectTypeId: item.objectTypeId,
+        classId: item.classId,
+        versionId: item.versionId,
+        objectTypeName: item.objectTypeName ?? '',
+        classTypeName: item.classTypeName ?? '',
+        displayId: item.displayId ?? '',
+        createdUtc: item.createdUtc,
+        lastModifiedUtc: item.lastModifiedUtc,
+      );
+
+      final deleted = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
+      );
+
+      if (deleted == true) _refreshThisView();
+      return;
+    }
+
+    if (item.isViewFolder) {
+      // For MFFolderContentItemTypeViewFolder, child view id is item.id (confirmed: Staff -> id=117)
+      final childViewId = item.id;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ViewDetailsScreen(
+            view: ViewItem(
+              id: childViewId,
+              name: item.title,
+              count: 0,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (item.isGroupFolder) {
+      final propId = item.propId;
+      final propDatatype = item.propDatatype;
+
+      if (propId == null || propId.trim().isEmpty || propDatatype == null || propDatatype.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('There are no items in this view.')),
+        );
+        return;
+      }
+
+      final svc = context.read<MFilesService>();
+      final vid = (item.viewId > 0) ? item.viewId : widget.view.id;
+
+      try {
+        final items = await svc.fetchViewPropItems(
+          viewId: vid,
+          filters: [GroupFilter(propId: propId, propDatatype: propDatatype)],
+        );
+
+        if (!context.mounted) return;
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ViewItemsScreen(
+              title: item.title,
+              items: items,
+              parentViewId: vid,
+              filters: [GroupFilter(propId: propId, propDatatype: propDatatype)],
+              ),
+          ),
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+      return;
+    }
+ 
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Unsupported item type')),
+    );
   }
 
   @override
@@ -69,11 +286,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         titleSpacing: 12,
-        title: Text(
-          widget.view.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(widget.view.name, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: Icon(_showSearch ? Icons.close : Icons.search),
@@ -109,11 +322,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
                 return RefreshIndicator(
                   onRefresh: () async {
-                    setState(() {
-                      _future = context
-                          .read<MFilesService>()
-                          .fetchObjectsInViewRaw(widget.view.id);
-                    });
+                    _refreshThisView();
                     await _future;
                   },
                   child: ListView.separated(
@@ -121,10 +330,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     padding: const EdgeInsets.all(16),
                     itemCount: filtered.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) {
-                      final item = filtered[i];
-                      return _buildRow(item);
-                    },
+                    itemBuilder: (context, i) => _buildRow(filtered[i]),
                   ),
                 );
               },
@@ -134,177 +340,26 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       ),
     );
   }
-
-  Widget _buildInViewSearchBar() {
-    return Container(
-      color: Colors.grey.shade50,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search in ${widget.view.name}...',
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(
-              color: Color.fromRGBO(25, 76, 129, 1),
-              width: 2,
-            ),
-          ),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          suffixIcon: _filter.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    setState(() {
-                      _filter = '';
-                      _searchController.clear();
-                    });
-                  },
-                ),
-        ),
-        onChanged: (v) => setState(() => _filter = v),
-      ),
-    );
-  }
-
-  Widget _buildRow(ViewContentItem item) {
-    final subtitle = item.isObject
-        ? ((item.objectTypeName?.isNotEmpty ?? false)
-            ? item.objectTypeName!
-            : (item.classTypeName ?? ''))
-        : (item.isGroupFolder
-            ? 'Group'
-            : item.type);
-
-    final icon = item.isGroupFolder ? Icons.folder_outlined : Icons.description_outlined;
-
-    return InkWell(
-      onTap: () => _handleTap(item),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _handleTap(ViewContentItem item) async {
-    if (item.isObject) {
-      // Convert raw item -> ViewObject for ObjectDetailsScreen
-      final obj = ViewObject(
-        id: item.id,
-        title: item.title,
-        objectTypeId: item.objectTypeId,
-        classId: item.classId,
-        versionId: item.versionId,
-        objectTypeName: item.objectTypeName ?? '',
-        classTypeName: item.classTypeName ?? '',
-        displayId: item.displayId ?? '',
-        createdUtc: item.createdUtc,
-        lastModifiedUtc: item.lastModifiedUtc,
-      );
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
-      );
-      return;
-    }
-
-    if (item.isGroupFolder) {
-      final propId = item.propId;
-      final propDatatype = item.propDatatype;
-
-      if (propId == null || propDatatype == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cannot drill down: missing group metadata')),
-        );
-        return;
-      }
-
-      final svc = context.read<MFilesService>();
-      final vid = (item.viewId > 0) ? item.viewId : widget.view.id;
-
-      List<ViewObject> objects;
-        try {
-          objects = await svc.fetchViewPropObjects(
-            viewId: vid,
-            propId: propId,
-            propDatatype: propDatatype,
-            value: item.title,
-          );
-        } catch (e) {
-          if (!context.mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(e.toString())),
-          );
-          return;
-        }
-
-      if (!context.mounted) return;
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => _ObjectsListScreen(title: item.title, objects: objects),
-        ),
-      );
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Unsupported item type: ${item.type}')),
-    );
-  }
 }
 
-class _ObjectsListScreen extends StatelessWidget {
-  final String title;
-  final List<ViewObject> objects;
-
+class _ObjectsListScreen extends StatefulWidget {
   const _ObjectsListScreen({required this.title, required this.objects});
+
+  final List<ViewObject> objects;
+  final String title;
+
+  @override
+  State<_ObjectsListScreen> createState() => _ObjectsListScreenState();
+}
+
+class _ObjectsListScreenState extends State<_ObjectsListScreen> {
+  late List<ViewObject> _objects;
+
+  @override
+  void initState() {
+    super.initState();
+    _objects = List<ViewObject>.from(widget.objects);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -314,22 +369,28 @@ class _ObjectsListScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF072F5F),
         foregroundColor: Colors.white,
         titleSpacing: 12,
-        title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
-      body: objects.isEmpty
+      body: _objects.isEmpty
           ? const Center(child: Text('No objects found'))
           : ListView.separated(
               padding: const EdgeInsets.all(16),
-              itemCount: objects.length,
+              itemCount: _objects.length,
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemBuilder: (context, i) {
-                final obj = objects[i];
+                final obj = _objects[i];
                 return InkWell(
-                  onTap: () {
-                    Navigator.push(
+                  onTap: () async {
+                    final deleted = await Navigator.push<bool>(
                       context,
                       MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
                     );
+
+                    if (deleted == true && mounted) {
+                      setState(() {
+                        _objects.removeWhere((x) => x.id == obj.id);
+                      });
+                    }
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -339,8 +400,7 @@ class _ObjectsListScreen extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.description_outlined,
-                            size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+                        const Icon(Icons.description_outlined, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -350,8 +410,7 @@ class _ObjectsListScreen extends StatelessWidget {
                                 obj.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 14, fontWeight: FontWeight.w600),
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                               ),
                               const SizedBox(height: 2),
                               Text(
