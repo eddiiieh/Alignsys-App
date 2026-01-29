@@ -29,6 +29,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
 
+  List<ViewItem> _sortedViews(List<ViewItem> items) {
+    final copy = List<ViewItem>.from(items);
+    copy.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return copy;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -40,13 +46,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _loadInitialData() async {
-    final service = context.read<MFilesService>();
-    await service.fetchObjectTypes();
-    await service.fetchAllViews();
-    await service.fetchRecentObjects();
-  }
+  final service = context.read<MFilesService>();
 
-  void _onTabChanged(int index) {
+  // ✅ Ensure M-Files user id is available for vault-scoped endpoints
+  await service.fetchMFilesUserId();
+
+  await service.fetchObjectTypes();
+  await service.fetchAllViews();
+  await service.fetchRecentObjects();
+}
+
+    void _onTabChanged(int index) {
     final service = context.read<MFilesService>();
     final tab = tabs[index];
     service.setActiveTab(tab);
@@ -270,46 +280,49 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // HOME TAB
   // -----------------------------
   Widget _buildHomeTab() {
-    return Consumer<MFilesService>(
-      builder: (context, service, _) {
-        if (service.isLoading && service.allViews.isEmpty) {
-          return const Center(child: CircularProgressIndicator());
-        }
+  return Consumer<MFilesService>(
+    builder: (context, service, _) {
+      if (service.isLoading && service.allViews.isEmpty) {
+        return const Center(child: CircularProgressIndicator());
+      }
 
-        if (service.error != null && service.allViews.isEmpty) {
-          return Center(child: Text(service.error!));
-        }
+      if (service.error != null && service.allViews.isEmpty) {
+        return Center(child: Text(service.error!));
+      }
 
-        return RefreshIndicator(
-          onRefresh: service.fetchAllViews,
-          child: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-            children: [
-              _buildSection(
-                title: 'Common Views',
-                count: service.commonViews.length,
-                expanded: _commonExpanded,
-                onToggle: () => setState(() => _commonExpanded = !_commonExpanded),
-                items: service.commonViews,
-                emptyText: 'No common views',
-                leadingIcon: Icons.star,
-              ),
-              const SizedBox(height: 10),
-              _buildSection(
-                title: 'Other Views',
-                count: service.otherViews.length,
-                expanded: _otherExpanded,
-                onToggle: () => setState(() => _otherExpanded = !_otherExpanded),
-                items: service.otherViews,
-                emptyText: 'No views available',
-                leadingIcon: Icons.folder_outlined,
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+      final commonSorted = _sortedViews(service.commonViews);
+      final otherSorted = _sortedViews(service.otherViews);
+
+      return RefreshIndicator(
+        onRefresh: service.fetchAllViews,
+        child: ListView(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+          children: [
+            _buildSection(
+              title: 'Common Views',
+              count: commonSorted.length,
+              expanded: _commonExpanded,
+              onToggle: () => setState(() => _commonExpanded = !_commonExpanded),
+              items: commonSorted,
+              emptyText: 'No common views',
+              leadingIcon: Icons.star,
+            ),
+            const SizedBox(height: 10),
+            _buildSection(
+              title: 'Other Views',
+              count: otherSorted.length,
+              expanded: _otherExpanded,
+              onToggle: () => setState(() => _otherExpanded = !_otherExpanded),
+              items: otherSorted,
+              emptyText: 'No views available',
+              leadingIcon: Icons.folder_outlined,
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildSection({
     required String title,
@@ -438,12 +451,13 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // -----------------------------
   Widget _buildRecentTab() {
     return _buildObjectList(
-      selector: (s) => s.recentObjects,
+      selector: (s) => _searchQuery.isNotEmpty ? s.searchResults : s.recentObjects,
       emptyIcon: Icons.history,
-      emptyText: 'No recent objects',
-      onRefresh: (s) => s.fetchRecentObjects(),
+      emptyText: _searchQuery.isNotEmpty ? 'No results' : 'No recent objects',
+      onRefresh: (s) => _searchQuery.isNotEmpty ? s.searchVault(_searchQuery) : s.fetchRecentObjects(),
     );
   }
+
 
   Widget _buildAssignedTab() {
     return _buildObjectList(
@@ -518,59 +532,66 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   // UPDATED: show Name + Date Modified (remove type line)
   // UPDATED: show Name + (ObjectType | Last Modified) when type exists
-Widget _buildCompactObjectRow(ViewObject obj) {
-  final type = obj.objectTypeName.trim(); // e.g. "Assignment"
-  final modified = _formatModified(obj.lastModifiedUtc);
+  Widget _buildCompactObjectRow(ViewObject obj) {
+    final type = obj.objectTypeName.trim(); // e.g. "Assignment"
+    final modified = _formatModified(obj.lastModifiedUtc);
 
-  final subtitle = type.isEmpty
-      ? 'Modified: $modified'
-      : '$type | $modified';
+    final subtitle = type.isEmpty
+        ? 'Modified: $modified'
+        : '$type | $modified';
 
-  return InkWell(
-    onTap: () {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
-      );
-    },
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.description_outlined, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  obj.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle, // <-- changed line
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
+    return InkWell(
+      onTap: () async {
+        final deleted = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ObjectDetailsScreen(obj: obj),
           ),
-          const SizedBox(width: 8),
-          Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-        ],
+        );
+
+        if (deleted == true) {
+          await context.read<MFilesService>().fetchRecentObjects();
+        }
+      },
+
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.description_outlined, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    obj.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle, // <-- changed line
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 
 
   Future<void> _executeSearch() async {

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -38,7 +37,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
   bool _isLoadingClasses = false;
 
-  // Date formats required by your API/web client behavior
   static final DateFormat _apiDateFmt = DateFormat('yyyy-MM-dd');
   static final DateFormat _uiDateFmt = DateFormat('dd MMM yyyy');
   static final DateFormat _uiTimeFmt = DateFormat('HH:mm');
@@ -61,7 +59,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     });
   }
 
-  // ---------- UI helpers (match ObjectDetails structure) ----------
   Widget _card({required Widget child}) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -74,25 +71,19 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
   }
 
-  // ✅ Label widget that adds a red asterisk for required fields
   Widget _labelWithRequired(String label, bool required) {
     if (!required) return Text(label);
-
     return RichText(
       text: TextSpan(
         text: label,
         style: const TextStyle(color: Colors.black87),
         children: const [
-          TextSpan(
-            text: ' *',
-            style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
-          ),
+          TextSpan(text: ' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 
-  // ✅ Updated to support required asterisk
   InputDecoration _deco(String label, {String? helper, bool required = false}) {
     return InputDecoration(
       label: _labelWithRequired(label, required),
@@ -121,7 +112,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
   }
 
-  // Dropdown-looking shell for Lookup/MultiSelectLookup (no new endpoint required)
   Widget _dropdownShell({
     required String label,
     required bool required,
@@ -132,15 +122,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ✅ required asterisk here too
         RichText(
           text: TextSpan(
             text: label,
             style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
             children: required
-                ? const [
-                    TextSpan(text: ' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800)),
-                  ]
+                ? const [TextSpan(text: ' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800))]
                 : const [],
           ),
         ),
@@ -163,10 +150,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 padding: const EdgeInsets.only(right: 10),
                 child: Row(
                   children: [
-                    Text(
-                      hasValue ? valueText : '',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    ),
+                    Text(valueText, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
                     const SizedBox(width: 4),
                   ],
                 ),
@@ -179,7 +163,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
   }
 
-  // ---------- Class selection ----------
   Future<void> _onClassSelected(ObjectClass? objectClass) async {
     if (objectClass == null) return;
 
@@ -190,13 +173,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       _selectedFileName = null;
     });
 
-    await context.read<MFilesService>().fetchClassProperties(
-          widget.objectType.id,
-          objectClass.id,
-        );
+    await context.read<MFilesService>().fetchClassProperties(widget.objectType.id, objectClass.id);
   }
 
-  // ---------- File ----------
   Future<void> _pickFile() async {
     final result = await FilePicker.platform.pickFiles();
     if (result == null) return;
@@ -207,7 +186,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     });
   }
 
-  // ---------- Date/Time ----------
   DateTime _safeParseDateOnly(String yyyyMmDd) => DateTime.parse('${yyyyMmDd}T00:00:00');
 
   Future<void> _pickDate(ClassProperty property) async {
@@ -283,7 +261,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       onTap: () => _pickDate(p),
       borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
-        decoration: _deco(p.title, required: p.isRequired), // ✅ asterisk here
+        decoration: _deco(p.title, required: p.isRequired),
         child: Row(
           children: [
             Expanded(
@@ -307,7 +285,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       onTap: () => _pickTime(p),
       borderRadius: BorderRadius.circular(12),
       child: InputDecorator(
-        decoration: _deco(p.title, required: p.isRequired), // ✅ asterisk here
+        decoration: _deco(p.title, required: p.isRequired),
         child: Row(
           children: [
             Expanded(
@@ -323,7 +301,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
   }
 
-  // ---------- Fields ----------
   Widget _buildField(ClassProperty property) {
     switch (property.propertyType) {
       case 'MFDatatypeLookup':
@@ -369,7 +346,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       case 'MFDatatypeText':
         return TextFormField(
-          decoration: _deco(property.title, required: property.isRequired), // ✅
+          decoration: _deco(property.title, required: property.isRequired),
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
             return null;
@@ -379,7 +356,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       case 'MFDatatypeMultiLineText':
         return TextFormField(
-          decoration: _deco(property.title, required: property.isRequired), // ✅
+          decoration: _deco(property.title, required: property.isRequired),
           maxLines: 4,
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
@@ -390,7 +367,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       case 'MFDatatypeInteger':
         return TextFormField(
-          decoration: _deco(property.title, required: property.isRequired), // ✅
+          decoration: _deco(property.title, required: property.isRequired),
           keyboardType: TextInputType.number,
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
@@ -412,7 +389,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
         return DropdownButtonFormField<bool>(
           value: currentBool,
-          decoration: _deco(property.title, required: property.isRequired), // ✅
+          decoration: _deco(property.title, required: property.isRequired),
           icon: const Icon(Icons.keyboard_arrow_down),
           items: const [
             DropdownMenuItem(value: true, child: Text('Yes')),
@@ -427,7 +404,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       default:
         return TextFormField(
-          decoration: _deco(property.title, required: property.isRequired), // ✅
+          decoration: _deco(property.title, required: property.isRequired),
           validator: (value) {
             if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
             return null;
@@ -437,7 +414,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     }
   }
 
-  // ---------- Submit ----------
   Future<void> _submitForm() async {
     if (_selectedClass == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -450,7 +426,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
     final service = context.read<MFilesService>();
 
-    // Manual required check for lookup fields (since LookupField isn't a FormField)
+    // manual required check for lookup fields
     for (final prop in service.classProperties.where((p) => !p.isHidden && !p.isAutomatic)) {
       if (!prop.isRequired) continue;
 
@@ -470,7 +446,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       }
     }
 
-    // Required file check for document objects
     String? uploadId;
     if (widget.objectType.isDocument) {
       if (_selectedFile == null) {
@@ -488,9 +463,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       }
     }
 
-    final List<PropertyValueRequest> properties = [];
+    final properties = <PropertyValueRequest>[];
 
-    // Add Class property ONLY if the class exposes it (propId 100)
     final hasClassProperty = service.classProperties.any((p) => p.id == 100);
     if (hasClassProperty) {
       properties.add(
@@ -525,7 +499,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       );
     }
 
-    // Add Name/Title (propId 0) ONLY if this class exposes it
     final classHasTitleProp = service.classProperties.any((p) => p.id == 0);
     final hasTitleInPayload = properties.any((p) => p.propId == 0);
 
@@ -545,8 +518,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       objectTypeID: widget.objectType.id,
       classID: _selectedClass!.id,
       properties: properties,
-      vaultGuid: service.vaultGuid,
-      userID: service.mfilesUserId ?? 0,
+      vaultGuid: service.vaultGuidWithBraces, // ✅ updated
+      userID: service.currentUserId, // ✅ updated
       uploadId: uploadId,
     );
 
@@ -570,7 +543,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     }
   }
 
-  // ---------- Screen ----------
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -646,7 +618,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                       else
                         DropdownButtonFormField<int>(
                           value: _selectedClass?.id,
-                          decoration: _deco('Class'), // (class selection not marked required)
+                          decoration: _deco('Class'),
                           icon: const Icon(Icons.keyboard_arrow_down),
                           isExpanded: true,
                           items: objectClasses
