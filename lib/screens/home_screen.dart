@@ -8,6 +8,8 @@ import '../services/mfiles_service.dart';
 import '../models/vault.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
+import '../widgets/relationships_dropdown.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -533,65 +535,75 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // UPDATED: show Name + Date Modified (remove type line)
   // UPDATED: show Name + (ObjectType | Last Modified) when type exists
   Widget _buildCompactObjectRow(ViewObject obj) {
-    final type = obj.objectTypeName.trim(); // e.g. "Assignment"
+    final type = obj.objectTypeName.trim();
     final modified = _formatModified(obj.lastModifiedUtc);
+    final subtitle = type.isEmpty ? 'Modified: $modified' : '$type | $modified';
 
-    final subtitle = type.isEmpty
-        ? 'Modified: $modified'
-        : '$type | $modified';
+    final canExpand = obj.id != 0 && obj.objectTypeId != 0 && obj.classId != 0;
 
-    return InkWell(
-      onTap: () async {
-        final deleted = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ObjectDetailsScreen(obj: obj),
-          ),
-        );
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          onExpansionChanged: (expanded) {
+            if (!canExpand) return; // no-op
+          },
+          trailing: canExpand
+              ? const Icon(Icons.expand_more, size: 18)
+              : const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+          title: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () async {
+              final deleted = await Navigator.push<bool>(
+                context,
+                MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
+              );
 
-        if (deleted == true) {
-          await context.read<MFilesService>().fetchRecentObjects();
-        }
-      },
-
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.description_outlined, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    obj.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              if (deleted == true) {
+                await context.read<MFilesService>().fetchRecentObjects();
+              }
+            },
+            child: Row(
+              children: [
+                const Icon(Icons.description_outlined,
+                    size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        obj.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle, // <-- changed line
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-          ],
+          ),
+          children: canExpand ? [RelationshipsDropdown(obj: obj)] : const [],
         ),
       ),
     );
   }
+
 
 
   Future<void> _executeSearch() async {
