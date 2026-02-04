@@ -5,7 +5,6 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:mfiles_app/models/group_filter.dart';
-import 'package:mfiles_app/models/linked_object_item.dart';
 import 'package:mfiles_app/models/view_content_item.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart';
@@ -1159,48 +1158,7 @@ class MFilesService extends ChangeNotifier {
 
       return WorkflowDefinition.fromJson(json.decode(resp.body));
     }
-
-   // NEW: linked objects for an object
-   Future<List<LinkedObjectsGroup>> fetchLinkedObjects({
-    required String vaultGuid,
-    required int objectTypeId,
-    required int objectId,
-    required int classId,
-    required int userId,
-    }) async {
-      final uri = Uri.parse(
-        '$baseUrl/api/objectinstance/LinkedObjects/$vaultGuid/$objectTypeId/$objectId/$classId/$userId',
-      );
-
-    final res = await http.get(uri, headers: _authHeadersNoJson);
-
-      // ✅ No relationships is not an error
-      if (res.statusCode == 404 || res.statusCode == 204) {
-        return <LinkedObjectsGroup>[];
-      }
-
-      if (res.statusCode != 200) {
-        throw Exception('LinkedObjects failed ${res.statusCode}: ${res.body}');
-      }
-
-      // some APIs return 200 with empty string
-      if (res.body.trim().isEmpty) return <LinkedObjectsGroup>[];
-
-      final decoded = jsonDecode(res.body);
-
-      // handle either [] or { items: [] }
-      final List list = decoded is List
-          ? decoded
-          : (decoded is Map && decoded['items'] is List)
-              ? decoded['items'] as List
-              : <dynamic>[];
-
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map(LinkedObjectsGroup.fromJson)
-          .toList();
-    }
-  }
+   }
 
 
 

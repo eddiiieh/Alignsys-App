@@ -8,7 +8,6 @@ import '../services/mfiles_service.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../models/view_content_item.dart';
-import '../widgets/relationships_dropdown.dart';
 
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({super.key, required this.view});
@@ -129,97 +128,66 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   Widget _buildRow(ViewContentItem item) {
     final subtitle = _subtitleLabel(item);
 
-    final icon =
-        (item.isGroupFolder || item.isViewFolder)
-            ? Icons.folder_outlined
-            : Icons.description_outlined;
+    // ✅ Keep folder icon for group folders, but don't show the "Group" tag text.
+    final icon = (item.isGroupFolder || item.isViewFolder)
+    ? Icons.folder_outlined
+    : Icons.description_outlined;
 
-    // Only objects can have relationships
-    final bool canExpand = item.isObject && item.id != 0 && item.objectTypeId != 0 && item.classId != 0;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          enabled: true,
-          trailing: canExpand
-              ? const Icon(Icons.expand_more, size: 18)
-              : const Icon(Icons.chevron_right, size: 18),
+    return InkWell(
+      onTap: () {
+        debugPrint('🧩 TAPPED ITEM');
+        debugPrint('type: ${item.type}');
+        debugPrint('id: ${item.id}');
+        debugPrint('viewId: ${item.viewId}');
+        debugPrint('propId: ${item.propId}');
+        debugPrint('propDatatype: ${item.propDatatype}');
+        debugPrint('isGroup: ${item.isGroupFolder}');
+        debugPrint('title: ${item.title}');
 
-          title: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _handleTap(item),
-          child: Row(
-            children: [
-              Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
+        _handleTap(item);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
+
+                  // ✅ FIX: Only render subtitle if we have a real label (no raw types, no "Group")
+                  if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                    const SizedBox(height: 2),
                     Text(
-                      item.title,
+                      subtitle,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                     ),
-                    if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
-            ],
-          )
-          ),
-
-          // 👉 THIS is the relationships dropdown
-          children: canExpand
-              ? [
-                  RelationshipsDropdown(
-                    obj: ViewObject(
-                      id: item.id,
-                      title: item.title,
-                      objectTypeId: item.objectTypeId,
-                      classId: item.classId,
-                      versionId: item.versionId,
-                      objectTypeName: item.objectTypeName ?? '',
-                      classTypeName: item.classTypeName ?? '',
-                      displayId: item.displayId ?? '',
-                      createdUtc: item.createdUtc,
-                      lastModifiedUtc: item.lastModifiedUtc,
-                    ),
-                  ),
-                ]
-              : const [],
-
-          // Tap on header still opens object / folder
-          onExpansionChanged: (expanded) {
-            if (!expanded) return;
-
-            // Expand shows relationships only
-            // Actual navigation remains explicit:
-          },
-
-          // Tap on title area opens item
-          // (ExpansionTile does not expose onTap, so wrap title)
+            ),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+          ],
         ),
       ),
     );
   }
-
 
   Future<void> _handleTap(ViewContentItem item) async {
     if (item.isObject) {
