@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
 import '../models/view_object.dart';
 import '../models/object_file.dart';
+import '../models/object_comment.dart';
 import '../widgets/lookup_field.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
@@ -33,7 +34,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _downloading = false;
 
   bool _booted = false;
-
   bool _headerDetailsExpanded = false;
 
   String _title = '';
@@ -43,35 +43,33 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   static const Set<int> _excludeMetaPropIds = {100}; // Class
   final Map<int, _PropVm> _dirty = {};
 
+  //Comments
+  late Future<List<ObjectComment>> _commentsFuture;
+  final TextEditingController _commentCtrl = TextEditingController();
+  bool _postingComment = false;
+
   @override
   void initState() {
     super.initState();
     _title = widget.obj.title;
+
+    //Comments
+    _commentsFuture = _loadComments();
+
+    // ✅ Initialize futures immediately so build() never sees uninitialized late fields.
+    _future = _loadProps();
+    _filesFuture = _loadFiles();
+    _workflowFuture = _loadWorkflow();
+    _workflowsFuture = _loadWorkflowsForThisObject();
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_booted) return;
-    _booted = true;
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      setState(() {
-        _future = _loadProps();
-        _filesFuture = _loadFiles();
-        _workflowFuture = _loadWorkflow();
-        _workflowsFuture = _loadWorkflowsForThisObject();
-      });
-    });
+  void dispose() {
+    _commentCtrl.dispose();
+    super.dispose();
   }
 
-  // -----------------------------
-  // WORKFLOW: Initial state resolver (based on your provided workflow JSON)
-  // -----------------------------
   int _initialStateForWorkflow(int workflowId) {
-    // From your JSON:
-    // workflowId 101 -> first state is stateId 101 ("Contract Manage Approval")
     const map = <int, int>{
       101: 101,
     };
@@ -379,7 +377,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
           ),
           const SizedBox(height: 10),
-
           FutureBuilder<List<WorkflowOption>>(
             future: _workflowsFuture,
             builder: (context, snap) {
@@ -446,14 +443,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 stateId: initialStateId,
                               );
 
-                              if (!ok) {
-                                throw Exception(svc.error ?? 'Unknown');
-                              }
+                              if (!ok) throw Exception(svc.error ?? 'Unknown');
 
                               if (!mounted) return;
                               setState(() {
                                 _workflowFuture = _loadWorkflow();
-                                _future = _loadProps(); // permissions/props may change after assignment
+                                _future = _loadProps();
                               });
                             } catch (e) {
                               if (!mounted) return;
@@ -483,10 +478,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       ),
     );
   }
-
-  // -----------------------------
-  // Rest of your file unchanged
-  // -----------------------------
 
   Future<void> _save(List<_PropVm> current) async {
     if (_saving) return;
@@ -595,6 +586,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         titleSpacing: 12,
         title: Text(_title.isEmpty ? obj.title : _title, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          // Edit / Close
           IconButton(
             onPressed: (_saving || _downloading || _changingWorkflow)
                 ? null
@@ -606,27 +598,32 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   },
             icon: Icon(_editMode ? Icons.close : Icons.edit),
           ),
-          FutureBuilder<List<_PropVm>>(
-            future: _future,
-            builder: (context, snap) {
-              final props = snap.data;
-              final canSave = _editMode && !_saving && _dirty.isNotEmpty && props != null;
 
-              return IconButton(
-                onPressed: canSave ? () => _save(props!) : null,
-                icon: _saving
-                    ? const SizedBox(
-                        height: 18,
-                        width: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.check),
-              );
-            },
-          ),
+          // ✅ Only show Tick when editing
+          if (_editMode)
+            FutureBuilder<List<_PropVm>>(
+              future: _future,
+              builder: (context, snap) {
+                final props = snap.data;
+                final canSave = _editMode && !_saving && _dirty.isNotEmpty && props != null;
+
+                return IconButton(
+                  onPressed: canSave ? () => _save(props!) : null,
+                  icon: _saving
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.5,
+                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Icon(Icons.check),
+                );
+              },
+            ),
+
+          // Delete
           IconButton(
             onPressed: (_saving || _downloading || _changingWorkflow) ? null : _confirmAndDelete,
             icon: const Icon(Icons.delete_outline),
@@ -653,6 +650,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 _future = _loadProps();
                 _filesFuture = _loadFiles();
                 _workflowFuture = _loadWorkflow();
+                _commentsFuture = _loadComments();
                 _dirty.clear();
                 _editMode = false;
               });
@@ -682,7 +680,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 const SizedBox(height: 12),
                 _previewCard(obj),
                 const SizedBox(height: 12),
-                _permissionsCard(obj),
+                //_permissionsCard(obj),
+                _commentsCard(),
+                const SizedBox(height: 12),
               ],
             ),
           );
@@ -690,6 +690,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       ),
     );
   }
+
+  // --- everything below unchanged (your existing methods) ---
+  // _headerCard, _metadataCard, _propField, _previewCard, _permissionsCard, _kv, _PropVm ...
 
   Widget _headerCard(ViewObject obj) {
     return Container(
@@ -870,6 +873,44 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
+  Future<void> _openFileFromPreview(ViewObject obj, ObjectFile f) async {
+    final displayIdInt = int.tryParse(obj.displayId);
+    if (displayIdInt == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid object display ID: ${obj.displayId}'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _downloading = true);
+    try {
+      final svc = context.read<MFilesService>();
+      await svc.downloadAndOpenFile(
+        displayObjectId: displayIdInt,
+        classId: obj.classId,
+        fileId: f.fileId,
+        fileTitle: f.fileTitle,
+        extension: f.extension,
+        reportGuid: f.reportGuid,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Open failed: $e'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+
   Widget _previewCard(ViewObject obj) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -944,6 +985,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+
+                      // tap anywhere on the row opens the document
+                      onTap: (_saving || _downloading || _changingWorkflow) ? null : () => _openFileFromPreview(obj, f),
+
                       trailing: PopupMenuButton<String>(
                         onSelected: (action) async {
                           // IMPORTANT: your download endpoints require displayObjectId as int.
@@ -1022,8 +1067,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
-
-  Widget _permissionsCard(ViewObject obj) {
+  /*... Widget _permissionsCard(ViewObject obj) {
     final p = obj.userPermission;
 
     if (p == null) {
@@ -1078,7 +1122,168 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         ],
       ),
     );
+  } ...*/
+
+  Future<List<ObjectComment>> _loadComments() async {
+    final svc = context.read<MFilesService>();
+    return svc.fetchComments(
+      objectId: widget.obj.id,
+      objectTypeId: widget.obj.objectTypeId,
+      vaultGuid: svc.vaultGuidWithBraces,
+    );
   }
+
+  Future<void> _submitComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
+    if (_postingComment) return;
+
+    setState(() => _postingComment = true);
+    try {
+      final svc = context.read<MFilesService>();
+      final ok = await svc.postComment(
+        comment: text,
+        objectId: widget.obj.id,
+        objectTypeId: widget.obj.objectTypeId,
+        vaultGuid: svc.vaultGuidWithBraces,
+      );
+
+      if (!ok) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Comment failed: ${svc.error ?? 'Unknown error'}'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+        return;
+      }
+
+      _commentCtrl.clear();
+      if (!mounted) return;
+      setState(() {
+        _commentsFuture = _loadComments();
+      });
+    } finally {
+      if (mounted) setState(() => _postingComment = false);
+    }
+  }
+
+  String _fmtCommentDate(DateTime? dt) {
+  if (dt == null) return '';
+  // Keep simple; you can switch to intl DateFormat if you want.
+  return dt.toLocal().toString();
+}
+
+  Widget _commentsCard() {
+    final disabled = _saving || _downloading || _changingWorkflow || _assigningWorkflow;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Comments', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              ),
+              if (_postingComment)
+                const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // List
+          FutureBuilder<List<ObjectComment>>(
+            future: _commentsFuture,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: LinearProgressIndicator(minHeight: 2),
+                );
+              }
+              if (snap.hasError) {
+                return Text(
+                  'Failed to load comments: ${snap.error}',
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                );
+              }
+
+              final items = snap.data ?? [];
+              if (items.isEmpty) {
+                return Text(
+                  'No comments yet.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                );
+              }
+
+              return Column(
+                children: items.map((c) {
+                  final dateText = _fmtCommentDate(c.modifiedDate);
+                  return Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(c.text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                        if (dateText.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(dateText, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+                        ],
+                      ],
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+
+          const SizedBox(height: 10),
+
+          // Composer
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _commentCtrl,
+                  enabled: !disabled && !_postingComment,
+                  minLines: 1,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Write a comment…',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                onPressed: (disabled || _postingComment) ? null : _submitComment,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF072F5F),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  elevation: 0,
+                ),
+                child: const Text('Post'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
 
 
   Widget _kv(String k, String v) {
@@ -1099,7 +1304,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 class _PropVm {
   final int id;
   final String name;
-  final String datatype; // MFDatatype*
+  final String datatype;
   final dynamic value;
   final dynamic editedValue;
 
@@ -1139,7 +1344,6 @@ class _PropVm {
         'MFDatatypeText';
 
     final datatype = rawDatatype.replaceAll('MFDataType', 'MFDatatype');
-
     final value = m.containsKey('value') ? m['value'] : (m['displayValue'] ?? '');
 
     return _PropVm(id: id, name: name, datatype: datatype, value: value);

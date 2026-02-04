@@ -20,6 +20,7 @@ import '../models/vault.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../models/object_file.dart';
+import '../models/object_comment.dart';
 
 class MFilesService extends ChangeNotifier {
   // Auth
@@ -700,13 +701,160 @@ class MFilesService extends ChangeNotifier {
     return data.map((e) => ObjectFile.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  Object? _pickAnyKeyCI(Map m, String key) {
+    final target = key.trim().toLowerCase();
+
+    // Build normalized -> actualKey map using key.toString()
+    for (final k in m.keys) {
+      final norm = k.toString().trim().toLowerCase();
+      if (norm == target) return m[k];
+    }
+
+    return null;
+  }
+
+  String? _extractStringByKeysCI(Map m, List<String> keys) {
+    for (final k in keys) {
+      final v = _pickAnyKeyCI(m, k);
+      if (v is String && v.trim().isNotEmpty) return v;
+    }
+    return null;
+  }
+
+  String? _extractBase64Flexible(Map m) {
+    final v = _pickAnyKeyCI(m, 'base64');
+
+    // Most common: base64 is a String
+    if (v is String) return v;
+
+    // Sometimes: { base64: { value: "..." } } or similar
+    if (v is Map) {
+      final nested = _extractStringByKeysCI(v, ['value', 'data', 'content', 'base64']);
+      if (nested != null) return nested;
+    }
+
+    // Sometimes: base64 is a list of strings/chunks
+    if (v is List) {
+      final parts = v.whereType<String>().toList();
+      if (parts.isNotEmpty) return parts.join();
+    }
+
+    // Last resort: recursively search the whole JSON for a base64-looking string
+    return _deepFindBase64(m);
+  }
+
+  String? _deepFindBase64(dynamic node) {
+    if (node is String) {
+      final s = node.trim();
+      // heuristic: long-ish and base64-ish
+      final looks =
+          s.length > 100 && RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(s);
+      return looks ? s : null;
+    }
+
+    if (node is List) {
+      for (final x in node) {
+        final found = _deepFindBase64(x);
+        if (found != null) return found;
+      }
+    }
+
+    if (node is Map) {
+      // if any key is base64-like, prioritize it
+      for (final e in node.entries) {
+        if (e.key is String && (e.key as String).trim().toLowerCase() == 'base64') {
+          final found = _deepFindBase64(e.value);
+          if (found != null) return found;
+        }
+      }
+      // otherwise search everything
+      for (final e in node.entries) {
+        final found = _deepFindBase64(e.value);
+        if (found != null) return found;
+      }
+    }
+
+    return null;
+  }
+
+
   Future<({List<int> bytes, String? contentType})> _getBytes(Uri url) async {
     final resp = await http.get(url, headers: _authHeadersNoJson);
+
     if (resp.statusCode != 200) {
       throw Exception('${resp.statusCode} ${resp.body}');
     }
-    return (bytes: resp.bodyBytes, contentType: resp.headers['content-type']);
+
+    final contentType = resp.headers['content-type'];
+    final bodyBytes = resp.bodyBytes;
+
+    // If server returns a JSON wrapper, decode base64 from it.
+    final isJson = (contentType?.toLowerCase().contains('application/json') ?? false) ||
+        _looksLikeJson(bodyBytes);
+
+    if (isJson) {
+      final text = utf8.decode(bodyBytes);
+      final dynamic j = jsonDecode(text);
+
+      if (j is! Map) {
+        throw Exception('JSON returned but not an object.');
+      }
+
+      // Case-insensitive base64 extraction + tolerate different shapes.
+      final base64Value = _extractBase64Flexible(j);
+
+      if (base64Value == null || base64Value.trim().isEmpty) {
+        final base64Field = _pickAnyKeyCI(j, 'base64');
+        throw Exception(
+          'JSON returned but base64 not extractable. '
+          'base64Type=${base64Field?.runtimeType} keys=${j.keys.toList()}',
+        );
+      }
+
+      final cleaned = base64Value.contains(',')
+          ? base64Value.split(',').last.trim()
+          : base64Value.trim();
+
+      final decoded = base64Decode(cleaned);
+      final ctFromJson = _extractStringByKeysCI(j, ['contentType', 'content-type', 'mime', 'mimeType']);
+      return (bytes: decoded, contentType: ctFromJson);
+    }
+
+    // Otherwise it's raw bytes already.
+    return (bytes: bodyBytes, contentType: contentType);
   }
+
+  bool _looksLikeJson(List<int> bytes) {
+    // Cheap check: skip whitespace then look for '{' or '['
+    int i = 0;
+    while (i < bytes.length) {
+      final b = bytes[i];
+      if (b == 0x20 || b == 0x0A || b == 0x0D || b == 0x09) {
+        i++;
+        continue;
+      }
+      return b == 0x7B /* { */ || b == 0x5B /* [ */;
+    }
+    return false;
+  }
+
+  String? _pickStringKeyCI(Map m, List<String> keys) {
+    for (final k in keys) {
+      // direct
+      final v = m[k];
+      if (v is String) return v;
+
+      // case-insensitive search
+      for (final entry in m.entries) {
+        if (entry.key is String && (entry.key as String).toLowerCase() == k.toLowerCase()) {
+          final vv = entry.value;
+          if (vv is String) return vv;
+        }
+      }
+    }
+    return null;
+  }
+
 
   Future<({List<int> bytes, String? contentType})> downloadFileBytesWithFallback({
     required int displayObjectId,
@@ -745,14 +893,19 @@ class MFilesService extends ChangeNotifier {
   }
 
   String _safeFilename(String title, String extension, int fileId) {
-    final base = (title.trim().isEmpty ? 'file_$fileId' : title.trim())
-        .replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    final ext = extension.trim().toLowerCase().replaceFirst('.', '');
+    var base = title.trim().isEmpty ? 'file_$fileId' : title.trim();
 
-    final ext = extension.trim();
+    base = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+
     if (ext.isEmpty) return base;
-    final withDot = ext.startsWith('.') ? ext : '.$ext';
-    return '$base$withDot';
+
+    // Don’t double-append
+    if (base.toLowerCase().endsWith('.$ext')) return base;
+
+    return '$base.$ext';
   }
+
 
   Future<String> downloadAndOpenFile({
     required int displayObjectId,
@@ -768,6 +921,25 @@ class MFilesService extends ChangeNotifier {
       fileId: fileId,
       reportGuid: reportGuid,
     );
+
+    
+    //Debugging: log the first few bytes and content type to help identify issues with downloaded files (e.g. HTML error pages instead of actual files)
+    void _debugSignature(List<int> b, String? ct) {
+      bool starts(List<int> s) =>
+          b.length >= s.length &&
+          List.generate(s.length, (i) => b[i] == s[i]).every((x) => x);
+
+      final sig = [
+        if (starts([0x25, 0x50, 0x44, 0x46])) 'PDF',
+        if (starts([0xFF, 0xD8, 0xFF])) 'JPG',
+        if (starts([0x89, 0x50, 0x4E, 0x47])) 'PNG',
+        if (starts([0x50, 0x4B, 0x03, 0x04])) 'ZIP(DOCX/XLSX)',
+      ].join(',');
+
+      debugPrint('OPEN bytes=${b.length} ct=$ct sig=$sig');
+    }
+
+    _debugSignature(result.bytes, result.contentType);
 
     final filename = _safeFilename(fileTitle, extension, fileId);
 
@@ -929,6 +1101,83 @@ class MFilesService extends ChangeNotifier {
           .map(ViewContentItem.fromJson)
           .toList();
   }
+
+  // -------------------- Comments --------------------//
+  Future<List<ObjectComment>> fetchComments({
+    required int objectId,
+    required int objectTypeId,
+    required String vaultGuid,
+  }) async {
+    error = null;
+
+    // ASSUMPTION:
+    // GET /api/Comments accepts query params: objectId, objectTypeId, vaultGuid
+    // If your backend expects different (headers/body), change here.
+    final uri = Uri.parse('$baseUrl/api/Comments').replace(queryParameters: {
+      'objectId': objectId.toString(),
+      'objectTypeId': objectTypeId.toString(),
+      'vaultGuid': vaultGuid,
+    });
+
+    final res = await http.get(
+      uri,
+      headers: {
+        'accept': '*/*',
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+      },
+    );
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      error = 'HTTP ${res.statusCode}: ${res.body}';
+      throw Exception(error);
+    }
+
+    final data = jsonDecode(res.body);
+    if (data is! List) return [];
+
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(ObjectComment.fromJson)
+        .toList();
+  }
+
+  Future<bool> postComment({
+    required String comment,
+    required int objectId,
+    required int objectTypeId,
+    required String vaultGuid,
+  }) async {
+    error = null;
+
+    final uri = Uri.parse('$baseUrl/api/Comments');
+
+    final payload = {
+      "comment": comment,
+      "objectId": objectId,
+      "vaultGuid": vaultGuid,
+      "objectTypeId": objectTypeId,
+      // Prefer M-Files user id if you have it, fallback to auth userId
+      "userID": (mfilesUserId ?? userId ?? 0),
+    };
+
+    final res = await http.post(
+      uri,
+      headers: {
+        'accept': '*/*',
+        'content-type': 'application/json',
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
+      },
+      body: jsonEncode(payload),
+    );
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      error = 'HTTP ${res.statusCode}: ${res.body}';
+      return false;
+    }
+
+    return true;
+  }
+
 
 
   // -------------------- Delete object --------------------
