@@ -1,6 +1,7 @@
 // object_details_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:mfiles_app/screens/document_preview_screen.dart';
 
 import '../services/mfiles_service.dart';
 import '../models/view_object.dart';
@@ -925,162 +926,225 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
   }
 
-  Widget _previewCard(ViewObject obj) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+  // Replace your existing _previewCard method in ObjectDetailsScreen with this:
+
+Widget _previewCard(ViewObject obj) {
+  return Container(
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text('Preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+            ),
+            if (_downloading)
+              const SizedBox(
+                height: 16,
+                width: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-              if (_downloading)
-                const SizedBox(
-                  height: 16,
-                  width: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          FutureBuilder<List<ObjectFile>>(
-            future: _filesFuture,
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-
-              if (snap.hasError) {
-                return Text(
-                  'Failed to load files: ${snap.error}',
-                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                );
-              }
-
-              final files = snap.data ?? [];
-
-              if (files.isEmpty) {
-                return Column(
-                  children: [
-                    Icon(Icons.insert_drive_file_outlined, color: Colors.grey.shade400),
-                    const SizedBox(height: 4),
-                    Text(
-                      'There are no files attached to this item yet.',
-                      style: TextStyle(color: Colors.grey.shade600),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                );
-              }
-
-              return Column(
-                children: files.map((f) {
-                  final ext = (f.extension.isEmpty ? '' : '.${f.extension}').toLowerCase();
-                  final icon = FileIconResolver.iconForExtension(f.extension);
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: ListTile(
-                      dense: true,
-                      leading: Icon(icon),
-                      title: Text(
-                        f.fileTitle.isEmpty ? 'File ${f.fileId}' : f.fileTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
-
-                      // tap anywhere on the row opens the document
-                      onTap: (_saving || _downloading || _changingWorkflow) ? null : () => _openFileFromPreview(obj, f),
-
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (action) async {
-                          // IMPORTANT: your download endpoints require displayObjectId as int.
-                          final displayIdInt = int.tryParse(obj.displayId);
-                          if (displayIdInt == null) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Invalid object display ID: ${obj.displayId}'),
-                                backgroundColor: Colors.red.shade600,
-                              ),
-                            );
-                            return;
-                          }
-
-                          setState(() => _downloading = true);
-                          try {
-                            final svc = context.read<MFilesService>();
-
-                            if (action == 'open') {
-                              await svc.downloadAndOpenFile(
-                                displayObjectId: displayIdInt,
-                                classId: obj.classId,
-                                fileId: f.fileId,
-                                fileTitle: f.fileTitle,
-                                extension: f.extension,
-                                reportGuid: f.reportGuid,
-                              );
-                            }
-
-                            if (action == 'download') {
-                              final savedPath = await svc.downloadAndSaveFile(
-                                displayObjectId: displayIdInt,
-                                classId: obj.classId,
-                                fileId: f.fileId,
-                                fileTitle: f.fileTitle,
-                                extension: f.extension,
-                                reportGuid: f.reportGuid,
-                              );
-
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Saved to: $savedPath'),
-                                  backgroundColor: Colors.green.shade600,
-                                  duration: const Duration(seconds: 4),
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Action failed: $e'),
-                                backgroundColor: Colors.red.shade600,
-                              ),
-                            );
-                          } finally {
-                            if (mounted) setState(() => _downloading = false);
-                          }
-                        },
-                        itemBuilder: (_) => const [
-                          PopupMenuItem(value: 'open', child: Text('Open')),
-                          PopupMenuItem(value: 'download', child: Text('Download')),
-                        ],
-                        child: const Icon(Icons.more_vert, size: 18),
-                      ),
-                    ),
-                  );
-                }).toList(),
+          ],
+        ),
+        const SizedBox(height: 10),
+        FutureBuilder<List<ObjectFile>>(
+          future: _filesFuture,
+          builder: (context, snap) {
+            if (snap.connectionState == ConnectionState.waiting) {
+              return const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Center(child: CircularProgressIndicator()),
               );
-            },
-          ),
-        ],
+            }
+
+            if (snap.hasError) {
+              return Text(
+                'Failed to load files: ${snap.error}',
+                style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+              );
+            }
+
+            final files = snap.data ?? [];
+
+            if (files.isEmpty) {
+              return Column(
+                children: [
+                  Icon(Icons.insert_drive_file_outlined, color: Colors.grey.shade400),
+                  const SizedBox(height: 4),
+                  Text(
+                    'There are no files attached to this item yet.',
+                    style: TextStyle(color: Colors.grey.shade600),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              );
+            }
+
+            return Column(
+              children: files.map((f) {
+                final ext = (f.extension.isEmpty ? '' : '.${f.extension}').toLowerCase();
+                final icon = FileIconResolver.iconForExtension(f.extension);
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: ListTile(
+                    dense: true,
+                    leading: Icon(icon),
+                    title: Text(
+                      f.fileTitle.isEmpty ? 'File ${f.fileId}' : f.fileTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+
+                    // ✅ Tap to preview
+                    onTap: (_saving || _downloading || _changingWorkflow) 
+                        ? null 
+                        : () => _previewFileInApp(obj, f),
+
+                    trailing: PopupMenuButton<String>(
+                      onSelected: (action) async {
+                        final displayIdInt = int.tryParse(obj.displayId);
+                        if (displayIdInt == null) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Invalid object display ID: ${obj.displayId}'),
+                              backgroundColor: Colors.red.shade600,
+                            ),
+                          );
+                          return;
+                        }
+
+                        setState(() => _downloading = true);
+                        try {
+                          final svc = context.read<MFilesService>();
+
+                          if (action == 'preview') {
+                            await _previewFileInApp(obj, f);
+                          } else if (action == 'open') {
+                            await svc.downloadAndOpenFile(
+                              displayObjectId: displayIdInt,
+                              classId: obj.classId,
+                              fileId: f.fileId,
+                              fileTitle: f.fileTitle,
+                              extension: f.extension,
+                              reportGuid: f.reportGuid,
+                            );
+                          } else if (action == 'download') {
+                            final savedPath = await svc.downloadAndSaveFile(
+                              displayObjectId: displayIdInt,
+                              classId: obj.classId,
+                              fileId: f.fileId,
+                              fileTitle: f.fileTitle,
+                              extension: f.extension,
+                              reportGuid: f.reportGuid,
+                            );
+
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Saved to: $savedPath'),
+                                backgroundColor: Colors.green.shade600,
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Action failed: $e'),
+                              backgroundColor: Colors.red.shade600,
+                            ),
+                          );
+                        } finally {
+                          if (mounted) setState(() => _downloading = false);
+                        }
+                      },
+                      itemBuilder: (_) => const [
+                        PopupMenuItem(
+                          value: 'preview',
+                          child: Row(
+                            children: [
+                              Icon(Icons.visibility, size: 18),
+                              SizedBox(width: 12),
+                              Text('Preview'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'open',
+                          child: Row(
+                            children: [
+                              Icon(Icons.open_in_new, size: 18),
+                              SizedBox(width: 12),
+                              Text('Open Externally'),
+                            ],
+                          ),
+                        ),
+                        PopupMenuItem(
+                          value: 'download',
+                          child: Row(
+                            children: [
+                              Icon(Icons.download, size: 18),
+                              SizedBox(width: 12),
+                              Text('Download'),
+                            ],
+                          ),
+                        ),
+                      ],
+                      child: const Icon(Icons.more_vert, size: 18),
+                    ),
+                  ),
+                );
+              }).toList(),
+            );
+          },
+        ),
+      ],
+    ),
+  );
+}
+
+// ✅ Add this new method to ObjectDetailsScreen
+Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
+  final displayIdInt = int.tryParse(obj.displayId);
+  if (displayIdInt == null) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Invalid object display ID: ${obj.displayId}'),
+        backgroundColor: Colors.red.shade600,
       ),
     );
+    return;
   }
+
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => DocumentPreviewScreen(
+        displayObjectId: displayIdInt,
+        classId: obj.classId,
+        fileId: f.fileId,
+        fileTitle: f.fileTitle,
+        extension: f.extension,
+        reportGuid: f.reportGuid,
+      ),
+    ),
+  );
+}
+
+// ✅ Also add this import at the top of your object_details_screen.dart file:
+// import 'package:mfiles_app/screens/document_preview_screen.dart';
 
   Future<List<ObjectComment>> _loadComments() async {
     final svc = context.read<MFilesService>();

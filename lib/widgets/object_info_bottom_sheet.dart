@@ -6,6 +6,7 @@ import '../models/object_file.dart';
 import '../services/mfiles_service.dart';
 import '../utils/file_icon_resolver.dart';
 import '../screens/object_details_screen.dart';
+import '../screens/document_preview_screen.dart';
 
 class ObjectInfoBottomSheet extends StatefulWidget {
   final ViewObject obj;
@@ -52,6 +53,34 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
     return dt.toLocal().toString().split('.')[0]; // Remove microseconds
   }
 
+  Future<void> _previewFile(ObjectFile file) async {
+    final displayIdInt = int.tryParse(widget.obj.displayId);
+    if (displayIdInt == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid object display ID: ${widget.obj.displayId}'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DocumentPreviewScreen(
+          displayObjectId: displayIdInt,
+          classId: widget.obj.classId,
+          fileId: file.fileId,
+          fileTitle: file.fileTitle,
+          extension: file.extension,
+          reportGuid: file.reportGuid,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openFile(ObjectFile file) async {
     final displayIdInt = int.tryParse(widget.obj.displayId);
     if (displayIdInt == null) {
@@ -81,6 +110,52 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Open failed: $e'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _downloadFile(ObjectFile file) async {
+    final displayIdInt = int.tryParse(widget.obj.displayId);
+    if (displayIdInt == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid object display ID: ${widget.obj.displayId}'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _downloading = true);
+    try {
+      final svc = context.read<MFilesService>();
+      final savedPath = await svc.downloadAndSaveFile(
+        displayObjectId: displayIdInt,
+        classId: widget.obj.classId,
+        fileId: file.fileId,
+        fileTitle: file.fileTitle,
+        extension: file.extension,
+        reportGuid: file.reportGuid,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved to: $savedPath'),
+          backgroundColor: Colors.green.shade600,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $e'),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -264,7 +339,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
 
                         const SizedBox(height: 24),
 
-                        // ✅ NEW: "View Full Details" Button
+                        // "View Full Details" Button
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
@@ -401,8 +476,51 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                 height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
-            : Icon(Icons.open_in_new, size: 18, color: Colors.grey.shade600),
-        onTap: _downloading ? null : () => _openFile(file),
+            : PopupMenuButton<String>(
+                icon: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
+                onSelected: (action) async {
+                  if (action == 'preview') {
+                    await _previewFile(file);
+                  } else if (action == 'open') {
+                    await _openFile(file);
+                  } else if (action == 'download') {
+                    await _downloadFile(file);
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'preview',
+                    child: Row(
+                      children: [
+                        Icon(Icons.visibility, size: 18),
+                        SizedBox(width: 12),
+                        Text('Preview'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'open',
+                    child: Row(
+                      children: [
+                        Icon(Icons.open_in_new, size: 18),
+                        SizedBox(width: 12),
+                        Text('Open Externally'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'download',
+                    child: Row(
+                      children: [
+                        Icon(Icons.download, size: 18),
+                        SizedBox(width: 12),
+                        Text('Download'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+        onTap: _downloading ? null : () => _previewFile(file),
       ),
     );
   }
