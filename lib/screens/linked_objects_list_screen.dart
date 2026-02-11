@@ -4,15 +4,23 @@ import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/widgets/relationships_dropdown.dart';
 import 'package:mfiles_app/models/linked_object_item.dart';
 
-class LinkedObjectsListScreen extends StatelessWidget {
+class LinkedObjectsListScreen extends StatefulWidget {
   final String title;
   final List<LinkedObjectItem> items;
+  const LinkedObjectsListScreen({super.key, required this.title, required this.items});
 
-  const LinkedObjectsListScreen({
-    super.key,
-    required this.title,
-    required this.items,
-  });
+  @override
+  State<LinkedObjectsListScreen> createState() => _LinkedObjectsListScreenState();
+}
+
+class _LinkedObjectsListScreenState extends State<LinkedObjectsListScreen> {
+  final ScrollController _sc = ScrollController();
+
+  @override
+  void dispose() {
+    _sc.dispose();
+    super.dispose();
+  }
 
   ViewObject _toViewObject(LinkedObjectItem it) {
     return ViewObject(
@@ -38,12 +46,19 @@ class LinkedObjectsListScreen extends StatelessWidget {
         foregroundColor: Colors.white,
         title: Text(title)
         ),
-      body: ListView.separated(
-        padding: const EdgeInsets.all(16),
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(height: 8),
-        itemBuilder: (context, i) {
-          final it = items[i];
+      body: Scrollbar(
+        controller: _sc,
+        thumbVisibility: false,
+        interactive: true,
+        thickness: 4,
+        radius: const Radius.circular(8),
+        child: ListView.separated(
+          controller: _sc,
+          padding: const EdgeInsets.all(16),
+          itemCount: widget.items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, i) {
+          final it = widget.items[i];
           final obj = _toViewObject(it);
 
           return Container(
@@ -100,6 +115,7 @@ class LinkedObjectsListScreen extends StatelessWidget {
             ),
           );
         },
+      ),
       ),
     );
   }

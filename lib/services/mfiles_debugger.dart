@@ -159,7 +159,7 @@ class MFilesDebugger {
     print('');
     
     // Step 2: Get required properties
-    final requiredProps = await getRequiredProperties(classId);
+    await getRequiredProperties(classId);
     print('');
     
     // Step 3: Validate your property IDs

@@ -14,12 +14,15 @@ class ObjectFile {
   });
 
   factory ObjectFile.fromJson(Map<String, dynamic> json) {
+    int asInt(dynamic v) => (v is num) ? v.toInt() : int.tryParse('$v') ?? 0;
+    String asStr(dynamic v) => (v ?? '').toString();
+
     return ObjectFile(
-      fileId: (json['fileID'] as num?)?.toInt() ?? 0,
-      fileTitle: (json['fileTitle'] as String?) ?? '',
-      fileVersion: (json['fileversion'] as num?)?.toInt() ?? 0,
-      extension: (json['extension'] as String?) ?? '',
-      reportGuid: (json['reportGuid'] as String?) ?? '',
+      fileId: asInt(json['fileId'] ?? json['fileID'] ?? json['id']),
+      fileTitle: asStr(json['fileTitle'] ?? json['title'] ?? json['name']),
+      fileVersion: asInt(json['fileVersion'] ?? json['version']),
+      extension: asStr(json['extension'] ?? json['ext']),
+      reportGuid: asStr(json['reportGuid'] ?? json['reportGUID'] ?? ''),
     );
   }
 }

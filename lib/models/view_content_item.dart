@@ -46,22 +46,6 @@ class ViewContentItem {
     return null;
   }
 
-  static int? _intNullable(dynamic v) {
-    if (v == null) return null;
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    final s = v.toString().trim();
-    if (s.isEmpty) return null;
-    return int.tryParse(s);
-  }
-
-  static int? _validPropId(dynamic v) {
-    final x = _intNullable(v);
-    if (x == null) return null;
-    if (x <= 0) return null; // 0/-1 are invalid for grouping
-    return x;
-  }
-
   factory ViewContentItem.fromJson(Map<String, dynamic> m) {
     final rawPropId = m['propId'] ?? m['propID'] ?? m['propertyId'] ?? m['propertyID'];
 

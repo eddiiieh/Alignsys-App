@@ -2,13 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_items_screen.dart';
+import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:provider/provider.dart';
 
-import '../services/mfiles_service.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../models/view_content_item.dart';
 import '../widgets/relationships_dropdown.dart';
+
+import '../utils/file_icon_resolver.dart';
 
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({super.key, required this.view});
@@ -25,6 +27,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
 
+  final ScrollController _viewScroll = ScrollController();
+
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -33,6 +38,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   @override
   void dispose() {
+    _viewScroll.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -129,10 +135,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   Widget _buildRow(ViewContentItem item) {
     final subtitle = _subtitleLabel(item);
 
-    final icon =
-        (item.isGroupFolder || item.isViewFolder)
-            ? Icons.folder_outlined
-            : Icons.description_outlined;
+    final svc = context.watch<MFilesService>();
+
+    final icon = svc.iconForContentItem(item);
 
     // Only objects can have relationships
     final bool canExpand = item.isObject && item.id != 0 && item.objectTypeId != 0 && item.classId != 0;
@@ -148,41 +153,39 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           enabled: true,
-          trailing: canExpand
-              ? const Icon(Icons.expand_more, size: 18)
-              : const Icon(Icons.chevron_right, size: 18),
+          trailing: canExpand ? const Icon(Icons.expand_more, size: 18) : const Icon(Icons.chevron_right, size: 18),
 
           title: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _handleTap(item),
-          child: Row(
-            children: [
-              Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                    ),
-                    if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-                      const SizedBox(height: 2),
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _handleTap(item),
+            child: Row(
+              children: [
+                Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        subtitle,
+                        item.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                       ),
+                      if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          )
+              ],
+            ),
           ),
 
           // 👉 THIS is the relationships dropdown
@@ -219,7 +222,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       ),
     );
   }
-
 
   Future<void> _handleTap(ViewContentItem item) async {
     if (item.isObject) {
@@ -294,7 +296,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               items: items,
               parentViewId: vid,
               filters: [GroupFilter(propId: propId, propDatatype: propDatatype)],
-              ),
+            ),
           ),
         );
       } catch (e) {
@@ -303,7 +305,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       }
       return;
     }
- 
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Unsupported item type')),
     );
@@ -342,6 +344,14 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 }
 
                 final items = snap.data ?? [];
+
+                // onload warm-up: fetch file extensions for objects & cache them
+                // This is safe to call repeatedly; your service should de-dupe in-flight IDs.
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  context.read<MFilesService>().warmExtensionsForItems(items);
+                });
+
                 final filtered = _applyFilter(items);
 
                 if (items.isEmpty) {
@@ -357,12 +367,20 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     _refreshThisView();
                     await _future;
                   },
-                  child: ListView.separated(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) => _buildRow(filtered[i]),
+                  child: Scrollbar(
+                    controller: _viewScroll,
+                    thumbVisibility: false,
+                    interactive: true,
+                    thickness: 6,
+                    radius: const Radius.circular(8),
+                    child: ListView.separated(
+                      controller: _viewScroll,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) => _buildRow(filtered[i]),
+                    ),
                   ),
                 );
               },
@@ -387,8 +405,12 @@ class _ObjectsListScreen extends StatefulWidget {
 class _ObjectsListScreenState extends State<_ObjectsListScreen> {
   late List<ViewObject> _objects;
 
+  final ScrollController _objListScroll = ScrollController();
+
+
   @override
   void initState() {
+    _objListScroll.dispose();
     super.initState();
     _objects = List<ViewObject>.from(widget.objects);
   }
@@ -405,12 +427,25 @@ class _ObjectsListScreenState extends State<_ObjectsListScreen> {
       ),
       body: _objects.isEmpty
           ? const Center(child: Text('No objects found'))
-          : ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: _objects.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (context, i) {
+          : Scrollbar(
+              controller: _objListScroll,
+              thumbVisibility: false,
+              interactive: true,
+              thickness: 6,
+              radius: const Radius.circular(8),
+              child: ListView.separated(
+                controller: _objListScroll,
+                padding: const EdgeInsets.all(16),
+                itemCount: _objects.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 8),
+                itemBuilder: (context, i) {
                 final obj = _objects[i];
+
+                // Try icon mapping here too if you want it reflected in this internal screen:
+                final svc = context.watch<MFilesService>();
+                final ext = svc.cachedExtensionForObject(obj.id);
+                final icon = FileIconResolver.iconForExtension(ext);
+
                 return InkWell(
                   onTap: () async {
                     final deleted = await Navigator.push<bool>(
@@ -432,7 +467,7 @@ class _ObjectsListScreenState extends State<_ObjectsListScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.description_outlined, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+                        Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -454,6 +489,7 @@ class _ObjectsListScreenState extends State<_ObjectsListScreen> {
                             ],
                           ),
                         ),
+                        const SizedBox(height: 2),
                         const SizedBox(width: 8),
                         Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
                       ],
@@ -462,6 +498,7 @@ class _ObjectsListScreenState extends State<_ObjectsListScreen> {
                 );
               },
             ),
+          ),
     );
   }
 }

@@ -3,24 +3,26 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/models/linked_object_item.dart';
 import 'package:mfiles_app/models/view_content_item.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:mfiles_app/utils/file_icon_resolver.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
-import '../models/vault_object_type.dart';
-import '../models/object_class.dart';
 import '../models/class_property.dart';
 import '../models/lookup_item.dart';
+import '../models/object_class.dart';
+import '../models/object_comment.dart';
 import '../models/object_creation_request.dart';
+import '../models/object_file.dart';
 import '../models/vault.dart';
+import '../models/vault_object_type.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
-import '../models/object_file.dart';
-import '../models/object_comment.dart';
 
 class MFilesService extends ChangeNotifier {
   // Auth
@@ -143,7 +145,26 @@ class MFilesService extends ChangeNotifier {
       await prefs.setInt('user_id', userIdValue);
       userId = userIdValue;
     }
+
+    notifyListeners();
   }
+
+  Future<bool> tryAutoLogin() async {
+    final prefs = await SharedPreferences.getInstance();
+    final access = prefs.getString('access_token');
+    final refresh = prefs.getString('refresh_token');
+
+    if (access == null || access.isEmpty) return false;
+
+    accessToken = access;
+    refreshToken = refresh;
+    username = prefs.getString('username');
+    userId = prefs.getInt('user_id') ?? _decodeJwtAndGetUserId(accessToken!);
+
+    notifyListeners();
+    return true;
+  }
+
 
   Future<bool> loadTokens() async {
     final prefs = await SharedPreferences.getInstance();
@@ -163,10 +184,15 @@ class MFilesService extends ChangeNotifier {
 
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // Auth
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
     await prefs.remove('user_id');
     await prefs.remove('mfiles_user_id');
+    await prefs.remove('username');          
+    await prefs.remove('selectedVaultGuid'); 
+    await prefs.remove('vaultGuid');         
 
     accessToken = null;
     refreshToken = null;
@@ -187,8 +213,11 @@ class MFilesService extends ChangeNotifier {
     assignedObjects.clear();
     searchResults.clear();
 
+    clearExtensionCache();
+
     notifyListeners();
   }
+
 
   Future<bool> login(String email, String password) async {
     final body = {'username': email, 'password': password, 'auth_type': 'email'};
@@ -199,18 +228,33 @@ class MFilesService extends ChangeNotifier {
       body: json.encode(body),
     );
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      accessToken = data['access'];
-      refreshToken = data['refresh'];
-
-      userId = _decodeJwtAndGetUserId(accessToken!);
-      await saveTokens(accessToken!, refreshToken!, user: email, userIdValue: userId);
-      return true;
+    if (response.statusCode != 200) {
+      throw Exception('Login failed: ${response.statusCode}');
     }
 
-    throw Exception('Login failed: ${response.statusCode}');
+    final data = json.decode(response.body);
+
+    final access = data['access'] as String?;
+    final refresh = data['refresh'] as String?;
+    if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
+      throw Exception('Login failed: token missing in response');
+    }
+
+    accessToken = access;
+    refreshToken = refresh;
+
+    userId = _decodeJwtAndGetUserId(accessToken!);
+
+    await saveTokens(
+      accessToken!,
+      refreshToken!,
+      user: email,
+      userIdValue: userId,
+    );
+
+    return true;
   }
+
 
   Future<List<Vault>> getUserVaults() async {
     if (accessToken == null) throw Exception("User not logged in");
@@ -414,6 +458,7 @@ class MFilesService extends ChangeNotifier {
       );
 
       request.files.add(await http.MultipartFile.fromPath('formFiles', file.path));
+      if (accessToken == null) throw Exception('Not logged in');
       request.headers['Authorization'] = 'Bearer $accessToken';
 
       final response = await request.send();
@@ -616,8 +661,12 @@ class MFilesService extends ChangeNotifier {
 
     final decoded = json.decode(resp.body);
     if (decoded is List) return decoded.cast<Map<String, dynamic>>();
-    if (decoded is Map && decoded['props'] is List) return (decoded['props'] as List).cast<Map<String, dynamic>>();
-    if (decoded is Map && decoded['properties'] is List) return (decoded['properties'] as List).cast<Map<String, dynamic>>();
+    if (decoded is Map && decoded['props'] is List) {
+      return (decoded['props'] as List).cast<Map<String, dynamic>>();
+    }
+    if (decoded is Map && decoded['properties'] is List) {
+      return (decoded['properties'] as List).cast<Map<String, dynamic>>();
+    }
 
     throw Exception('Unexpected GetObjectViewProps shape: ${resp.body}');
   }
@@ -662,7 +711,9 @@ class MFilesService extends ChangeNotifier {
         body: jsonEncode(body),
       );
 
-      if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) return true;
+      if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) {
+        return true;
+      }
 
       _setError('Server returned ${resp.statusCode}: ${resp.body}');
       return false;
@@ -701,15 +752,72 @@ class MFilesService extends ChangeNotifier {
     return data.map((e) => ObjectFile.fromJson(e as Map<String, dynamic>)).toList();
   }
 
+  // ==================== FILE EXTENSION CACHE (for icons) ====================
+
+  final Map<int, String> _extByObjectId = {}; // objectId -> "pdf"
+  final Set<int> _extInFlight = {}; // prevent duplicate calls
+
+  String? cachedExtensionForObject(int objectId) => _extByObjectId[objectId];
+
+  String _normalizeExt(String? ext) {
+    final e = (ext ?? '').trim().toLowerCase();
+    if (e.isEmpty) return '';
+    return e.startsWith('.') ? e.substring(1) : e;
+  }
+
+  Future<void> ensureExtensionForObject({
+    required int objectId,
+    required int classId,
+  }) async {
+    if (objectId <= 0 || classId <= 0) return;
+
+    if (_extByObjectId.containsKey(objectId)) return;
+    if (_extInFlight.contains(objectId)) return;
+
+    _extInFlight.add(objectId);
+    try {
+      final files = await fetchObjectFiles(objectId: objectId, classId: classId);
+      final ext = files.isNotEmpty ? _normalizeExt(files.first.extension) : '';
+
+      // cache even empty to avoid refetch loops
+      _extByObjectId[objectId] = ext;
+      notifyListeners();
+    } catch (_) {
+      _extByObjectId[objectId] = '';
+      notifyListeners();
+    } finally {
+      _extInFlight.remove(objectId);
+    }
+  }
+
+  void warmExtensionsForItems(List<ViewContentItem> items) {
+    for (final it in items) {
+      if (!it.isObject) continue;
+      if (it.id <= 0 || it.classId <= 0) continue;
+      ensureExtensionForObject(objectId: it.id, classId: it.classId);
+    }
+  }
+
+  void warmExtensionsForObjects(List<ViewObject> objects) {
+    for (final o in objects) {
+      if (o.id <= 0 || o.classId <= 0) continue;
+      ensureExtensionForObject(objectId: o.id, classId: o.classId);
+    }
+  }
+
+  void clearExtensionCache() {
+    _extByObjectId.clear();
+    _extInFlight.clear();
+  }
+
+  // ==================== DOWNLOAD / BASE64 FLEX ====================
+
   Object? _pickAnyKeyCI(Map m, String key) {
     final target = key.trim().toLowerCase();
-
-    // Build normalized -> actualKey map using key.toString()
     for (final k in m.keys) {
       final norm = k.toString().trim().toLowerCase();
       if (norm == target) return m[k];
     }
-
     return null;
   }
 
@@ -724,31 +832,25 @@ class MFilesService extends ChangeNotifier {
   String? _extractBase64Flexible(Map m) {
     final v = _pickAnyKeyCI(m, 'base64');
 
-    // Most common: base64 is a String
     if (v is String) return v;
 
-    // Sometimes: { base64: { value: "..." } } or similar
     if (v is Map) {
       final nested = _extractStringByKeysCI(v, ['value', 'data', 'content', 'base64']);
       if (nested != null) return nested;
     }
 
-    // Sometimes: base64 is a list of strings/chunks
     if (v is List) {
       final parts = v.whereType<String>().toList();
       if (parts.isNotEmpty) return parts.join();
     }
 
-    // Last resort: recursively search the whole JSON for a base64-looking string
     return _deepFindBase64(m);
   }
 
   String? _deepFindBase64(dynamic node) {
     if (node is String) {
       final s = node.trim();
-      // heuristic: long-ish and base64-ish
-      final looks =
-          s.length > 100 && RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(s);
+      final looks = s.length > 100 && RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(s);
       return looks ? s : null;
     }
 
@@ -760,14 +862,12 @@ class MFilesService extends ChangeNotifier {
     }
 
     if (node is Map) {
-      // if any key is base64-like, prioritize it
       for (final e in node.entries) {
         if (e.key is String && (e.key as String).trim().toLowerCase() == 'base64') {
           final found = _deepFindBase64(e.value);
           if (found != null) return found;
         }
       }
-      // otherwise search everything
       for (final e in node.entries) {
         final found = _deepFindBase64(e.value);
         if (found != null) return found;
@@ -777,6 +877,18 @@ class MFilesService extends ChangeNotifier {
     return null;
   }
 
+  bool _looksLikeJson(List<int> bytes) {
+    int i = 0;
+    while (i < bytes.length) {
+      final b = bytes[i];
+      if (b == 0x20 || b == 0x0A || b == 0x0D || b == 0x09) {
+        i++;
+        continue;
+      }
+      return b == 0x7B /* { */ || b == 0x5B /* [ */;
+    }
+    return false;
+  }
 
   Future<({List<int> bytes, String? contentType})> _getBytes(Uri url) async {
     final resp = await http.get(url, headers: _authHeadersNoJson);
@@ -788,7 +900,6 @@ class MFilesService extends ChangeNotifier {
     final contentType = resp.headers['content-type'];
     final bodyBytes = resp.bodyBytes;
 
-    // If server returns a JSON wrapper, decode base64 from it.
     final isJson = (contentType?.toLowerCase().contains('application/json') ?? false) ||
         _looksLikeJson(bodyBytes);
 
@@ -800,7 +911,6 @@ class MFilesService extends ChangeNotifier {
         throw Exception('JSON returned but not an object.');
       }
 
-      // Case-insensitive base64 extraction + tolerate different shapes.
       final base64Value = _extractBase64Flexible(j);
 
       if (base64Value == null || base64Value.trim().isEmpty) {
@@ -816,45 +926,15 @@ class MFilesService extends ChangeNotifier {
           : base64Value.trim();
 
       final decoded = base64Decode(cleaned);
-      final ctFromJson = _extractStringByKeysCI(j, ['contentType', 'content-type', 'mime', 'mimeType']);
+      final ctFromJson = _extractStringByKeysCI(
+        j,
+        ['contentType', 'content-type', 'mime', 'mimeType'],
+      );
       return (bytes: decoded, contentType: ctFromJson);
     }
 
-    // Otherwise it's raw bytes already.
     return (bytes: bodyBytes, contentType: contentType);
   }
-
-  bool _looksLikeJson(List<int> bytes) {
-    // Cheap check: skip whitespace then look for '{' or '['
-    int i = 0;
-    while (i < bytes.length) {
-      final b = bytes[i];
-      if (b == 0x20 || b == 0x0A || b == 0x0D || b == 0x09) {
-        i++;
-        continue;
-      }
-      return b == 0x7B /* { */ || b == 0x5B /* [ */;
-    }
-    return false;
-  }
-
-  String? _pickStringKeyCI(Map m, List<String> keys) {
-    for (final k in keys) {
-      // direct
-      final v = m[k];
-      if (v is String) return v;
-
-      // case-insensitive search
-      for (final entry in m.entries) {
-        if (entry.key is String && (entry.key as String).toLowerCase() == k.toLowerCase()) {
-          final vv = entry.value;
-          if (vv is String) return vv;
-        }
-      }
-    }
-    return null;
-  }
-
 
   Future<({List<int> bytes, String? contentType})> downloadFileBytesWithFallback({
     required int displayObjectId,
@@ -899,13 +979,10 @@ class MFilesService extends ChangeNotifier {
     base = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
 
     if (ext.isEmpty) return base;
-
-    // Don’t double-append
     if (base.toLowerCase().endsWith('.$ext')) return base;
 
     return '$base.$ext';
   }
-
 
   Future<String> downloadAndOpenFile({
     required int displayObjectId,
@@ -922,8 +999,6 @@ class MFilesService extends ChangeNotifier {
       reportGuid: reportGuid,
     );
 
-    
-    //Debugging: log the first few bytes and content type to help identify issues with downloaded files (e.g. HTML error pages instead of actual files)
     void _debugSignature(List<int> b, String? ct) {
       bool starts(List<int> s) =>
           b.length >= s.length &&
@@ -1034,6 +1109,8 @@ class MFilesService extends ChangeNotifier {
       },
     );
 
+    debugPrint("VIEW FETCH URL: $url");
+
     final resp = await http.get(url, headers: _authHeadersNoJson);
 
     if (resp.statusCode != 200) {
@@ -1050,59 +1127,54 @@ class MFilesService extends ChangeNotifier {
                 ? decoded['data'] as List
                 : <dynamic>[];
 
-    return list
-        .whereType<Map<String, dynamic>>()
-        .map(ViewContentItem.fromJson)
-        .toList();
+    return list.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
   }
 
   Future<List<ViewContentItem>> fetchViewPropItems({
-      required int viewId,
-      required List<GroupFilter> filters,
-    }) async {
-      if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-        throw Exception('Session not ready');
-      }
+    required int viewId,
+    required List<GroupFilter> filters,
+  }) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      throw Exception('Session not ready');
+    }
 
-      final url = Uri.parse('$baseUrl/api/Views/GetViewPropObjects');
+    final url = Uri.parse('$baseUrl/api/Views/GetViewPropObjects');
 
-      final body = {
-        "viewId": viewId,
-        "userID": mfilesUserId,
-        "vaultGuid": vaultGuidWithBraces,
-        "properties": filters.map((f) => f.toJson()).toList(),
-      };
+    final body = {
+      "viewId": viewId,
+      "userID": mfilesUserId,
+      "vaultGuid": vaultGuidWithBraces,
+      "properties": filters.map((f) => f.toJson()).toList(),
+    };
 
-      if (kDebugMode) {
-        debugPrint('🚀 GetViewPropObjects URL: $url');
-        debugPrint('📦 Body: ${jsonEncode(body)}');
-      }
+    if (kDebugMode) {
+      debugPrint('🚀 GetViewPropObjects URL: $url');
+      debugPrint('📦 Body: ${jsonEncode(body)}');
+    }
 
-      final resp = await http.post(
-        url,
-        headers: _authHeaders,
-        body: jsonEncode(body),
-      );
+    final resp = await http.post(
+      url,
+      headers: _authHeaders,
+      body: jsonEncode(body),
+    );
 
-      if (kDebugMode) {
-        debugPrint('📨 Status: ${resp.statusCode}');
-        debugPrint('📨 Body: ${resp.body}');
-      }
+    if (kDebugMode) {
+      debugPrint('📨 Status: ${resp.statusCode}');
+      debugPrint('📨 Body: ${resp.body}');
+    }
 
-      if (resp.statusCode != 200) {
-        throw Exception('GetViewPropObjects failed: ${resp.statusCode} ${resp.body}');
-      }
+    if (resp.statusCode != 200) {
+      throw Exception('GetViewPropObjects failed: ${resp.statusCode} ${resp.body}');
+    }
 
-      final decoded = json.decode(resp.body);
-      if (decoded is! List) return <ViewContentItem>[];
+    final decoded = json.decode(resp.body);
+    if (decoded is! List) return <ViewContentItem>[];
 
-      return decoded
-          .whereType<Map<String, dynamic>>()
-          .map(ViewContentItem.fromJson)
-          .toList();
+    return decoded.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
   }
 
-  // -------------------- Comments --------------------//
+  // -------------------- Comments --------------------
+
   Future<List<ObjectComment>> fetchComments({
     required int objectId,
     required int objectTypeId,
@@ -1110,9 +1182,6 @@ class MFilesService extends ChangeNotifier {
   }) async {
     error = null;
 
-    // ASSUMPTION:
-    // GET /api/Comments accepts query params: objectId, objectTypeId, vaultGuid
-    // If your backend expects different (headers/body), change here.
     final uri = Uri.parse('$baseUrl/api/Comments').replace(queryParameters: {
       'objectId': objectId.toString(),
       'objectTypeId': objectTypeId.toString(),
@@ -1135,10 +1204,7 @@ class MFilesService extends ChangeNotifier {
     final data = jsonDecode(res.body);
     if (data is! List) return [];
 
-    return data
-        .whereType<Map<String, dynamic>>()
-        .map(ObjectComment.fromJson)
-        .toList();
+    return data.whereType<Map<String, dynamic>>().map(ObjectComment.fromJson).toList();
   }
 
   Future<bool> postComment({
@@ -1156,7 +1222,6 @@ class MFilesService extends ChangeNotifier {
       "objectId": objectId,
       "vaultGuid": vaultGuid,
       "objectTypeId": objectTypeId,
-      // Prefer M-Files user id if you have it, fallback to auth userId
       "userID": (mfilesUserId ?? userId ?? 0),
     };
 
@@ -1177,8 +1242,6 @@ class MFilesService extends ChangeNotifier {
 
     return true;
   }
-
-
 
   // -------------------- Delete object --------------------
 
@@ -1223,7 +1286,6 @@ class MFilesService extends ChangeNotifier {
 
   // ==================== WORKFLOWS ====================
 
-  // Existing: read current workflow state (or null if none)
   Future<WorkflowInfo?> getObjectWorkflowState({
     required int objectTypeId,
     required int objectId,
@@ -1255,7 +1317,6 @@ class MFilesService extends ChangeNotifier {
     return WorkflowInfo.fromJson(decoded);
   }
 
-  // Existing: next states list for current workflow (backend-defined)
   Future<List<WorkflowStateOption>> getObjectWorkflowAllStates({
     required int objectTypeId,
     required int objectId,
@@ -1285,7 +1346,6 @@ class MFilesService extends ChangeNotifier {
     return decoded.whereType<Map<String, dynamic>>().map(WorkflowStateOption.fromJson).toList();
   }
 
-  // Existing: set workflow state (also used to assign workflow if not present)
   Future<bool> setObjectWorkflowState({
     required int objectTypeId,
     required int objectId,
@@ -1311,7 +1371,6 @@ class MFilesService extends ChangeNotifier {
         "userID": mfilesUserId,
       };
 
-      // Debug logging
       if (kDebugMode) {
         debugPrint('🚀 SetObjectWorkflowstate URL: $url');
         debugPrint('📦 Body: ${jsonEncode(body)}');
@@ -1322,7 +1381,6 @@ class MFilesService extends ChangeNotifier {
       if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) return true;
 
       _setError(resp.body.isNotEmpty ? resp.body : 'HTTP ${resp.statusCode}');
-      //_setError('Server returned ${resp.statusCode}: ${resp.body}');
 
       if (kDebugMode) {
         debugPrint('📨 Status: ${resp.statusCode}');
@@ -1338,7 +1396,6 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  // NEW: list workflows in vault
   Future<List<WorkflowOption>> fetchWorkflowsForObjectTypeClass({
     required int objectTypeId,
     required int classTypeId,
@@ -1368,158 +1425,123 @@ class MFilesService extends ChangeNotifier {
         .toList();
   }
 
-  //FETCHVAULTWORKFLOWS
-   Future<List<WorkflowOption>> fetchVaultWorkflows() async {
-       if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-         throw Exception('Session not ready');
-       }
-
-       final url = Uri.parse(
-         '$baseUrl/api/WorkflowsInstance/GetVaultsWorkflows/$vaultGuidWithBraces/$mfilesUserId',
-       );
-
-       final resp = await http.get(url, headers: _authHeadersNoJson);
-
-       if (resp.statusCode != 200) {
-         throw Exception('GetVaultsWorkflows failed: ${resp.statusCode} ${resp.body}');
-       }
-       final decoded = json.decode(resp.body);
-       if (decoded is! List) return <WorkflowOption>[];
-
-       return decoded
-           .whereType<Map<String, dynamic>>()
-           .map(WorkflowOption.fromJson)
-           .where((w) => w.id > 0 && w.title.trim().isNotEmpty)
-           .toList();
-   }
-
-   //
-   Future<WorkflowDefinition> fetchWorkflowDefinition(int workflowId) async {
-      final url = Uri.parse(
-        '$baseUrl/api/WorkflowsInstance/GetWorkflowDefinition/'
-        '$vaultGuidWithBraces/$workflowId/$mfilesUserId',
-      );
-
-      final resp = await http.get(url, headers: _authHeadersNoJson);
-
-      if (resp.statusCode != 200) {
-        throw Exception('Failed to fetch workflow definition: ${resp.body}');
-      }
-
-      return WorkflowDefinition.fromJson(json.decode(resp.body));
+  Future<List<WorkflowOption>> fetchVaultWorkflows() async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      throw Exception('Session not ready');
     }
 
-   // NEW: linked objects for an object
-   Future<List<LinkedObjectsGroup>> fetchLinkedObjects({
+    final url = Uri.parse(
+      '$baseUrl/api/WorkflowsInstance/GetVaultsWorkflows/$vaultGuidWithBraces/$mfilesUserId',
+    );
+
+    final resp = await http.get(url, headers: _authHeadersNoJson);
+
+    if (resp.statusCode != 200) {
+      throw Exception('GetVaultsWorkflows failed: ${resp.statusCode} ${resp.body}');
+    }
+    final decoded = json.decode(resp.body);
+    if (decoded is! List) return <WorkflowOption>[];
+
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(WorkflowOption.fromJson)
+        .where((w) => w.id > 0 && w.title.trim().isNotEmpty)
+        .toList();
+  }
+
+  Future<WorkflowDefinition> fetchWorkflowDefinition(int workflowId) async {
+    final url = Uri.parse(
+      '$baseUrl/api/WorkflowsInstance/GetWorkflowDefinition/'
+      '$vaultGuidWithBraces/$workflowId/$mfilesUserId',
+    );
+
+    final resp = await http.get(url, headers: _authHeadersNoJson);
+
+    if (resp.statusCode != 200) {
+      throw Exception('Failed to fetch workflow definition: ${resp.body}');
+    }
+
+    return WorkflowDefinition.fromJson(json.decode(resp.body));
+  }
+
+  Future<List<LinkedObjectsGroup>> fetchLinkedObjects({
     required String vaultGuid,
     required int objectTypeId,
     required int objectId,
     required int classId,
     required int userId,
-    }) async {
-      final uri = Uri.parse(
-        '$baseUrl/api/objectinstance/LinkedObjects/$vaultGuid/$objectTypeId/$objectId/$classId/$userId',
-      );
+  }) async {
+    final uri = Uri.parse(
+      '$baseUrl/api/objectinstance/LinkedObjects/$vaultGuid/$objectTypeId/$objectId/$classId/$userId',
+    );
 
     final res = await http.get(uri, headers: _authHeadersNoJson);
 
-      // ✅ No relationships is not an error
-      if (res.statusCode == 404 || res.statusCode == 204) {
-        return <LinkedObjectsGroup>[];
-      }
-
-      if (res.statusCode != 200) {
-        throw Exception('LinkedObjects failed ${res.statusCode}: ${res.body}');
-      }
-
-      // some APIs return 200 with empty string
-      if (res.body.trim().isEmpty) return <LinkedObjectsGroup>[];
-
-      final decoded = jsonDecode(res.body);
-
-      // handle either [] or { items: [] }
-      final List list = decoded is List
-          ? decoded
-          : (decoded is Map && decoded['items'] is List)
-              ? decoded['items'] as List
-              : <dynamic>[];
-
-      return list
-          .whereType<Map<String, dynamic>>()
-          .map(LinkedObjectsGroup.fromJson)
-          .toList();
+    if (res.statusCode == 404 || res.statusCode == 204) {
+      return <LinkedObjectsGroup>[];
     }
+
+    if (res.statusCode != 200) {
+      throw Exception('LinkedObjects failed ${res.statusCode}: ${res.body}');
+    }
+
+    if (res.body.trim().isEmpty) return <LinkedObjectsGroup>[];
+
+    final decoded = jsonDecode(res.body);
+
+    final List list = decoded is List
+        ? decoded
+        : (decoded is Map && decoded['items'] is List)
+            ? decoded['items'] as List
+            : <dynamic>[];
+
+    return list
+        .whereType<Map<String, dynamic>>()
+        .map(LinkedObjectsGroup.fromJson)
+        .toList();
   }
 
+  // ==================== ICON RESOLUTION ====================
+    bool isDocumentObjectType(int objectTypeId) {
+    // objectTypes must already be loaded
+    final t = objectTypes.firstWhere(
+      (x) => x.id == objectTypeId,
+      orElse: () => VaultObjectType(id: 0, displayName: '', isDocument: false, name: ''),
+    );
+    return t.isDocument;
+  }
 
+  bool isDocumentViewObject(ViewObject obj) => isDocumentObjectType(obj.objectTypeId);
 
-  //   // NEW: list workflows filtered for object type + class
-  //   Future<List<WorkflowStateOption>> fetchWorkflowsForObjectTypeClass({
-  //     required int objectTypeId,
-  //     required int classTypeId,
-  //   }) async {
-  //     if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-  //       throw Exception('Session not ready');
-  //     }
+  bool isDocumentContentItem(ViewContentItem item) =>
+      item.isObject && isDocumentObjectType(item.objectTypeId);
 
-  //     final url = Uri.parse(
-  //       '$baseUrl/api/WorkflowsInstance/GetVaultsObjectClassTypeWorkflows/'
-  //       '${vaultGuidWithBraces}/$mfilesUserId/$objectTypeId/$classTypeId',
-  //     );
+  IconData iconForViewObject(ViewObject obj) {
+    // Non-document objects should never use extension icons
+    if (!isDocumentViewObject(obj)) return FileIconResolver.nonDocumentIcon;
 
-  //     final resp = await http.get(url, headers: _authHeadersNoJson);
+    final ext = cachedExtensionForObject(obj.id);
+    if (ext != null && ext.trim().isNotEmpty) {
+      return FileIconResolver.iconForExtension(ext);
+    }
+    return FileIconResolver.unknownIcon;
+  }
 
-  //     if (resp.statusCode != 200) {
-  //       throw Exception('GetVaultsObjectClassTypeWorkflows failed: ${resp.statusCode} ${resp.body}');
-  //     }
+  IconData iconForContentItem(ViewContentItem item) {
+    if (!item.isObject) return FileIconResolver.nonDocumentIcon;
 
-  //     final decoded = json.decode(resp.body);
-  //     if (decoded is! List) return <WorkflowStateOption>[];
+    // If it’s an object but not a document, use non-doc icon
+    if (!isDocumentContentItem(item)) return FileIconResolver.nonDocumentIcon;
 
-  //     return decoded.whereType<Map<String, dynamic>>().map(WorkflowStateOption.fromJson).toList();
-  //   }
+    final ext = cachedExtensionForObject(item.id);
+    if (ext != null && ext.trim().isNotEmpty) {
+      return FileIconResolver.iconForExtension(ext);
+    }
+    return FileIconResolver.unknownIcon;
+  }
+}
 
-  //   // NEW: get states for a workflow (use stateId=0 for initial choices)
-  //     Future<List<WorkflowStateOption>> fetchWorkflowStates({
-  //       required int workflowId,
-  //       int stateId = 0,
-  //     }) async {
-  //       if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-  //         throw Exception('Session not ready');
-  //       }
-
-  //       final url = Uri.parse(
-  //         '$baseUrl/api/WorkflowsInstance/GetObjectInWorkflowStates/'
-  //         '${vaultGuidWithBraces}/$workflowId/$stateId/$mfilesUserId',
-  //       );
-
-  //       final resp = await http.get(url, headers: _authHeadersNoJson);
-
-  //       if (resp.statusCode != 200) {
-  //         throw Exception('GetObjectInWorkflowStates failed: ${resp.statusCode} ${resp.body}');
-  //       }
-
-  //       final decoded = json.decode(resp.body);
-  //       if (decoded is! List) return <WorkflowStateOption>[];
-
-  //       return decoded.whereType<Map<String, dynamic>>().map(WorkflowStateOption.fromJson).toList();
-  //     }
-
-  //     // NEW: semantic alias
-  //     Future<bool> assignWorkflowToObject({
-  //       required int objectTypeId,
-  //       required int objectId,
-  //       required int workflowId,
-  //       required int initialStateId,
-  //     }) async {
-  //       return setObjectWorkflowState(
-  //         objectTypeId: objectTypeId,
-  //         objectId: objectId,
-  //         workflowId: workflowId,
-  //         stateId: initialStateId,
-  //       );
-  //     }
-
+// ==================== MODELS (kept outside service) ====================
 
 class WorkflowStateOption {
   final int id;

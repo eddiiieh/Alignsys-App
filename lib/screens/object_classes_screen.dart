@@ -20,8 +20,12 @@ class ObjectClassesScreen extends StatefulWidget {
 }
 
 class _ObjectClassesScreenState extends State<ObjectClassesScreen> {
+
+  final ScrollController _classesScroll = ScrollController();
+
   @override
   void initState() {
+    _classesScroll.dispose();
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<MFilesService>().fetchObjectClasses(widget.objectType.id);
@@ -83,7 +87,14 @@ class _ObjectClassesScreenState extends State<ObjectClassesScreen> {
               .where((cls) => cls.objectTypeId == widget.objectType.id)
               .toList();
 
-          return ListView(
+          return Scrollbar(
+            controller: _classesScroll,
+            thumbVisibility: false,
+            interactive: true,
+            thickness: 4,
+            radius: const Radius.circular(8),
+            child: ListView(
+              controller: _classesScroll,
             padding: const EdgeInsets.all(16),
             children: [
               ListTile(
@@ -131,6 +142,7 @@ class _ObjectClassesScreenState extends State<ObjectClassesScreen> {
                     ),
                   )),
             ],
+            ),
           );
         },
       ),

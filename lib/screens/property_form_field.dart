@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/class_property.dart';
 import '../widgets/lookup_field.dart';
-import '../models/object_creation_request.dart';
-import '../services/mfiles_service.dart';
 
 
 class PropertyFormField extends StatefulWidget {

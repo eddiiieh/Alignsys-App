@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
 import '../models/vault.dart';
@@ -18,11 +17,29 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
   bool _loading = false;           // login + fetch vaults
   bool _proceedLoading = false;    // proceed to vault only
   bool _showPassword = false;
-  bool _rememberMe = false;
   List<Vault> _vaults = [];
   Vault? _selectedVault;
 
   String? _usernameError;
+
+  bool get _isLoggedIn => context.read<MFilesService>().accessToken != null;
+
+  Future<void> _logout() async {
+    final s = context.read<MFilesService>();
+
+    // If you already have a logout() in the service, call it.
+    // Otherwise, clear the fields directly (see service notes below).
+    await s.logout(); // create this in MFilesService if missing
+
+    if (!mounted) return;
+    setState(() {
+      _vaults = [];
+      _selectedVault = null;
+      _passwordController.clear(); // optional
+      _loading = false;
+      _proceedLoading = false;
+    });
+  }
 
   void _login() async {
     final username = _usernameController.text.trim();
@@ -239,9 +256,11 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
                               ),
                             )
                           : ElevatedButton(
-                              onPressed: _login,
+                              onPressed: _vaults.isNotEmpty ? _logout : _login,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color.fromRGBO(25, 76, 129, 1),
+                                backgroundColor: _vaults.isNotEmpty
+                                    ? Colors.red.shade600
+                                    :const Color.fromRGBO(25, 76, 129, 1),
                                 foregroundColor: Colors.white,
                                 padding: const EdgeInsets.symmetric(vertical: 16),
                                 shape: RoundedRectangleBorder(
@@ -249,9 +268,9 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
                                 ),
                                 elevation: 2,
                               ),
-                              child: const Text(
-                                'Login',
-                                style: TextStyle(
+                              child: Text(
+                                _vaults.isNotEmpty ? 'Logout' : 'Login',
+                                style: const TextStyle(
                                   fontSize: 16,
                                   fontWeight: FontWeight.w600,
                                 ),

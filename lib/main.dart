@@ -19,11 +19,23 @@ class MainApp extends StatelessWidget {
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'ALIGNSYS',
+
+        // ✅ Enable scrollbars app-wide
+        scrollBehavior: const MaterialScrollBehavior().copyWith(
+          scrollbars: true,
+        ),
+
         theme: ThemeData(
           primarySwatch: Colors.blue,
           useMaterial3: true,
+
+          // ✅ Only show scrollbar while scrolling + allow dragging
+          scrollbarTheme: const ScrollbarThemeData(
+            thumbVisibility: WidgetStatePropertyAll(false),
+            interactive: true,
+          ),
         ),
-        // Start with splash screen; it handles auto-login
+
         home: const SplashScreen(),
         routes: {
           '/splash': (context) => const SplashScreen(),

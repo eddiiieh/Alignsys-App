@@ -1,3 +1,4 @@
+// object_details_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -6,6 +7,8 @@ import '../models/view_object.dart';
 import '../models/object_file.dart';
 import '../models/object_comment.dart';
 import '../widgets/lookup_field.dart';
+
+import '../utils/file_icon_resolver.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
@@ -33,7 +36,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _saving = false;
   bool _downloading = false;
 
-  bool _booted = false;
   bool _headerDetailsExpanded = false;
 
   String _title = '';
@@ -42,6 +44,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   final Set<int> _allowedMetaPropIds = {};
   static const Set<int> _excludeMetaPropIds = {100}; // Class
   final Map<int, _PropVm> _dirty = {};
+
+  final ScrollController _pageScroll = ScrollController();
 
   //Comments
   late Future<List<ObjectComment>> _commentsFuture;
@@ -65,6 +69,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   @override
   void dispose() {
+    _pageScroll.dispose();
     _commentCtrl.dispose();
     super.dispose();
   }
@@ -167,7 +172,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         .map((p) => _valueToText(p.value).trim())
         .firstWhere((s) => s.isNotEmpty, orElse: () => '');
 
-    if (candidate != null && candidate.trim().isNotEmpty) {
+    if (candidate.trim().isNotEmpty) {
       _scheduleTitleUpdate(candidate);
     }
   }
@@ -608,7 +613,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 final canSave = _editMode && !_saving && _dirty.isNotEmpty && props != null;
 
                 return IconButton(
-                  onPressed: canSave ? () => _save(props!) : null,
+                  onPressed: canSave ? () => _save(props) : null,
                   icon: _saving
                       ? const SizedBox(
                           height: 18,
@@ -656,9 +661,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               });
               await _future;
             },
-            child: ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16),
+            child: Scrollbar(
+              controller: _pageScroll,
+              thumbVisibility: false, // only while scrolling
+              thickness: 6,
+              radius: const Radius.circular(3),
+              interactive: true,      // draggable thumb
+              child: ListView(
+                controller: _pageScroll,
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
               children: [
                 _headerCard(obj),
                 const SizedBox(height: 12),
@@ -674,6 +686,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         const SizedBox(height: 12),
                         if (info == null) _assignWorkflowCard() else _workflowCard(info),
                       ],
+
                     );
                   },
                 ),
@@ -685,14 +698,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 const SizedBox(height: 12),
               ],
             ),
+          ),
           );
         },
       ),
     );
   }
-
-  // --- everything below unchanged (your existing methods) ---
-  // _headerCard, _metadataCard, _propField, _previewCard, _permissionsCard, _kv, _PropVm ...
 
   Widget _headerCard(ViewObject obj) {
     return Container(
@@ -910,7 +921,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
   }
 
-
   Widget _previewCard(ViewObject obj) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -968,6 +978,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               return Column(
                 children: files.map((f) {
                   final ext = (f.extension.isEmpty ? '' : '.${f.extension}').toLowerCase();
+                  final icon = FileIconResolver.iconForExtension(f.extension);
 
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
@@ -978,7 +989,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     ),
                     child: ListTile(
                       dense: true,
-                      leading: const Icon(Icons.insert_drive_file_outlined),
+                      leading: Icon(icon),
                       title: Text(
                         f.fileTitle.isEmpty ? 'File ${f.fileId}' : f.fileTitle,
                         maxLines: 1,
@@ -1067,70 +1078,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
-  /*... Widget _permissionsCard(ViewObject obj) {
-    final p = obj.userPermission;
-
-    if (p == null) {
-      return Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-        child: Text(
-          'Permissions not available for this item.',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-        ),
-      );
-    }
-
-    Widget chip(String label, bool ok) {
-      return Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(ok ? Icons.check_circle : Icons.cancel,
-              size: 16, color: ok ? Colors.green.shade700 : Colors.red.shade600),
-          const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-        ],
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Permissions', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 12,
-            runSpacing: 10,
-            children: [
-              chip('Read', p.readPermission),
-              chip('Edit', p.editPermission),
-              chip('Delete', p.deletePermission),
-              chip('Attach', p.attachObjectsPermission),
-            ],
-          ),
-          if (p.isClassDeleted)
-            Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Text(
-                'Warning: class is deleted.',
-                style: TextStyle(fontSize: 12, color: Colors.orange.shade800),
-              ),
-            ),
-        ],
-      ),
-    );
-  } ...*/
-
   Future<List<ObjectComment>> _loadComments() async {
     final svc = context.read<MFilesService>();
-    return svc.fetchComments(
+    try{
+      final items = await svc.fetchComments(
       objectId: widget.obj.id,
       objectTypeId: widget.obj.objectTypeId,
       vaultGuid: svc.vaultGuidWithBraces,
     );
+      return items;
+    } catch (_) {
+      return <ObjectComment>[];
+    }
   }
 
   Future<void> _submitComment() async {
@@ -1170,10 +1129,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   String _fmtCommentDate(DateTime? dt) {
-  if (dt == null) return '';
-  // Keep simple; you can switch to intl DateFormat if you want.
-  return dt.toLocal().toString();
-}
+    if (dt == null) return '';
+    // Keep simple; you can switch to intl DateFormat if you want.
+    return dt.toLocal().toString();
+  }
 
   Widget _commentsCard() {
     final disabled = _saving || _downloading || _changingWorkflow || _assigningWorkflow;
@@ -1195,87 +1154,189 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           ),
           const SizedBox(height: 10),
 
-          // List
-          FutureBuilder<List<ObjectComment>>(
-            future: _commentsFuture,
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
-                  child: LinearProgressIndicator(minHeight: 2),
-                );
-              }
-              if (snap.hasError) {
-                return Text(
-                  'Failed to load comments: ${snap.error}',
-                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                );
-              }
-
-              final items = snap.data ?? [];
-              if (items.isEmpty) {
-                return Text(
-                  'No comments yet.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                );
-              }
-
-              return Column(
-                children: items.map((c) {
-                  final dateText = _fmtCommentDate(c.modifiedDate);
-                  return Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
+          // Scrollable comments list with fixed height
+          SizedBox(
+            height: 180, // Fixed height for the comments section
+            child: FutureBuilder<List<ObjectComment>>(
+              future: _commentsFuture,
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: CircularProgressIndicator(strokeWidth: 2),
                     ),
+                  );
+                }
+                if (snap.hasError) {
+                  return Center(
+                    child: Text(
+                      'Failed to load comments: ${snap.error}',
+                      style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                      textAlign: TextAlign.center,
+                    ),
+                  );
+                }
+
+                final items = snap.data ?? [];
+                if (items.isEmpty) {
+                  return Center(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(c.text, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-                        if (dateText.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(dateText, style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
-                        ],
+                        Icon(Icons.chat_bubble_outline, size: 40, color: Colors.grey.shade300),
+                        const SizedBox(height: 8),
+                        Text(
+                          'No comments yet',
+                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Be the first to comment',
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
+                        ),
                       ],
                     ),
                   );
-                }).toList(),
-              );
-            },
+                }
+
+                return Scrollbar(
+                  thumbVisibility: items.length > 3, // Show scrollbar if more than 3 comments
+                  thickness: 4,
+                  radius: const Radius.circular(2),
+                  child: ListView.separated(
+                    padding: const EdgeInsets.only(right: 8, bottom: 4),
+                    itemCount: items.length,
+                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final c = items[index];
+                      final dateText = _fmtCommentDate(c.modifiedDate);
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Avatar circle
+                          Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF072F5F).withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.person_outline,
+                                size: 18,
+                                color: Color(0xFF072F5F),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          // Comment content
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Date/time badge
+                                if (dateText.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 4),
+                                    child: Text(
+                                      dateText,
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade500,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ),
+                                // Comment text bubble
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.grey.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: Colors.grey.shade200,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    c.text,
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
           ),
 
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
+          // Divider before composer
+          Divider(height: 1, color: Colors.grey.shade200),
+          const SizedBox(height: 12),
 
           // Composer
           Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               Expanded(
                 child: TextField(
                   controller: _commentCtrl,
                   enabled: !disabled && !_postingComment,
                   minLines: 1,
-                  maxLines: 3,
+                  maxLines: 4,
                   decoration: InputDecoration(
                     hintText: 'Write a comment…',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    hintStyle: TextStyle(color: Colors.grey.shade400),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: Color(0xFF072F5F), width: 1.5),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     isDense: true,
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               ElevatedButton(
-                onPressed: (disabled || _postingComment) ? null : _submitComment,
+                onPressed: (disabled || _postingComment) 
+                    ? null 
+                    : _submitComment,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF072F5F),
                   foregroundColor: Colors.white,
+                  disabledBackgroundColor: Colors.grey.shade300,
+                  disabledForegroundColor: Colors.grey.shade500,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   elevation: 0,
                 ),
-                child: const Text('Post'),
+                child: const Icon(Icons.send, size: 18),
               ),
             ],
           ),
@@ -1283,8 +1344,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       ),
     );
   }
-
-
 
   Widget _kv(String k, String v) {
     return Padding(

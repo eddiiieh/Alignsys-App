@@ -3,13 +3,12 @@ import 'package:intl/intl.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
+import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:provider/provider.dart';
-import '../services/mfiles_service.dart';
 import '../models/vault.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../widgets/relationships_dropdown.dart';
-
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +30,16 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
 
+  // Scroll controllers for each tab (home + objects)
+  final ScrollController _homeScroll = ScrollController();
+  final ScrollController _objectsScroll = ScrollController();
+
+  // NEW: central icon resolver method for content items
+  IconData _iconForObj(MFilesService svc, ViewObject obj) {
+    return svc.iconForViewObject(obj);
+  }
+
+
   List<ViewItem> _sortedViews(List<ViewItem> items) {
     final copy = List<ViewItem>.from(items);
     copy.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -48,17 +57,17 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _loadInitialData() async {
-  final service = context.read<MFilesService>();
+    final service = context.read<MFilesService>();
 
-  // ✅ Ensure M-Files user id is available for vault-scoped endpoints
-  await service.fetchMFilesUserId();
+    // ✅ Ensure M-Files user id is available for vault-scoped endpoints
+    await service.fetchMFilesUserId();
 
-  await service.fetchObjectTypes();
-  await service.fetchAllViews();
-  await service.fetchRecentObjects();
-}
+    await service.fetchObjectTypes();
+    await service.fetchAllViews();
+    await service.fetchRecentObjects();
+  }
 
-    void _onTabChanged(int index) {
+  void _onTabChanged(int index) {
     final service = context.read<MFilesService>();
     final tab = tabs[index];
     service.setActiveTab(tab);
@@ -80,6 +89,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
   @override
   void dispose() {
+    _homeScroll.dispose();
+    _objectsScroll.dispose();
     _tabController.dispose();
     _searchController.dispose();
     _searchFocus.dispose();
@@ -107,6 +118,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           title: Container(
             padding: const EdgeInsets.all(4),
             decoration: BoxDecoration(
+              // ignore: deprecated_member_use
               color: Colors.white.withOpacity(0.10),
               borderRadius: BorderRadius.circular(10),
             ),
@@ -124,13 +136,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               builder: (BuildContext buttonContext) {
                 return TextButton.icon(
                   onPressed: () => _showCreateMenu(buttonContext),
-                  icon: const Icon(Icons.add,
-                      size: 20, color: Color.fromARGB(255, 251, 251, 251)),
+                  icon: const Icon(Icons.add, size: 20, color: Color.fromARGB(255, 251, 251, 251)),
                   label: const Text(
                     'Create',
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: Color.fromARGB(255, 251, 251, 251)),
+                    style: TextStyle(fontSize: 14, color: Color.fromARGB(255, 251, 251, 251)),
                   ),
                 );
               },
@@ -138,8 +147,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             Builder(
               builder: (BuildContext buttonContext) {
                 return IconButton(
-                  icon: const Icon(Icons.person,
-                      color: Color.fromARGB(255, 251, 251, 251)),
+                  icon: const Icon(Icons.person, color: Color.fromARGB(255, 251, 251, 251)),
                   onPressed: () => _showProfileMenu(buttonContext),
                 );
               },
@@ -282,49 +290,57 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // HOME TAB
   // -----------------------------
   Widget _buildHomeTab() {
-  return Consumer<MFilesService>(
-    builder: (context, service, _) {
-      if (service.isLoading && service.allViews.isEmpty) {
-        return const Center(child: CircularProgressIndicator());
-      }
+    return Consumer<MFilesService>(
+      builder: (context, service, _) {
+        if (service.isLoading && service.allViews.isEmpty) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-      if (service.error != null && service.allViews.isEmpty) {
-        return Center(child: Text(service.error!));
-      }
+        if (service.error != null && service.allViews.isEmpty) {
+          return Center(child: Text(service.error!));
+        }
 
-      final commonSorted = _sortedViews(service.commonViews);
-      final otherSorted = _sortedViews(service.otherViews);
+        final commonSorted = _sortedViews(service.commonViews);
+        final otherSorted = _sortedViews(service.otherViews);
 
-      return RefreshIndicator(
-        onRefresh: service.fetchAllViews,
-        child: ListView(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-          children: [
-            _buildSection(
-              title: 'Common Views',
-              count: commonSorted.length,
-              expanded: _commonExpanded,
-              onToggle: () => setState(() => _commonExpanded = !_commonExpanded),
-              items: commonSorted,
-              emptyText: 'No common views',
-              leadingIcon: Icons.star,
+        return RefreshIndicator(
+          onRefresh: service.fetchAllViews,
+          child: Scrollbar(
+            controller: _homeScroll,
+            thumbVisibility: false,
+            interactive: true,
+            thickness: 6,
+            radius: const Radius.circular(8),
+            child: ListView(
+              controller: _homeScroll,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              children: [
+                _buildSection(
+                  title: 'Common Views',
+                  count: commonSorted.length,
+                  expanded: _commonExpanded,
+                  onToggle: () => setState(() => _commonExpanded = !_commonExpanded),
+                  items: commonSorted,
+                  emptyText: 'No common views',
+                  leadingIcon: Icons.star,
+                ),
+                const SizedBox(height: 10),
+                _buildSection(
+                  title: 'Other Views',
+                  count: otherSorted.length,
+                  expanded: _otherExpanded,
+                  onToggle: () => setState(() => _otherExpanded = !_otherExpanded),
+                  items: otherSorted,
+                  emptyText: 'No views available',
+                  leadingIcon: Icons.folder_outlined,
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            _buildSection(
-              title: 'Other Views',
-              count: otherSorted.length,
-              expanded: _otherExpanded,
-              onToggle: () => setState(() => _otherExpanded = !_otherExpanded),
-              items: otherSorted,
-              emptyText: 'No views available',
-              leadingIcon: Icons.folder_outlined,
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+          ),
+        );
+      },
+    );
+  }
 
   Widget _buildSection({
     required String title,
@@ -460,7 +476,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-
   Widget _buildAssignedTab() {
     return _buildObjectList(
       selector: (s) => s.assignedObjects,
@@ -473,21 +488,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   // NOTE: You currently don't have deleted/report objects in your service.
   // Keeping these as-is. If you add lists + fetch methods, wire them into _buildObjectList().
   Widget _buildDeletedTab() {
-  return _buildObjectList(
-    selector: (s) => s.deletedObjects, // list in your service
-    emptyIcon: Icons.delete_outline,
-    emptyText: 'No deleted objects',
-    onRefresh: (s) => s.fetchDeletedObjects(),
-  );
-}
+    return _buildObjectList(
+      selector: (s) => s.deletedObjects, // list in your service
+      emptyIcon: Icons.delete_outline,
+      emptyText: 'No deleted objects',
+      onRefresh: (s) => s.fetchDeletedObjects(),
+    );
+  }
 
   Widget _buildReportsTab() {
     return _buildObjectList(
-    selector: (s) => s.reportObjects,
-    emptyIcon: Icons.analytics_outlined,
-    emptyText: 'No reports found',
-    onRefresh: (s) => s.fetchReportObjects(),
-  );
+      selector: (s) => s.reportObjects,
+      emptyIcon: Icons.analytics_outlined,
+      emptyText: 'No reports found',
+      onRefresh: (s) => s.fetchReportObjects(),
+    );
   }
 
   Widget _buildObjectList({
@@ -499,6 +514,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return Consumer<MFilesService>(
       builder: (context, service, _) {
         final objects = selector(service);
+
+        service.warmExtensionsForObjects(objects);
 
         if (service.isLoading && objects.isEmpty) {
           return const Center(child: CircularProgressIndicator());
@@ -522,10 +539,18 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
         return RefreshIndicator(
           onRefresh: () => onRefresh(service),
-          child: ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: objects.length,
-            itemBuilder: (context, index) => _buildCompactObjectRow(objects[index]),
+          child: Scrollbar(
+            controller: _objectsScroll,
+            thumbVisibility: false,
+            interactive: true,
+            thickness: 6,
+            radius: const Radius.circular(8),
+            child: ListView.builder(
+                controller: _objectsScroll,
+              padding: const EdgeInsets.all(16),
+              itemCount: objects.length,
+              itemBuilder: (context, index) => _buildCompactObjectRow(objects[index]),
+            ),
           ),
         );
       },
@@ -540,6 +565,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final subtitle = type.isEmpty ? 'Modified: $modified' : '$type | $modified';
 
     final canExpand = obj.id != 0 && obj.objectTypeId != 0 && obj.classId != 0;
+
+    // ✅ icon mapping: use cached extension if available; fallback to generic doc icon
+    final svc = context.watch<MFilesService>();
+    final mappedIcon = _iconForObj(svc, obj);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -572,8 +601,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             },
             child: Row(
               children: [
-                const Icon(Icons.description_outlined,
-                    size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+                Icon(mappedIcon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -603,8 +631,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
     );
   }
-
-
 
   Future<void> _executeSearch() async {
     if (_searchQuery.isEmpty) return;
@@ -695,7 +721,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
           ),
-          
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
           child: SafeArea(
             top: false,
@@ -720,6 +745,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       width: 44,
                       height: 44,
                       decoration: BoxDecoration(
+                        // ignore: deprecated_member_use
                         color: const Color(0xFF0A1541).withOpacity(0.10),
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -849,7 +875,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       },
     );
   }
-  
+
   void _handleLogout(BuildContext context) {
     showDialog(
       context: context,

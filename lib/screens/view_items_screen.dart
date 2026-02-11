@@ -37,14 +37,38 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   late List<ViewContentItem> _items;
 
+  final ScrollController _itemsScroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
     _items = widget.items;
+
+    // ✅ onload warm-up (runs once when this screen is created)
+    // Uses MFilesService cache + de-dupe to avoid repeated calls.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<MFilesService>().warmExtensionsForItems(_items);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ViewItemsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.items != widget.items) {
+      _items = widget.items;
+
+      // ✅ warm-up again if a new list is pushed in
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.read<MFilesService>().warmExtensionsForItems(_items);
+      });
+    }
   }
 
   @override
   void dispose() {
+    _itemsScroll.dispose();
     _searchController.dispose();
     super.dispose();
   }
@@ -83,10 +107,14 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   Widget _buildRow(ViewContentItem item) {
     final subtitle = _subtitleLabel(item);
 
-    final icon =
-        (item.isGroupFolder || item.isViewFolder)
-            ? Icons.folder_outlined
-            : Icons.description_outlined;
+    final svc = context.watch<MFilesService>();
+
+    final IconData icon;
+    if (item.isGroupFolder || item.isViewFolder) {
+      icon = Icons.folder_outlined;
+    } else {
+      icon = svc.iconForContentItem(item);
+    }
 
     final bool canExpand = item.isObject && item.id != 0 && item.objectTypeId != 0 && item.classId != 0;
 
@@ -103,7 +131,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           trailing: canExpand
               ? const Icon(Icons.expand_more, size: 18)
               : Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-
           title: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _handleTap(item),
@@ -136,7 +163,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
               ],
             ),
           ),
-
           children: canExpand
               ? [
                   RelationshipsDropdown(
@@ -159,7 +185,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       ),
     );
   }
-
 
   Future<void> _handleTap(ViewContentItem item) async {
     // 1) REAL OBJECT -> details
@@ -234,6 +259,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
       if (!context.mounted) return;
 
+      // ✅ warm-up for the next level list too (pre-cache icons)
+      context.read<MFilesService>().warmExtensionsForItems(children);
+
       Navigator.push(
         context,
         MaterialPageRoute(
@@ -257,6 +285,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   Widget build(BuildContext context) {
     final filtered = _applyFilter(_items);
 
+    // ✅ safe to call; your service should de-dupe cached + in-flight IDs
+    context.read<MFilesService>().warmExtensionsForItems(filtered);
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -279,11 +310,19 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           Expanded(
             child: filtered.isEmpty
                 ? const Center(child: Text('No items found'))
-                : ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) => _buildRow(filtered[i]),
+                : Scrollbar(
+                    controller: _itemsScroll,
+                    thumbVisibility: false, // only while scrolling
+                    interactive: true,
+                    thickness: 6,
+                    radius: const Radius.circular(8),
+                    child: ListView.separated(
+                      controller: _itemsScroll,
+                      padding: const EdgeInsets.all(16),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 8),
+                      itemBuilder: (context, i) => _buildRow(filtered[i]),
+                    ),
                   ),
           ),
         ],
