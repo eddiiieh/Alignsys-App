@@ -4,6 +4,7 @@ import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
+import 'package:mfiles_app/widgets/object_info_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 import '../models/vault.dart';
 import '../models/view_item.dart';
@@ -22,7 +23,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   final List<String> tabs = ['Home', 'Recent', 'Assigned', 'Deleted', 'Reports'];
   String _searchQuery = '';
 
-  static const double _sectionSpacing = 12;
+  static const double _sectionSpacing = 10;
 
   bool _commonExpanded = true;
   bool _otherExpanded = true;
@@ -38,7 +39,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   IconData _iconForObj(MFilesService svc, ViewObject obj) {
     return svc.iconForViewObject(obj);
   }
-
 
   List<ViewItem> _sortedViews(List<ViewItem> items) {
     final copy = List<ViewItem>.from(items);
@@ -115,39 +115,52 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           elevation: 0,
           toolbarHeight: 64,
           titleSpacing: 12,
-          title: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              // ignore: deprecated_member_use
-              color: Colors.white.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/alignsysop.png',
-                height: 34,
-                fit: BoxFit.cover,
-              ),
-            ),
+          title: Consumer<MFilesService>(
+            builder: (context, service, _) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.asset(
+                        'assets/alignsysop.png',
+                        height: 28,
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
           ),
           actions: [
             Builder(
               builder: (BuildContext buttonContext) {
                 return TextButton.icon(
-                  onPressed: () => _showCreateMenu(buttonContext),
-                  icon: const Icon(Icons.add, size: 20, color: Color.fromARGB(255, 251, 251, 251)),
+                  onPressed: () => _showCreateBottomSheet(buttonContext),
+                  icon: const Icon(Icons.add, size: 20, color: Colors.white),
                   label: const Text(
                     'Create',
-                    style: TextStyle(fontSize: 14, color: Color.fromARGB(255, 251, 251, 251)),
+                    style: TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.w600),
                   ),
                 );
               },
             ),
+            const SizedBox(width: 8),
             Builder(
               builder: (BuildContext buttonContext) {
                 return IconButton(
-                  icon: const Icon(Icons.person, color: Color.fromARGB(255, 251, 251, 251)),
+                  icon: Container(
+                    padding: const EdgeInsets.all(6),
+                    child: const Icon(Icons.person, size: 20, color: Colors.white),
+                  ),
                   onPressed: () => _showProfileMenu(buttonContext),
                 );
               },
@@ -183,105 +196,132 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final hasText = _searchController.text.trim().isNotEmpty;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: TextField(
-        controller: _searchController,
-        focusNode: _searchFocus,
-        textInputAction: TextInputAction.search,
-        decoration: InputDecoration(
-          hintText: 'Search...',
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(
-              color: Color.fromRGBO(25, 76, 129, 1),
-              width: 2,
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
             ),
-          ),
-          filled: true,
-          fillColor: Colors.grey.shade50,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-
-          // ✅ Keep everything in suffixIcon slot (stable height)
-          suffixIconConstraints: BoxConstraints(
-            minHeight: 40,
-            minWidth: hasText ? 88 : 48, // enough for (X + search) or (search)
-          ),
-          suffixIcon: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (hasText)
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.grey),
-                  tooltip: 'Clear',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-                  onPressed: () {
-                    _searchController.clear();
-                    setState(() => _searchQuery = '');
-                    _searchFocus.requestFocus();
-                  },
-                ),
-              IconButton(
-                icon: const Icon(Icons.search, color: Color.fromRGBO(25, 76, 129, 1)),
-                tooltip: 'Search',
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 40, height: 40),
-                onPressed: _executeSearch,
-              ),
-              const SizedBox(width: 4),
-            ],
-          ),
+          ],
         ),
-        onChanged: (value) => setState(() => _searchQuery = value.trim()),
-        onSubmitted: (_) => _executeSearch(),
+        child: TextField(
+          controller: _searchController,
+          focusNode: _searchFocus,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Search...',
+            hintStyle: TextStyle(color: Colors.grey.shade400),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color.fromRGBO(25, 76, 129, 1),
+                width: 2,
+              ),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            prefixIcon: Icon(
+              Icons.search,
+              color: Colors.grey.shade400,
+            ),
+            suffixIconConstraints: BoxConstraints(
+              minHeight: 40,
+              minWidth: hasText ? 48 : 0,
+            ),
+            suffixIcon: hasText
+                ? IconButton(
+                    icon: Icon(Icons.close, color: Colors.grey.shade400),
+                    tooltip: 'Clear',
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                      _searchFocus.unfocus();
+                    },
+                  )
+                : null,
+          ),
+          onChanged: (value) => setState(() => _searchQuery = value.trim()),
+          onSubmitted: (_) => _executeSearch(),
+        ),
       ),
     );
   }
 
   Widget _buildTabBar() {
-    return SizedBox(
-      height: 40,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: TabBar(
         controller: _tabController,
         isScrollable: true,
         tabAlignment: TabAlignment.start,
-        padding: const EdgeInsetsDirectional.only(start: 8),
-        labelPadding: const EdgeInsetsDirectional.fromSTEB(0, 0, 24, 0),
-        indicatorPadding: EdgeInsets.zero,
-        labelColor: const Color.fromRGBO(25, 76, 129, 1),
-        unselectedLabelColor: Colors.grey,
-        indicatorColor: const Color.fromRGBO(25, 76, 129, 1),
-        indicatorWeight: 3,
+        padding: EdgeInsets.zero,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        indicatorPadding: const EdgeInsets.all(4),
+        dividerColor: Colors.transparent,
+        indicator: BoxDecoration(
+          color: const Color(0xFF072F5F),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.grey.shade600,
         labelStyle: const TextStyle(
           fontWeight: FontWeight.w600,
-          fontSize: 15,
-          height: 1.0,
+          fontSize: 13,
         ),
-        tabs: const [
-          Tab(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.home, size: 18),
-                SizedBox(width: 6),
-                Text('Home'),
-              ],
-            ),
-          ),
-          Tab(text: 'Recent'),
-          Tab(text: 'Assigned'),
-          Tab(text: 'Deleted'),
-          Tab(text: 'Reports'),
+        unselectedLabelStyle: const TextStyle(
+          fontWeight: FontWeight.w500,
+          fontSize: 13,
+        ),
+        tabs: [
+          _buildTab(Icons.home_rounded, 'Home'),
+          _buildTab(Icons.history_rounded, 'Recent'),
+          _buildTab(Icons.assignment_rounded, 'Assigned'),
+          _buildTab(Icons.delete_outline_rounded, 'Deleted'),
+          _buildTab(Icons.analytics_outlined, 'Reports'),
         ],
         onTap: _onTabChanged,
+      ),
+    );
+  }
+
+  Widget _buildTab(IconData icon, String label) {
+    return Tab(
+      height: 36,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16),
+            const SizedBox(width: 6),
+            Text(label),
+          ],
+        ),
       ),
     );
   }
@@ -297,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
 
         if (service.error != null && service.allViews.isEmpty) {
-          return Center(child: Text(service.error!));
+          return _buildErrorState(service.error!);
         }
 
         final commonSorted = _sortedViews(service.commonViews);
@@ -313,7 +353,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             radius: const Radius.circular(8),
             child: ListView(
               controller: _homeScroll,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
               children: [
                 _buildSection(
                   title: 'Common Views',
@@ -322,7 +362,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   onToggle: () => setState(() => _commonExpanded = !_commonExpanded),
                   items: commonSorted,
                   emptyText: 'No common views',
-                  leadingIcon: Icons.star,
+                  leadingIcon: Icons.star_rounded,
                 ),
                 const SizedBox(height: 10),
                 _buildSection(
@@ -332,8 +372,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   onToggle: () => setState(() => _otherExpanded = !_otherExpanded),
                   items: otherSorted,
                   emptyText: 'No views available',
-                  leadingIcon: Icons.folder_outlined,
+                  leadingIcon: Icons.folder_rounded,
                 ),
+                const SizedBox(height: 16),
               ],
             ),
           ),
@@ -362,19 +403,31 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           icon: leadingIcon,
         ),
         AnimatedSize(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOut,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
           child: expanded
               ? Column(
                   children: [
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     if (items.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        child: Text(emptyText, style: TextStyle(color: Colors.grey.shade600)),
-                      )
+                      _buildEmptySection(emptyText)
                     else
-                      ..._buildFlatViewRows(items),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          children: _buildFlatViewRows(items),
+                        ),
+                      ),
                   ],
                 )
               : const SizedBox.shrink(),
@@ -393,11 +446,20 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              const Color(0xFF072F5F).withOpacity(0.08),
+              const Color(0xFF072F5F).withOpacity(0.03),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(10),
+        ),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+            Icon(icon, size: 20, color: const Color.fromRGBO(25, 76, 129, 1)),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -409,9 +471,66 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 ),
               ),
             ),
-            Text('($count)', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-            const SizedBox(width: 6),
-            Icon(expanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down, color: Colors.grey.shade700),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: const Color(0xFF072F5F).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF072F5F),
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+              color: const Color(0xFF072F5F),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptySection(String text) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.folder_open_rounded, size: 32, color: Colors.grey.shade400),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              text,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
           ],
         ),
       ),
@@ -424,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       final view = views[i];
       rows.add(_buildFlatViewRow(view));
       if (i != views.length - 1) {
-        rows.add(Divider(height: 1, color: Colors.grey.shade200));
+        rows.add(Divider(height: 1, thickness: 1, color: Colors.grey.shade100));
       }
     }
     return rows;
@@ -439,25 +558,54 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         );
       },
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         child: Row(
           children: [
-            const Icon(Icons.grid_view_rounded, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
-            const SizedBox(width: 10),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF072F5F).withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.grid_view_rounded,
+                size: 18,
+                color: Color.fromRGBO(25, 76, 129, 1),
+              ),
+            ),
+            const SizedBox(width: 12),
             Expanded(
               child: Text(
                 view.name,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
+                ),
               ),
             ),
-            const SizedBox(width: 10),
             if (view.count > 0) ...[
-              Text('${view.count}', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
               const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${view.count}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+              ),
             ],
-            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+            const SizedBox(width: 8),
+            Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey.shade400),
           ],
         ),
       ),
@@ -470,8 +618,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildRecentTab() {
     return _buildObjectList(
       selector: (s) => _searchQuery.isNotEmpty ? s.searchResults : s.recentObjects,
-      emptyIcon: Icons.history,
-      emptyText: _searchQuery.isNotEmpty ? 'No results' : 'No recent objects',
+      emptyIcon: Icons.history_rounded,
+      emptyText: _searchQuery.isNotEmpty ? 'No results found' : 'No recent documents',
+      emptySubtext: _searchQuery.isNotEmpty ? 'Try a different search term' : 'Documents you open will appear here',
       onRefresh: (s) => _searchQuery.isNotEmpty ? s.searchVault(_searchQuery) : s.fetchRecentObjects(),
     );
   }
@@ -479,19 +628,19 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildAssignedTab() {
     return _buildObjectList(
       selector: (s) => s.assignedObjects,
-      emptyIcon: Icons.assignment,
-      emptyText: 'No assigned objects',
+      emptyIcon: Icons.assignment_rounded,
+      emptyText: 'No assigned documents',
+      emptySubtext: 'Documents assigned to you will appear here',
       onRefresh: (s) => s.fetchAssignedObjects(),
     );
   }
 
-  // NOTE: You currently don't have deleted/report objects in your service.
-  // Keeping these as-is. If you add lists + fetch methods, wire them into _buildObjectList().
   Widget _buildDeletedTab() {
     return _buildObjectList(
-      selector: (s) => s.deletedObjects, // list in your service
-      emptyIcon: Icons.delete_outline,
-      emptyText: 'No deleted objects',
+      selector: (s) => s.deletedObjects,
+      emptyIcon: Icons.delete_outline_rounded,
+      emptyText: 'No deleted items',
+      emptySubtext: 'Deleted documents will appear here',
       onRefresh: (s) => s.fetchDeletedObjects(),
     );
   }
@@ -501,6 +650,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       selector: (s) => s.reportObjects,
       emptyIcon: Icons.analytics_outlined,
       emptyText: 'No reports found',
+      emptySubtext: 'Reports will appear here when available',
       onRefresh: (s) => s.fetchReportObjects(),
     );
   }
@@ -509,6 +659,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     required List<ViewObject> Function(MFilesService) selector,
     required IconData emptyIcon,
     required String emptyText,
+    required String emptySubtext,
     required Future<void> Function(MFilesService) onRefresh,
   }) {
     return Consumer<MFilesService>(
@@ -522,19 +673,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         }
 
         if (objects.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(emptyIcon, size: 64, color: Colors.grey.shade400),
-                const SizedBox(height: 12),
-                Text(
-                  emptyText,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
-                ),
-              ],
-            ),
-          );
+          return _buildEmptyState(emptyIcon, emptyText, emptySubtext);
         }
 
         return RefreshIndicator(
@@ -546,7 +685,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             thickness: 6,
             radius: const Radius.circular(8),
             child: ListView.builder(
-                controller: _objectsScroll,
+              controller: _objectsScroll,
               padding: const EdgeInsets.all(16),
               itemCount: objects.length,
               itemBuilder: (context, index) => _buildCompactObjectRow(objects[index]),
@@ -557,8 +696,86 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  // UPDATED: show Name + Date Modified (remove type line)
-  // UPDATED: show Name + (ObjectType | Last Modified) when type exists
+  Widget _buildEmptyState(IconData icon, String text, String subtext) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 48, color: Colors.grey.shade400),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              text,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtext,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState(String error) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.error_outline_rounded, size: 48, color: Colors.red.shade400),
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Oops! Something went wrong',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF1A1A1A),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildCompactObjectRow(ViewObject obj) {
     final type = obj.objectTypeName.trim();
     final modified = _formatModified(obj.lastModifiedUtc);
@@ -566,7 +783,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
     final canExpand = obj.id != 0 && obj.objectTypeId != 0 && obj.classId != 0;
 
-    // ✅ icon mapping: use cached extension if available; fallback to generic doc icon
     final svc = context.watch<MFilesService>();
     final mappedIcon = _iconForObj(svc, obj);
 
@@ -575,18 +791,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
           onExpansionChanged: (expanded) {
-            if (!canExpand) return; // no-op
+            if (!canExpand) return;
           },
           trailing: canExpand
-              ? const Icon(Icons.expand_more, size: 18)
-              : const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+              ? const Icon(Icons.expand_more_rounded, size: 20)
+              : Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey.shade400),
           title: GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () async {
@@ -601,8 +824,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             },
             child: Row(
               children: [
-                Icon(mappedIcon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF072F5F).withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(mappedIcon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -611,24 +841,59 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                         obj.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 4),
                       Text(
                         subtitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                     ],
                   ),
                 ),
+                if (canExpand) ...[
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => _showObjectInfo(obj),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF072F5F).withOpacity(0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.info_outline_rounded,
+                        size: 18,
+                        color: Color(0xFF072F5F),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           children: canExpand ? [RelationshipsDropdown(obj: obj)] : const [],
         ),
       ),
+    );
+  }
+
+  void _showObjectInfo(ViewObject obj) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ObjectInfoBottomSheet(obj: obj),
     );
   }
 
@@ -643,18 +908,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  void _showCreateMenu(BuildContext context) async {
+  // ✅ NEW: Create menu as bottom sheet instead of popup
+  void _showCreateBottomSheet(BuildContext context) {
     final service = context.read<MFilesService>();
-    final RenderBox button = context.findRenderObject() as RenderBox;
-    final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-    final buttonPosition = button.localToGlobal(Offset.zero, ancestor: overlay);
-
-    final RelativeRect position = RelativeRect.fromLTRB(
-      buttonPosition.dx + button.size.width - 200,
-      buttonPosition.dy + button.size.height,
-      0,
-      0,
-    );
 
     if (service.objectTypes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -666,46 +922,118 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       return;
     }
 
-    final maxMenuHeight = MediaQuery.of(context).size.height * 0.6;
-
-    showMenu<dynamic>(
+    showModalBottomSheet(
       context: context,
-      position: position,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 8,
-      constraints: BoxConstraints(
-        minWidth: 230,
-        maxWidth: 230,
-        maxHeight: maxMenuHeight,
-      ),
-      items: service.objectTypes.map((objectType) {
-        return PopupMenuItem<dynamic>(
-          value: objectType,
-          child: Row(
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(
-                objectType.isDocument ? Icons.description : Icons.folder,
-                size: 20,
-                color: const Color.fromRGBO(25, 76, 129, 1),
+              // Drag handle
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(objectType.displayName, style: const TextStyle(fontSize: 14)),
+              const SizedBox(height: 20),
+
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF072F5F).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.add_circle_outline_rounded,
+                      color: Color(0xFF072F5F),
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Create New',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
               ),
-              const Icon(Icons.chevron_right, size: 18, color: Colors.grey),
+              const SizedBox(height: 20),
+
+              // Object types list
+              Flexible(
+                child: ListView.separated(
+                  shrinkWrap: true,
+                  itemCount: service.objectTypes.length,
+                  separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
+                  itemBuilder: (context, index) {
+                    final objectType = service.objectTypes[index];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF072F5F).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          objectType.isDocument ? Icons.description_rounded : Icons.folder_rounded,
+                          size: 20,
+                          color: const Color.fromRGBO(25, 76, 129, 1),
+                        ),
+                      ),
+                      title: Text(
+                        objectType.displayName,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.grey.shade400,
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DynamicFormScreen(objectType: objectType),
+                          ),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
             ],
           ),
         );
-      }).toList(),
-    ).then((selectedObjectType) {
-      if (selectedObjectType != null) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => DynamicFormScreen(objectType: selectedObjectType)),
-        );
-      }
-    });
+      },
+    );
   }
 
   void _showProfileMenu(BuildContext context) {
@@ -719,53 +1047,62 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         return Container(
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
-          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
           child: SafeArea(
             top: false,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // drag handle
+                // Drag handle
                 Container(
-                  width: 36,
+                  width: 40,
                   height: 4,
                   decoration: BoxDecoration(
                     color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(99),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
 
-                // header
+                // Header
                 Row(
                   children: [
                     Container(
-                      width: 44,
-                      height: 44,
+                      width: 52,
+                      height: 52,
                       decoration: BoxDecoration(
-                        // ignore: deprecated_member_use
                         color: const Color(0xFF0A1541).withOpacity(0.10),
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                       ),
-                      child: const Icon(Icons.person, color: Color(0xFF0A1541)),
+                      child: const Icon(
+                        Icons.person_rounded,
+                        color: Color(0xFF0A1541),
+                        size: 28,
+                      ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
                             service.username ?? 'Unknown',
-                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Account',
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            'Account Settings',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                         ],
                       ),
@@ -773,101 +1110,139 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                   ],
                 ),
 
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
                 Divider(height: 1, color: Colors.grey.shade200),
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
 
-                // vault dropdown (no popup dialog)
+                // Vault selector
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
                     'Current Vault',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade700,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
 
                 FutureBuilder<List<Vault>>(
                   future: service.getUserVaults(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 16),
                         alignment: Alignment.centerLeft,
                         child: const LinearProgressIndicator(minHeight: 2),
                       );
                     }
                     if (snapshot.hasError) {
-                      return Text('Error loading vaults: ${snapshot.error}');
+                      return Text(
+                        'Error loading vaults: ${snapshot.error}',
+                        style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                      );
                     }
 
                     final vaults = snapshot.data ?? [];
-                    if (vaults.isEmpty) return const Text('No vaults available');
+                    if (vaults.isEmpty) {
+                      return const Text('No vaults available');
+                    }
 
                     final selectedGuid = service.selectedVault?.guid;
 
-                    return DropdownButtonFormField<String>(
-                      value: selectedGuid,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    return Container(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      items: vaults.map((v) {
-                        return DropdownMenuItem<String>(
-                          value: v.guid,
-                          child: Text(v.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                        );
-                      }).toList(),
-                      onChanged: (guid) async {
-                        if (guid == null) return;
-                        if (guid == service.selectedVault?.guid) return;
-
-                        final newVault = vaults.firstWhere((v) => v.guid == guid);
-
-                        // switch vault in-place (no popup)
-                        service.selectedVault = newVault;
-                        await service.fetchMFilesUserId();
-                        await service.fetchObjectTypes();
-                        await service.fetchAllViews();
-                        await service.fetchRecentObjects();
-
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Switched to ${newVault.name}'),
-                              backgroundColor: const Color.fromRGBO(25, 76, 129, 1),
-                              duration: const Duration(seconds: 2),
+                      child: DropdownButtonFormField<String>(
+                        value: selectedGuid,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                        ),
+                        items: vaults.map((v) {
+                          return DropdownMenuItem<String>(
+                            value: v.guid,
+                            child: Text(
+                              v.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontWeight: FontWeight.w500),
                             ),
                           );
-                        }
-                      },
+                        }).toList(),
+                        onChanged: (guid) async {
+                          if (guid == null) return;
+                          if (guid == service.selectedVault?.guid) return;
+
+                          final newVault = vaults.firstWhere((v) => v.guid == guid);
+
+                          service.selectedVault = newVault;
+                          await service.fetchMFilesUserId();
+                          await service.fetchObjectTypes();
+                          await service.fetchAllViews();
+                          await service.fetchRecentObjects();
+
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('Switched to ${newVault.name}'),
+                                backgroundColor: const Color.fromRGBO(25, 76, 129, 1),
+                                duration: const Duration(seconds: 2),
+                              ),
+                            );
+                          }
+                        },
+                      ),
                     );
                   },
                 ),
 
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
                 Divider(height: 1, color: Colors.grey.shade200),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
 
-                // actions
+                // Logout
                 ListTile(
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.logout, color: Colors.red),
-                  title: const Text('Log Out', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w600)),
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.logout_rounded, color: Colors.red, size: 20),
+                  ),
+                  title: const Text(
+                    'Log Out',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15,
+                    ),
+                  ),
                   onTap: () {
                     Navigator.pop(context);
                     _handleLogout(context);
                   },
                 ),
 
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
               ],
             ),
           ),
@@ -880,16 +1255,29 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Log Out'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'Log Out',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         content: const Text('Are you sure you want to log out?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: TextStyle(color: Colors.grey.shade700),
+            ),
           ),
           ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              elevation: 0,
+            ),
             onPressed: () {
               Navigator.pop(context);
               context.read<MFilesService>().logout();

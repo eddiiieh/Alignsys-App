@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
+import 'package:mfiles_app/widgets/object_info_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_content_item.dart';
@@ -104,9 +105,30 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     }).toList();
   }
 
+  void _showObjectInfo(ViewContentItem item) {
+    final obj = ViewObject(
+      id: item.id,
+      title: item.title,
+      objectTypeId: item.objectTypeId,
+      classId: item.classId,
+      versionId: item.versionId,
+      objectTypeName: item.objectTypeName ?? '',
+      classTypeName: item.classTypeName ?? '',
+      displayId: item.displayId ?? '',
+      createdUtc: item.createdUtc,
+      lastModifiedUtc: item.lastModifiedUtc,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ObjectInfoBottomSheet(obj: obj),
+    );
+  }
+
   Widget _buildRow(ViewContentItem item) {
     final subtitle = _subtitleLabel(item);
-
     final svc = context.watch<MFilesService>();
 
     final IconData icon;
@@ -116,7 +138,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       icon = svc.iconForContentItem(item);
     }
 
-    final bool canExpand = item.isObject && item.id != 0 && item.objectTypeId != 0 && item.classId != 0;
+    // NEW - This will work for ALL objects including files
+    final bool canExpand = item.isObject && item.id > 0;
 
     return Container(
       decoration: BoxDecoration(
@@ -160,6 +183,23 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     ],
                   ),
                 ),
+                
+                // ✅ ADD INFO ICON HERE (only for objects)
+                if (canExpand) ...[
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => _showObjectInfo(item),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 20,
+                        color: const Color(0xFF072F5F),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),

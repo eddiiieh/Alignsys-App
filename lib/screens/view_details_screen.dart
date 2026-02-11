@@ -3,6 +3,7 @@ import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_items_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
+import 'package:mfiles_app/widgets/object_info_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_item.dart';
@@ -133,14 +134,14 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildRow(ViewContentItem item) {
+    
+    
     final subtitle = _subtitleLabel(item);
-
     final svc = context.watch<MFilesService>();
-
     final icon = svc.iconForContentItem(item);
 
-    // Only objects can have relationships
-    final bool canExpand = item.isObject && item.id != 0 && item.objectTypeId != 0 && item.classId != 0;
+    //This will work for ALL objects including files
+    final bool canExpand = item.isObject && item.id > 0;
 
     return Container(
       decoration: BoxDecoration(
@@ -184,11 +185,28 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     ],
                   ),
                 ),
+                
+                // ✅ ADD INFO ICON HERE (only for objects)
+                if (canExpand) ...[
+                  const SizedBox(width: 8),
+                  InkWell(
+                    onTap: () => _showObjectInfo(item),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.info_outline,
+                        size: 20,
+                        color: const Color(0xFF072F5F),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
 
-          // 👉 THIS is the relationships dropdown
+          // Relationships dropdown
           children: canExpand
               ? [
                   RelationshipsDropdown(
@@ -207,17 +225,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   ),
                 ]
               : const [],
-
-          // Tap on header still opens object / folder
-          onExpansionChanged: (expanded) {
-            if (!expanded) return;
-
-            // Expand shows relationships only
-            // Actual navigation remains explicit:
-          },
-
-          // Tap on title area opens item
-          // (ExpansionTile does not expose onTap, so wrap title)
         ),
       ),
     );
@@ -308,6 +315,28 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Unsupported item type')),
+    );
+  }
+
+  void _showObjectInfo(ViewContentItem item) {
+    final obj = ViewObject(
+      id: item.id,
+      title: item.title,
+      objectTypeId: item.objectTypeId,
+      classId: item.classId,
+      versionId: item.versionId,
+      objectTypeName: item.objectTypeName ?? '',
+      classTypeName: item.classTypeName ?? '',
+      displayId: item.displayId ?? '',
+      createdUtc: item.createdUtc,
+      lastModifiedUtc: item.lastModifiedUtc,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ObjectInfoBottomSheet(obj: obj),
     );
   }
 

@@ -44,7 +44,7 @@ class _LinkedObjectsListScreenState extends State<LinkedObjectsListScreen> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF072F5F),
         foregroundColor: Colors.white,
-        title: Text(title)
+        title: Text(widget.title),
         ),
       body: Scrollbar(
         controller: _sc,

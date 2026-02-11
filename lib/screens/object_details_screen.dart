@@ -577,7 +577,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
   }
 
-  String _fmt(DateTime? dt) => dt == null ? '-' : dt.toLocal().toString();
+  String _fmt(DateTime? dt) {
+    if (dt == null) return '-';
+    final local = dt.toLocal();
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1130,8 +1134,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   String _fmtCommentDate(DateTime? dt) {
     if (dt == null) return '';
-    // Keep simple; you can switch to intl DateFormat if you want.
-    return dt.toLocal().toString();
+    final now = DateTime.now();
+    final local = dt.toLocal();
+    final diff = now.difference(local);
+    
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    
+    return '${local.month}/${local.day}/${local.year}';
   }
 
   Widget _commentsCard() {
