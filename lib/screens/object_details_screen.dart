@@ -405,6 +405,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     elevation: 0,
+                    // Add visual feedback
+                    overlayColor: Colors.white.withOpacity(0.1),
                   ),
                   child: const Text('Apply'),
                 ),
@@ -537,6 +539,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
+                      // Add visual feedback
+                      overlayColor: Colors.white.withOpacity(0.1),
                     ),
                     child: const Text('Assign'),
                   ),
@@ -658,7 +662,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         backgroundColor: const Color(0xFF072F5F),
         foregroundColor: Colors.white,
         titleSpacing: 12,
-        title: Text(_title.isEmpty ? obj.title : _title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        // ✅ IMPROVED: Allow title to wrap to 2 lines with smaller font
+        title: Text(
+          _title.isEmpty ? obj.title : _title,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 15, height: 1.2),
+        ),
         actions: [
           // Edit / Close
           IconButton(
@@ -744,7 +754,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     child: ListView(
                       controller: _pageScroll,
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(8),
                       children: [
                         _headerCard(obj),
                         const SizedBox(height: 12),
@@ -787,22 +797,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Column(
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Icon(Icons.description_outlined, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
               const SizedBox(width: 10),
+              // ✅ IMPROVED: Allow title to wrap in header card too
               Expanded(
                 child: Text(
                   _title.isEmpty ? obj.title : _title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, height: 1.3),
                 ),
               ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                onPressed: () => setState(() => _headerDetailsExpanded = !_headerDetailsExpanded),
-                icon: Icon(_headerDetailsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () => setState(() => _headerDetailsExpanded = !_headerDetailsExpanded),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Icon(_headerDetailsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                  ),
+                ),
               ),
             ],
           ),
@@ -1064,22 +1079,24 @@ Widget _previewCard(ViewObject obj) {
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: Colors.grey.shade200),
                   ),
-                  child: ListTile(
-                    dense: true,
-                    leading: Icon(icon),
-                    title: Text(
-                      f.fileTitle.isEmpty ? 'File ${f.fileId}' : f.fileTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: (_saving || _downloading || _changingWorkflow) 
+                          ? null 
+                          : () => _previewFileInApp(obj, f),
+                      child: ListTile(
+                        dense: true,
+                        leading: Icon(icon),
+                        title: Text(
+                          f.fileTitle.isEmpty ? 'File ${f.fileId}' : f.fileTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
 
-                    // ✅ Tap to preview
-                    onTap: (_saving || _downloading || _changingWorkflow) 
-                        ? null 
-                        : () => _previewFileInApp(obj, f),
-
-                    trailing: PopupMenuButton<String>(
+                        trailing: PopupMenuButton<String>(
                       onSelected: (action) async {
                         final displayIdInt = int.tryParse(obj.displayId);
                         if (displayIdInt == null) {
@@ -1172,6 +1189,8 @@ Widget _previewCard(ViewObject obj) {
                         ),
                       ],
                       child: const Icon(Icons.more_vert, size: 18),
+                    ),
+                      ),
                     ),
                   ),
                 );
@@ -1481,6 +1500,8 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   elevation: 0,
+                  // Add visual feedback
+                  overlayColor: Colors.white.withOpacity(0.1),
                 ),
                 child: const Icon(Icons.send, size: 18),
               ),

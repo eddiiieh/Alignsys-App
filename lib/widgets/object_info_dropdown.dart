@@ -5,7 +5,6 @@ import '../models/view_object.dart';
 import '../models/object_file.dart';
 import '../services/mfiles_service.dart';
 import '../utils/file_icon_resolver.dart';
-
 import '../screens/document_preview_screen.dart';
 
 class ObjectInfoDropdown extends StatefulWidget {
@@ -21,10 +20,9 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   late Future<Map<String, dynamic>> _infoFuture;
   bool _downloading = false;
 
-  // Map to store friendly property names
   final Map<int, String> _propNameById = {};
   final Set<int> _allowedMetaPropIds = {};
-  static const Set<int> _excludeMetaPropIds = {100}; // Class
+  static const Set<int> _excludeMetaPropIds = {100};
 
   @override
   void initState() {
@@ -35,10 +33,8 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   Future<Map<String, dynamic>> _loadInfo() async {
     final svc = context.read<MFilesService>();
 
-    // Fetch class properties first to get friendly names
     await svc.fetchClassProperties(widget.obj.objectTypeId, widget.obj.classId);
 
-    // Build allowed properties list (same logic as ObjectDetailsScreen)
     _allowedMetaPropIds
       ..clear()
       ..addAll(
@@ -47,19 +43,16 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
       ..add(0)
       ..removeAll(_excludeMetaPropIds);
 
-    // Build friendly names map
     _propNameById
       ..clear()
       ..addAll({0: 'Name or title', 100: 'Class'})
       ..addEntries(svc.classProperties.map((p) => MapEntry(p.id, p.title)));
 
-    // Fetch metadata properties
     final propsRaw = await svc.fetchObjectViewProps(
       objectId: widget.obj.id,
       classId: widget.obj.classId,
     );
 
-    // Update property names from raw data if available
     for (final m in propsRaw) {
       final int? id = (m['id'] as num?)?.toInt() ??
           (m['propId'] as num?)?.toInt() ??
@@ -78,7 +71,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
       _propNameById[id] = trimmed;
     }
 
-    // Fetch attached files
     final files = await svc.fetchObjectFiles(
       objectId: widget.obj.id,
       classId: widget.obj.classId,
@@ -129,7 +121,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     }
 
     if (value is Map) {
-      // Check for common display fields
       for (final key in ['displayValue', 'title', 'name', 'caption', 'text', 'label']) {
         final x = value[key];
         if (x is String && x.trim().isNotEmpty) return x;
@@ -179,7 +170,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                   extension: file.extension,
                   reportGuid: file.reportGuid,
                 ),
-                
                 Positioned(
                   top: 8,
                   right: 8,
@@ -319,7 +309,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         final propsRaw = data['props'] as List;
         final files = data['files'] as List<ObjectFile>;
 
-        // Filter to only show allowed metadata properties
         final metaProps = propsRaw.where((prop) {
           final int? id = (prop['id'] as num?)?.toInt() ??
               (prop['propId'] as num?)?.toInt() ??
@@ -336,46 +325,10 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ✅ NEW: Object Title Section
-              _buildSectionTitle('Object'),
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.label_outline,
-                      size: 16,
-                      color: const Color(0xFF072F5F),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        widget.obj.title,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-              Divider(height: 1, color: Colors.grey.shade300),
-              const SizedBox(height: 12),
-
-              // Basic Information
+              // Basic Information (with Title as first field)
               _buildSectionTitle('Basic Information'),
               const SizedBox(height: 8),
+              _buildInfoRow('Title', widget.obj.title),
               _buildInfoRow('Class', widget.obj.classTypeName),
               _buildInfoRow('Modified', _formatDate(widget.obj.lastModifiedUtc)),
 
@@ -383,7 +336,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               Divider(height: 1, color: Colors.grey.shade300),
               const SizedBox(height: 12),
 
-              // Metadata (show all allowed properties, matching ObjectDetailsScreen)
+              // Metadata
               _buildSectionTitle('Metadata'),
               const SizedBox(height: 8),
               if (metaProps.isEmpty)
@@ -403,7 +356,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                 Divider(height: 1, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
 
-                // Files
                 _buildSectionTitle('Preview Files (${files.length})'),
                 const SizedBox(height: 8),
                 ...files.map((file) => _buildFileRow(file)),
@@ -461,7 +413,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     final icon = FileIconResolver.iconForExtension(file.extension);
 
     return InkWell(
-      // ✅ Tap opens preview dialog
       onTap: _downloading ? null : () => _previewFile(file),
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -506,7 +457,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              // ✅ Menu button for additional options
               PopupMenuButton<String>(
                 padding: EdgeInsets.zero,
                 icon: Icon(

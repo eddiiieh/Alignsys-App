@@ -126,7 +126,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     return BreadcrumbBar(segments: segments);
   }
 
-  Widget _buildRow(ViewContentItem item) {
+  Widget _buildRow(ViewContentItem item, bool isLast) {
     final subtitle = _subtitleLabel(item);
     final svc = context.watch<MFilesService>();
 
@@ -143,167 +143,180 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     final bool infoExpanded = _expandedInfoItemId == item.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+    return Column(
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: isLast 
+                ? const BorderRadius.vertical(bottom: Radius.circular(12))
+                : BorderRadius.zero,
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          // Main row
-          InkWell(
-            onTap: () => _handleTap(item),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              child: Row(
-                children: [
-                  // Relationships chevron (left side)
-                  if (hasRelationships) ...[
-                    InkWell(
-                      onTap: () {
-                        setState(() {
-                          if (_expandedRelationshipsItemId == item.id) {
-                            _expandedRelationshipsItemId = null;
-                          } else {
-                            _expandedRelationshipsItemId = item.id;
-                            _expandedInfoItemId = null;
-                          }
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
-                          size: 18,
-                          color: const Color(0xFF072F5F),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                  ] else
-                    const SizedBox(width: 4),
-
-                  // Icon
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF072F5F).withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-                  ),
-                  const SizedBox(width: 10),
-
-                  // Title & subtitle
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+          child: Column(
+            children: [
+              // Main row with ripple effect
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: isLast 
+                      ? const BorderRadius.vertical(bottom: Radius.circular(12))
+                      : BorderRadius.zero,
+                  onTap: () => _handleTap(item),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    child: Row(
                       children: [
-                        Text(
-                          item.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                        ),
-                        if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        // Relationships chevron (left side)
+                        if (hasRelationships) ...[
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  if (_expandedRelationshipsItemId == item.id) {
+                                    _expandedRelationshipsItemId = null;
+                                  } else {
+                                    _expandedRelationshipsItemId = item.id;
+                                    _expandedInfoItemId = null;
+                                  }
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.all(0),
+                                child: Icon(
+                                  relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
+                                  size: 18,
+                                  color: const Color(0xFF072F5F),
+                                ),
+                              ),
+                            ),
                           ),
-                        ],
+                          const SizedBox(width: 6),
+                        ] else
+                          const SizedBox(width: 4),
+
+                        // Icon
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF072F5F).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+                        ),
+                        const SizedBox(width: 10),
+
+                        // Title & subtitle
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                              ),
+                              if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+
+                        // Info icon (right side) - only for objects
+                        if (isObject) ...[
+                          const SizedBox(width: 8),
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () {
+                                setState(() {
+                                  if (_expandedInfoItemId == item.id) {
+                                    _expandedInfoItemId = null;
+                                  } else {
+                                    _expandedInfoItemId = item.id;
+                                    _expandedRelationshipsItemId = null;
+                                  }
+                                });
+                              },
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF072F5F).withOpacity(0.08),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  infoExpanded ? Icons.info : Icons.info_outline,
+                                  size: 18,
+                                  color: const Color(0xFF072F5F),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ] else
+                          Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
                       ],
                     ),
                   ),
-
-                  // Info icon (right side) - only for objects
-                  if (isObject) ...[
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () {
-                        setState(() {
-                          if (_expandedInfoItemId == item.id) {
-                            _expandedInfoItemId = null;
-                          } else {
-                            _expandedInfoItemId = item.id;
-                            _expandedRelationshipsItemId = null;
-                          }
-                        });
-                      },
-                      borderRadius: BorderRadius.circular(20),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF072F5F).withOpacity(0.08),
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(
-                          infoExpanded ? Icons.info : Icons.info_outline,
-                          size: 18,
-                          color: const Color(0xFF072F5F),
-                        ),
-                      ),
-                    ),
-                  ] else
-                    Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-                ],
-              ),
-            ),
-          ),
-
-          // Info dropdown
-          if (infoExpanded && isObject) ...[
-            Divider(height: 1, color: Colors.grey.shade200),
-            ObjectInfoDropdown(
-              obj: ViewObject(
-                id: item.id,
-                title: item.title,
-                objectTypeId: item.objectTypeId,
-                classId: item.classId,
-                versionId: item.versionId,
-                objectTypeName: item.objectTypeName ?? '',
-                classTypeName: item.classTypeName ?? '',
-                displayId: item.displayId ?? '',
-                createdUtc: item.createdUtc,
-                lastModifiedUtc: item.lastModifiedUtc,
-              ),
-            ),
-          ],
-
-          // Relationships dropdown
-          if (relationshipsExpanded && hasRelationships) ...[
-            Divider(height: 1, color: Colors.grey.shade200),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: RelationshipsDropdown(
-                obj: ViewObject(
-                  id: item.id,
-                  title: item.title,
-                  objectTypeId: item.objectTypeId,
-                  classId: item.classId,
-                  versionId: item.versionId,
-                  objectTypeName: item.objectTypeName ?? '',
-                  classTypeName: item.classTypeName ?? '',
-                  displayId: item.displayId ?? '',
-                  createdUtc: item.createdUtc,
-                  lastModifiedUtc: item.lastModifiedUtc,
                 ),
               ),
-            ),
-          ],
-        ],
-      ),
+
+              // Info dropdown
+              if (infoExpanded && isObject) ...[
+                Divider(height: 1, color: Colors.grey.shade200),
+                ObjectInfoDropdown(
+                  obj: ViewObject(
+                    id: item.id,
+                    title: item.title,
+                    objectTypeId: item.objectTypeId,
+                    classId: item.classId,
+                    versionId: item.versionId,
+                    objectTypeName: item.objectTypeName ?? '',
+                    classTypeName: item.classTypeName ?? '',
+                    displayId: item.displayId ?? '',
+                    createdUtc: item.createdUtc,
+                    lastModifiedUtc: item.lastModifiedUtc,
+                  ),
+                ),
+              ],
+
+              // Relationships dropdown
+              if (relationshipsExpanded && hasRelationships) ...[
+                Divider(height: 1, color: Colors.grey.shade200),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                  child: RelationshipsDropdown(
+                    obj: ViewObject(
+                      id: item.id,
+                      title: item.title,
+                      objectTypeId: item.objectTypeId,
+                      classId: item.classId,
+                      versionId: item.versionId,
+                      objectTypeName: item.objectTypeName ?? '',
+                      classTypeName: item.classTypeName ?? '',
+                      displayId: item.displayId ?? '',
+                      createdUtc: item.createdUtc,
+                      lastModifiedUtc: item.lastModifiedUtc,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        // Divider between items (except last)
+        if (!isLast)
+          Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
+      ],
     );
   }
 
@@ -429,7 +442,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         children: [
           _buildBreadcrumbs(),
           if (_showSearch) _buildSearchBar(),
-          // ✅ REDUCED SPACING: No SizedBox here
           Expanded(
             child: filtered.isEmpty
                 ? const Center(child: Text('No items found'))
@@ -439,11 +451,30 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     interactive: true,
                     thickness: 6,
                     radius: const Radius.circular(8),
-                    child: ListView.builder(
+                    child: ListView(
                       controller: _itemsScroll,
-                      padding: const EdgeInsets.all(16),
-                      itemCount: filtered.length,
-                      itemBuilder: (context, i) => _buildRow(filtered[i]),
+                      padding: const EdgeInsets.all(10),
+                      children: [
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            children: List.generate(
+                              filtered.length,
+                              (i) => _buildRow(filtered[i], i == filtered.length - 1),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
           ),
