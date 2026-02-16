@@ -29,6 +29,8 @@ class DynamicFormScreen extends StatefulWidget {
 class _DynamicFormScreenState extends State<DynamicFormScreen> {
   final _formKey = GlobalKey<FormState>();
   final Map<int, dynamic> _formValues = {};
+  // NEW: Store selected lookup items for display purposes
+  final Map<int, List<dynamic>> _selectedLookupItems = {};
 
   File? _selectedFile;
   String? _selectedFileName;
@@ -61,13 +63,45 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
   Widget _card({required Widget child}) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: child,
+    );
+  }
+
+  Widget _sectionHeader(String title, {IconData? icon}) {
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF072F5F).withOpacity(0.08),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+          ),
+          const SizedBox(width: 10),
+        ],
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF1A1A1A),
+          ),
+        ),
+      ],
     );
   }
 
@@ -91,15 +125,26 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       isDense: true,
       filled: true,
       fillColor: Colors.grey.shade50,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
+        borderSide: BorderSide(color: Colors.grey.shade200),
       ),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF0A1541), width: 2),
+        borderSide: const BorderSide(color: Color(0xFF072F5F), width: 2),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: Colors.red.shade300),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.red, width: 2),
       ),
     );
   }
@@ -108,7 +153,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     if (!show) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 6),
-      child: Text('This field is required', style: TextStyle(color: Colors.red.shade600, fontSize: 12)),
+      child: Row(
+        children: [
+          Icon(Icons.error_outline, size: 14, color: Colors.red.shade600),
+          const SizedBox(width: 4),
+          Text(
+            'This field is required',
+            style: TextStyle(color: Colors.red.shade600, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
@@ -122,39 +176,60 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RichText(
-          text: TextSpan(
-            text: label,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.grey.shade700),
-            children: required
-                ? const [TextSpan(text: ' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800))]
-                : const [],
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: RichText(
+            text: TextSpan(
+              text: label,
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
+              children: required
+                  ? const [
+                      TextSpan(
+                        text: ' *',
+                        style: TextStyle(color: Colors.red, fontWeight: FontWeight.w700),
+                      )
+                    ]
+                  : const [],
+            ),
           ),
         ),
-        const SizedBox(height: 6),
         Container(
           decoration: BoxDecoration(
             color: Colors.grey.shade50,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade300),
+            border: Border.all(color: Colors.grey.shade200),
           ),
           child: Row(
             children: [
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: child,
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.only(right: 10),
-                child: Row(
-                  children: [
-                    Text(valueText, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-                    const SizedBox(width: 4),
-                  ],
+              if (valueText.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF072F5F).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      valueText,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF072F5F),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -169,6 +244,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     setState(() {
       _selectedClass = objectClass;
       _formValues.clear();
+      _selectedLookupItems.clear(); // Clear lookup items too
       _selectedFile = null;
       _selectedFileName = null;
     });
@@ -201,7 +277,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       lastDate: DateTime(2200),
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: Theme.of(context).colorScheme.copyWith(primary: const Color(0xFF0A1541)),
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+                primary: const Color(0xFF072F5F),
+              ),
         ),
         child: child!,
       ),
@@ -223,7 +301,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       initialTime: initialTime,
       builder: (context, child) => Theme(
         data: Theme.of(context).copyWith(
-          colorScheme: Theme.of(context).colorScheme.copyWith(primary: const Color(0xFF0A1541)),
+          colorScheme: Theme.of(context).colorScheme.copyWith(
+                primary: const Color(0xFF072F5F),
+              ),
         ),
         child: child!,
       ),
@@ -260,17 +340,64 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     return InkWell(
       onTap: () => _pickDate(p),
       borderRadius: BorderRadius.circular(12),
-      child: InputDecorator(
-        decoration: _deco(p.title, required: p.isRequired),
-        child: Row(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: has ? const Color(0xFF072F5F).withOpacity(0.3) : Colors.grey.shade200,
+            width: has ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                has ? _formatDateForUi(v) : 'Select',
-                style: TextStyle(color: has ? Colors.black87 : Colors.grey.shade600, fontWeight: FontWeight.w600),
+            Text(
+              p.title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
               ),
             ),
-            Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: has 
+                        ? const Color(0xFF072F5F).withOpacity(0.1)
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    Icons.calendar_today_rounded,
+                    size: 18,
+                    color: has 
+                        ? const Color(0xFF072F5F)
+                        : Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    has ? _formatDateForUi(v) : 'Tap to select date',
+                    style: TextStyle(
+                      color: has ? const Color(0xFF1A1A1A) : Colors.grey.shade600,
+                      fontWeight: has ? FontWeight.w600 : FontWeight.w400,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.keyboard_arrow_down,
+                  color: Colors.grey.shade600,
+                  size: 20,
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -284,17 +411,64 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     return InkWell(
       onTap: () => _pickTime(p),
       borderRadius: BorderRadius.circular(12),
-      child: InputDecorator(
-        decoration: _deco(p.title, required: p.isRequired),
-        child: Row(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: has ? const Color(0xFF072F5F).withOpacity(0.3) : Colors.grey.shade200,
+            width: has ? 1.5 : 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Text(
-                has ? _formatTimeForUi(v) : 'Select',
-                style: TextStyle(color: has ? Colors.black87 : Colors.grey.shade600, fontWeight: FontWeight.w600),
+            Text(
+              p.title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
               ),
             ),
-            Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: has 
+                        ? const Color(0xFF072F5F).withOpacity(0.1)
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    Icons.access_time_rounded,
+                    size: 18,
+                    color: has 
+                        ? const Color(0xFF072F5F)
+                        : Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    has ? _formatTimeForUi(v) : 'Tap to select time',
+                    style: TextStyle(
+                      color: has ? const Color(0xFF1A1A1A) : Colors.grey.shade600,
+                      fontWeight: has ? FontWeight.w600 : FontWeight.w400,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.keyboard_arrow_down,
+                  color: Colors.grey.shade600,
+                  size: 20,
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -316,39 +490,114 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             isMultiSelect: false,
             onSelected: (selectedItems) {
               setState(() {
-                _formValues[property.id] = selectedItems.isNotEmpty ? selectedItems.first.id : null;
+                if (selectedItems.isNotEmpty) {
+                  _formValues[property.id] = selectedItems.first.id;
+                  _selectedLookupItems[property.id] = selectedItems;
+                } else {
+                  _formValues[property.id] = null;
+                  _selectedLookupItems.remove(property.id);
+                }
               });
             },
           ),
         );
 
       case 'MFDatatypeMultiSelectLookup':
+        final selectedItems = _selectedLookupItems[property.id] ?? [];
         final selected = (_formValues[property.id] is List)
             ? (_formValues[property.id] as List).cast<int>()
             : <int>[];
 
-        return _dropdownShell(
-          label: property.title,
-          required: property.isRequired,
-          hasValue: selected.isNotEmpty,
-          valueText: selected.isEmpty ? '' : '${selected.length} selected',
-          child: LookupField(
-            title: property.title,
-            propertyId: property.id,
-            isMultiSelect: true,
-            onSelected: (selectedItems) {
-              setState(() {
-                _formValues[property.id] = selectedItems.map((i) => i.id).toList();
-              });
-            },
-          ),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _dropdownShell(
+              label: property.title,
+              required: property.isRequired,
+              hasValue: selected.isNotEmpty,
+              valueText: selected.isEmpty ? '' : '${selected.length}',
+              child: LookupField(
+                title: property.title,
+                propertyId: property.id,
+                isMultiSelect: true,
+                onSelected: (items) {
+                  setState(() {
+                    _formValues[property.id] = items.map((i) => i.id).toList();
+                    _selectedLookupItems[property.id] = items;
+                  });
+                },
+              ),
+            ),
+            // Show selected items below the dropdown
+            if (selectedItems.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: selectedItems.map((item) {
+                  final displayName = item.displayValue;
+                  
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF072F5F).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: const Color(0xFF072F5F).withOpacity(0.3),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.check_circle,
+                          size: 14,
+                          color: const Color(0xFF072F5F),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          displayName,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF072F5F),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        InkWell(
+                          onTap: () {
+                            setState(() {
+                              // Remove from both lists
+                              final updatedItems = List.from(selectedItems);
+                              updatedItems.removeWhere((i) => i.id == item.id);
+                              
+                              _selectedLookupItems[property.id] = updatedItems;
+                              _formValues[property.id] = updatedItems.map((i) => i.id).toList();
+                            });
+                          },
+                          child: Icon(
+                            Icons.close,
+                            size: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ],
         );
 
       case 'MFDatatypeText':
         return TextFormField(
           decoration: _deco(property.title, required: property.isRequired),
+          style: const TextStyle(fontSize: 14),
           validator: (value) {
-            if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
+            if (property.isRequired && (value == null || value.trim().isEmpty)) {
+              return 'This field is required';
+            }
             return null;
           },
           onChanged: (value) => _formValues[property.id] = value,
@@ -357,9 +606,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       case 'MFDatatypeMultiLineText':
         return TextFormField(
           decoration: _deco(property.title, required: property.isRequired),
+          style: const TextStyle(fontSize: 14),
           maxLines: 4,
           validator: (value) {
-            if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
+            if (property.isRequired && (value == null || value.trim().isEmpty)) {
+              return 'This field is required';
+            }
             return null;
           },
           onChanged: (value) => _formValues[property.id] = value,
@@ -368,10 +620,15 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       case 'MFDatatypeInteger':
         return TextFormField(
           decoration: _deco(property.title, required: property.isRequired),
+          style: const TextStyle(fontSize: 14),
           keyboardType: TextInputType.number,
           validator: (value) {
-            if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
-            if (value != null && value.trim().isNotEmpty && int.tryParse(value) == null) return 'Enter a valid number';
+            if (property.isRequired && (value == null || value.trim().isEmpty)) {
+              return 'This field is required';
+            }
+            if (value != null && value.trim().isNotEmpty && int.tryParse(value) == null) {
+              return 'Enter a valid number';
+            }
             return null;
           },
           onChanged: (value) => _formValues[property.id] = int.tryParse(value),
@@ -405,8 +662,11 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       default:
         return TextFormField(
           decoration: _deco(property.title, required: property.isRequired),
+          style: const TextStyle(fontSize: 14),
           validator: (value) {
-            if (property.isRequired && (value == null || value.trim().isEmpty)) return 'This field is required';
+            if (property.isRequired && (value == null || value.trim().isEmpty)) {
+              return 'This field is required';
+            }
             return null;
           },
           onChanged: (value) => _formValues[property.id] = value,
@@ -414,11 +674,33 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     }
   }
 
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.error_outline : Icons.check_circle_outline,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(message)),
+          ],
+        ),
+        backgroundColor: isError ? Colors.red.shade600 : Colors.green.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: const EdgeInsets.all(16),
+        duration: Duration(seconds: isError ? 4 : 2),
+      ),
+    );
+  }
+
   Future<void> _submitForm() async {
     if (_selectedClass == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: const Text('Please select a class first'), backgroundColor: Colors.orange.shade600),
-      );
+      _showSnackBar('Please select a class first', isError: true);
       return;
     }
 
@@ -432,16 +714,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       final v = _formValues[prop.id];
       if (prop.propertyType == 'MFDatatypeLookup' && v == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Required field "${prop.title}" is missing'), backgroundColor: Colors.red.shade600),
-        );
+        _showSnackBar('Required field "${prop.title}" is missing', isError: true);
         return;
       }
 
       if (prop.propertyType == 'MFDatatypeMultiSelectLookup' && (v == null || (v is List && v.isEmpty))) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Required field "${prop.title}" is missing'), backgroundColor: Colors.red.shade600),
-        );
+        _showSnackBar('Required field "${prop.title}" is missing', isError: true);
         return;
       }
     }
@@ -449,16 +727,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     String? uploadId;
     if (widget.objectType.isDocument) {
       if (_selectedFile == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('Please select a file for document objects'), backgroundColor: Colors.red.shade600),
-        );
+        _showSnackBar('Please select a file for document objects', isError: true);
         return;
       }
       uploadId = await service.uploadFile(_selectedFile!);
       if (uploadId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('File upload failed'), backgroundColor: Colors.red.shade600),
-        );
+        _showSnackBar('File upload failed', isError: true);
         return;
       }
     }
@@ -484,9 +758,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       if (value == null && !prop.isRequired) continue;
 
       if (value == null && prop.isRequired) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Required field "${prop.title}" is missing'), backgroundColor: Colors.red.shade600),
-        );
+        _showSnackBar('Required field "${prop.title}" is missing', isError: true);
         return;
       }
 
@@ -505,9 +777,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     if (classHasTitleProp && !hasTitleInPayload) {
       final title = (_formValues[0] ?? '').toString().trim();
       if (title.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Name or title is required'), backgroundColor: Colors.red),
-        );
+        _showSnackBar('Name or title is required', isError: true);
         return;
       }
       properties.add(PropertyValueRequest(propId: 0, value: title, propertyType: 'MFDatatypeText'));
@@ -518,8 +788,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       objectTypeID: widget.objectType.id,
       classID: _selectedClass!.id,
       properties: properties,
-      vaultGuid: service.vaultGuidWithBraces, // ✅ updated
-      userID: service.currentUserId, // ✅ updated
+      vaultGuid: service.vaultGuidWithBraces,
+      userID: service.currentUserId,
       uploadId: uploadId,
     );
 
@@ -528,18 +798,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     if (!mounted) return;
 
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: const Text('Object created successfully!'), backgroundColor: Colors.green.shade600),
-      );
+      _showSnackBar('Object created successfully!');
       Navigator.pop(context);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to create object: ${service.error}'),
-          backgroundColor: Colors.red.shade600,
-          duration: const Duration(seconds: 5),
-        ),
-      );
+      _showSnackBar('Failed to create object: ${service.error}', isError: true);
     }
   }
 
@@ -555,49 +817,77 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           toolbarHeight: 64,
           titleSpacing: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
           title: Padding(
             padding: const EdgeInsets.only(left: 12.0, right: 8.0),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                'assets/alignsysop.png',
-                height: 32,
-                fit: BoxFit.cover,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.asset(
+                  'assets/alignsysop.png',
+                  height: 28,
+                  fit: BoxFit.cover,
+                ),
               ),
             ),
           ),
         ),
         body: Consumer<MFilesService>(
           builder: (context, service, _) {
-            final objectClasses = service.objectClasses.where((cls) => cls.objectTypeId == widget.objectType.id).toList();
+            final objectClasses = service.objectClasses
+                .where((cls) => cls.objectTypeId == widget.objectType.id)
+                .toList();
 
             return ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // Header Card
                 _card(
                   child: Row(
                     children: [
-                      Icon(
-                        widget.objectType.isDocument ? Icons.description_outlined : Icons.folder_outlined,
-                        color: const Color(0xFF0A1541),
-                        size: 22,
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF072F5F).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          widget.objectType.isDocument
+                              ? Icons.description_rounded
+                              : Icons.folder_rounded,
+                          color: const Color.fromRGBO(25, 76, 129, 1),
+                          size: 24,
+                        ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
                               'Create ${widget.objectType.displayName}',
-                              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1A1A1A),
+                              ),
                             ),
                             const SizedBox(height: 4),
                             Text(
-                              _selectedClass != null ? 'Class: ${_selectedClass!.displayName}' : 'Select a class to continue',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              _selectedClass != null
+                                  ? 'Class: ${_selectedClass!.displayName}'
+                                  : 'Select a class to continue',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade600,
+                              ),
                             ),
                           ],
                         ),
@@ -605,16 +895,33 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
+                // Class Selection Card
                 _card(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Select Class', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 10),
+                      _sectionHeader('Select Class', icon: Icons.category_rounded),
+                      const SizedBox(height: 14),
                       if (_isLoadingClasses)
-                        const LinearProgressIndicator(minHeight: 2)
+                        Column(
+                          children: [
+                            const LinearProgressIndicator(
+                              minHeight: 3,
+                              backgroundColor: Color(0xFFE8EEF5),
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF072F5F)),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Loading classes...',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
+                        )
                       else
                         DropdownButtonFormField<int>(
                           value: _selectedClass?.id,
@@ -624,7 +931,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           items: objectClasses
                               .map((c) => DropdownMenuItem<int>(
                                     value: c.id,
-                                    child: Text(c.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    child: Text(
+                                      c.displayName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(fontSize: 14),
+                                    ),
                                   ))
                               .toList(),
                           onChanged: (id) {
@@ -637,45 +949,98 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
 
+                // File Upload Card (for documents)
                 if (_selectedClass != null && widget.objectType.isDocument) ...[
                   _card(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('File Upload', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 10),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _selectedFileName ?? 'No file selected',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: Colors.grey.shade700),
-                              ),
+                        _sectionHeader('File Upload', icon: Icons.upload_file_rounded),
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: _selectedFile != null
+                                  ? const Color(0xFF072F5F).withOpacity(0.3)
+                                  : Colors.grey.shade200,
                             ),
-                            const SizedBox(width: 10),
-                            ElevatedButton.icon(
-                              onPressed: _pickFile,
-                              icon: const Icon(Icons.folder_open, size: 18),
-                              label: const Text('Browse'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF0A1541),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                                elevation: 0,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                _selectedFile != null
+                                    ? Icons.insert_drive_file_rounded
+                                    : Icons.cloud_upload_outlined,
+                                color: _selectedFile != null
+                                    ? const Color(0xFF072F5F)
+                                    : Colors.grey.shade400,
+                                size: 22,
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      _selectedFileName ?? 'No file selected',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: _selectedFile != null
+                                            ? const Color(0xFF1A1A1A)
+                                            : Colors.grey.shade600,
+                                        fontWeight: _selectedFile != null
+                                            ? FontWeight.w600
+                                            : FontWeight.w400,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                    if (_selectedFile != null) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        'Ready to upload',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green.shade600,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              ElevatedButton.icon(
+                                onPressed: _pickFile,
+                                icon: const Icon(Icons.folder_open_rounded, size: 16),
+                                label: const Text('Browse'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF072F5F),
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  elevation: 0,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                 ],
 
+                // Properties Form Card
                 if (_selectedClass != null) ...[
                   _card(
                     child: Form(
@@ -683,28 +1048,76 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Properties', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 10),
+                          _sectionHeader('Properties', icon: Icons.view_list_rounded),
+                          const SizedBox(height: 14),
                           if (service.isLoading && service.classProperties.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              child: Center(child: CircularProgressIndicator()),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 24),
+                              child: Center(
+                                child: Column(
+                                  children: [
+                                    const CircularProgressIndicator(),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      'Loading properties...',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            )
+                          else if (service.classProperties
+                              .where((p) => !p.isHidden && !p.isAutomatic)
+                              .isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 24),
+                              child: Center(
+                                child: Column(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(16),
+                                      decoration: BoxDecoration(
+                                        color: Colors.grey.shade100,
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: Icon(
+                                        Icons.info_outline,
+                                        size: 32,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Text(
+                                      'No properties to configure',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             )
                           else
                             ...service.classProperties
                                 .where((p) => !p.isHidden && !p.isAutomatic)
                                 .map((p) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 10),
+                                      padding: const EdgeInsets.only(bottom: 14),
                                       child: _buildField(p),
                                     )),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 20),
+
+                  // Submit Button
                   SizedBox(
                     width: double.infinity,
-                    height: 50,
+                    height: 52,
                     child: ElevatedButton.icon(
                       onPressed: service.isLoading ? null : _submitForm,
                       icon: service.isLoading
@@ -712,26 +1125,35 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                               width: 20,
                               height: 20,
                               child: CircularProgressIndicator(
-                                strokeWidth: 2,
+                                strokeWidth: 2.5,
                                 valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                               ),
                             )
-                          : const Icon(Icons.save, size: 20),
+                          : const Icon(Icons.check_circle_rounded, size: 20),
                       label: Text(
                         service.isLoading ? 'Creating...' : 'Create Object',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.3,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF0A1541),
+                        backgroundColor: const Color(0xFF072F5F),
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: service.isLoading ? 0 : 2,
+                        shadowColor: const Color(0xFF072F5F).withOpacity(0.3),
+                        disabledBackgroundColor: Colors.grey.shade300,
+                        disabledForegroundColor: Colors.grey.shade600,
                       ),
                     ),
                   ),
                 ],
 
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
               ],
             );
           },

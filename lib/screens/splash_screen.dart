@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
   final Duration minDuration;
@@ -9,7 +8,7 @@ class SplashScreen extends StatefulWidget {
 
   const SplashScreen({
     Key? key,
-    this.minDuration = const Duration(seconds: 5),
+    this.minDuration = const Duration(seconds: 3), // ✅ Reduced from 5 to 3 seconds
     this.logoAssetPath,
   }) : super(key: key);
 
@@ -42,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    // Ensure minimum splash duration (5 seconds)
+    // Ensure minimum splash duration
     Future.wait([
       Future.delayed(widget.minDuration),
       _checkAutoLogin(),
@@ -55,35 +54,79 @@ class _SplashScreenState extends State<SplashScreen>
     final mFilesService = Provider.of<MFilesService>(context, listen: false);
 
     try {
+      print('🚀 Starting auto-login check...');
+      
+      // 1. Load tokens first
       final hasTokens = await mFilesService.loadTokens();
+      print('   Tokens loaded: $hasTokens');
+      print('   AccessToken: ${mFilesService.accessToken != null ? "present" : "null"}');
+      print('   UserId: ${mFilesService.userId}');
 
-      if (hasTokens) {
+      if (!hasTokens) {
+        print('   No tokens - navigating to login');
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
+      // 2. Restore the selected vault from SharedPreferences
+      await mFilesService.restoreSelectedVault();
+      print('   Vault restored: ${mFilesService.selectedVault?.guid}');
+
+      // 3. If no vault in SharedPreferences, fetch vaults and select first one
+      if (mFilesService.selectedVault == null) {
+        print('   No saved vault, fetching available vaults...');
         final vaults = await mFilesService.getUserVaults();
+        print('   Found ${vaults.length} vaults');
 
-        if (vaults.isNotEmpty) {
-          final prefs = await SharedPreferences.getInstance();
-          final selectedVaultGuid = prefs.getString('selected_vault_guid');
-
-          mFilesService.selectedVault = vaults.firstWhere(
-            (v) => v.guid == selectedVaultGuid,
-            orElse: () => vaults.first,
-          );
-
-          // Fetch M-Files user ID for auto-login
-          await mFilesService.fetchMFilesUserId();
-
+        if (vaults.isEmpty) {
+          print('   No vaults available - navigating to login');
           if (!mounted) return;
-          Navigator.pushReplacementNamed(context, '/home');
+          Navigator.pushReplacementNamed(context, '/login');
           return;
         }
-      }
-    } catch (e) {
-      print("Auto-login failed: $e");
-      // fallback to login
-    }
 
-    if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/login');
+        // Select the first vault
+        await mFilesService.saveSelectedVault(vaults.first);
+        print('   Selected first vault: ${vaults.first.name}');
+      }
+
+      // 4. Fetch M-Files user ID
+      print('   Fetching M-Files user ID...');
+      await mFilesService.fetchMFilesUserId();
+      print('   M-Files user ID: ${mFilesService.mfilesUserId}');
+
+      // 5. Verify mfilesUserId was set
+      if (mFilesService.mfilesUserId == null) {
+        print('❌ Failed to resolve M-Files user ID');
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
+      // 6. Load initial data
+      print('   Loading object types...');
+      await mFilesService.fetchObjectTypes();
+      
+      print('   Loading views...');
+      await mFilesService.fetchAllViews();
+      
+      print('   Loading recent objects...');
+      await mFilesService.fetchRecentObjects();
+
+      print('✅ Auto-login successful - navigating to home');
+
+      // 7. Navigate to home
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/home');
+
+    } catch (e) {
+      print('❌ Auto-login failed: $e');
+      print('   Stack trace: ${StackTrace.current}');
+      
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 
   @override
@@ -106,7 +149,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF072F5F), // Changed to #072F5F
+      backgroundColor: const Color(0xFF072F5F),
       body: SafeArea(
         child: Center(
           child: Column(
@@ -130,7 +173,7 @@ class _SplashScreenState extends State<SplashScreen>
                 child: CircularProgressIndicator(
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                   strokeWidth: 3.0,
-                  strokeCap: StrokeCap.round, // Makes it smooth/rounded
+                  strokeCap: StrokeCap.round,
                 ),
               ),
             ],

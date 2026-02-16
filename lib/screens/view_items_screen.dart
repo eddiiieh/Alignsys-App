@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
-import 'package:mfiles_app/widgets/object_info_bottom_sheet.dart';
+import 'package:mfiles_app/widgets/object_info_dropdown.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_content_item.dart';
@@ -13,10 +13,8 @@ import '../widgets/relationships_dropdown.dart';
 
 class ViewItemsScreen extends StatefulWidget {
   final String title;
-  final int parentViewId; // keep the real viewId for drilling groups
+  final int parentViewId;
   final List<ViewContentItem> items;
-
-  /// accumulated group selections in order (Year -> Month -> ...)
   final List<GroupFilter> filters;
 
   const ViewItemsScreen({
@@ -40,17 +38,15 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   final ScrollController _itemsScroll = ScrollController();
 
+  // Track which item is currently expanded for info
+  int? _expandedInfoItemId;
+  // Track which item is currently expanded for relationships
+  int? _expandedRelationshipsItemId;
+
   @override
   void initState() {
     super.initState();
     _items = widget.items;
-
-    // ✅ onload warm-up (runs once when this screen is created)
-    // Uses MFilesService cache + de-dupe to avoid repeated calls.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      context.read<MFilesService>().warmExtensionsForItems(_items);
-    });
   }
 
   @override
@@ -58,12 +54,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.items != widget.items) {
       _items = widget.items;
-
-      // ✅ warm-up again if a new list is pushed in
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        context.read<MFilesService>().warmExtensionsForItems(_items);
-      });
     }
   }
 
@@ -105,28 +95,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     }).toList();
   }
 
-  void _showObjectInfo(ViewContentItem item) {
-    final obj = ViewObject(
-      id: item.id,
-      title: item.title,
-      objectTypeId: item.objectTypeId,
-      classId: item.classId,
-      versionId: item.versionId,
-      objectTypeName: item.objectTypeName ?? '',
-      classTypeName: item.classTypeName ?? '',
-      displayId: item.displayId ?? '',
-      createdUtc: item.createdUtc,
-      lastModifiedUtc: item.lastModifiedUtc,
-    );
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => ObjectInfoBottomSheet(obj: obj),
-    );
-  }
-
   Widget _buildRow(ViewContentItem item) {
     final subtitle = _subtitleLabel(item);
     final svc = context.watch<MFilesService>();
@@ -138,96 +106,177 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       icon = svc.iconForContentItem(item);
     }
 
-    // NEW - This will work for ALL objects including files
-    final bool canExpand = item.isObject && item.id > 0;
+    final bool isObject = item.isObject && item.id > 0;
+    final bool hasRelationships = isObject && item.objectTypeId > 0 && item.classId > 0;
+
+    final bool infoExpanded = _expandedInfoItemId == item.id;
+    final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
 
     return Container(
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          trailing: canExpand
-              ? const Icon(Icons.expand_more, size: 18)
-              : Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-          title: GestureDetector(
-            behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          // Main row
+          InkWell(
             onTap: () => _handleTap(item),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              child: Row(
+                children: [
+                  // Relationships chevron (left side)
+                  if (hasRelationships) ...[
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (_expandedRelationshipsItemId == item.id) {
+                            _expandedRelationshipsItemId = null;
+                          } else {
+                            _expandedRelationshipsItemId = item.id;
+                            _expandedInfoItemId = null;
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
+                          size: 18,
+                          color: const Color(0xFF072F5F),
+                        ),
                       ),
-                      if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-                        const SizedBox(height: 2),
+                    ),
+                    const SizedBox(width: 6),
+                  ] else
+                    const SizedBox(width: 4),
+
+                  // Icon
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF072F5F).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // Title & subtitle
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          subtitle,
+                          item.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                         ),
+                        if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
-                ),
-                
-                // ✅ ADD INFO ICON HERE (only for objects)
-                if (canExpand) ...[
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () => _showObjectInfo(item),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(
-                        Icons.info_outline,
-                        size: 20,
-                        color: const Color(0xFF072F5F),
+
+                  // Info icon (right side) - only for objects
+                  if (isObject) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (_expandedInfoItemId == item.id) {
+                            _expandedInfoItemId = null;
+                          } else {
+                            _expandedInfoItemId = item.id;
+                            _expandedRelationshipsItemId = null;
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF072F5F).withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          infoExpanded ? Icons.info : Icons.info_outline,
+                          size: 18,
+                          color: const Color(0xFF072F5F),
+                        ),
                       ),
                     ),
-                  ),
+                  ] else
+                    Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
                 ],
-              ],
+              ),
             ),
           ),
-          children: canExpand
-              ? [
-                  RelationshipsDropdown(
-                    obj: ViewObject(
-                      id: item.id,
-                      title: item.title,
-                      objectTypeId: item.objectTypeId,
-                      classId: item.classId,
-                      versionId: item.versionId,
-                      objectTypeName: item.objectTypeName ?? '',
-                      classTypeName: item.classTypeName ?? '',
-                      displayId: item.displayId ?? '',
-                      createdUtc: item.createdUtc,
-                      lastModifiedUtc: item.lastModifiedUtc,
-                    ),
-                  ),
-                ]
-              : const [],
-        ),
+
+          // Info dropdown
+          if (infoExpanded && isObject) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            ObjectInfoDropdown(
+              obj: ViewObject(
+                id: item.id,
+                title: item.title,
+                objectTypeId: item.objectTypeId,
+                classId: item.classId,
+                versionId: item.versionId,
+                objectTypeName: item.objectTypeName ?? '',
+                classTypeName: item.classTypeName ?? '',
+                displayId: item.displayId ?? '',
+                createdUtc: item.createdUtc,
+                lastModifiedUtc: item.lastModifiedUtc,
+              ),
+            ),
+          ],
+
+          // Relationships dropdown
+          if (relationshipsExpanded && hasRelationships) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: RelationshipsDropdown(
+                obj: ViewObject(
+                  id: item.id,
+                  title: item.title,
+                  objectTypeId: item.objectTypeId,
+                  classId: item.classId,
+                  versionId: item.versionId,
+                  objectTypeName: item.objectTypeName ?? '',
+                  classTypeName: item.classTypeName ?? '',
+                  displayId: item.displayId ?? '',
+                  createdUtc: item.createdUtc,
+                  lastModifiedUtc: item.lastModifiedUtc,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
 
   Future<void> _handleTap(ViewContentItem item) async {
-    // 1) REAL OBJECT -> details
     if (item.isObject) {
       final obj = ViewObject(
         id: item.id,
@@ -249,7 +298,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       return;
     }
 
-    // 2) VIEW FOLDER -> open child view
     if (item.isViewFolder) {
       final childViewId = item.id;
 
@@ -264,7 +312,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       return;
     }
 
-    // 3) GROUP FOLDER -> drill down (send FULL group path)
     if (item.isGroupFolder) {
       String key = item.propId?.trim() ?? '';
       String dtype = item.propDatatype?.trim() ?? '';
@@ -276,12 +323,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         return;
       }
 
-      // ✅ IMPORTANT: match web behavior for Month group:
-      // Month is sent as "05" with MFDatatypeText (do NOT convert to int)
       final isTwoDigitMonth = RegExp(r'^(0[1-9]|1[0-2])$').hasMatch(key);
       if (isTwoDigitMonth) {
         dtype = 'MFDatatypeText';
-        // keep key exactly e.g. "05"
       }
 
       final svc = context.read<MFilesService>();
@@ -299,7 +343,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
       if (!context.mounted) return;
 
-      // ✅ warm-up for the next level list too (pre-cache icons)
       context.read<MFilesService>().warmExtensionsForItems(children);
 
       Navigator.push(
@@ -325,9 +368,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   Widget build(BuildContext context) {
     final filtered = _applyFilter(_items);
 
-    // ✅ safe to call; your service should de-dupe cached + in-flight IDs
-    context.read<MFilesService>().warmExtensionsForItems(filtered);
-
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -352,15 +392,14 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                 ? const Center(child: Text('No items found'))
                 : Scrollbar(
                     controller: _itemsScroll,
-                    thumbVisibility: false, // only while scrolling
+                    thumbVisibility: false,
                     interactive: true,
                     thickness: 6,
                     radius: const Radius.circular(8),
-                    child: ListView.separated(
+                    child: ListView.builder(
                       controller: _itemsScroll,
                       padding: const EdgeInsets.all(16),
                       itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemBuilder: (context, i) => _buildRow(filtered[i]),
                     ),
                   ),

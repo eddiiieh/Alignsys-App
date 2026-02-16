@@ -3,15 +3,13 @@ import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_items_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
-import 'package:mfiles_app/widgets/object_info_bottom_sheet.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../models/view_content_item.dart';
 import '../widgets/relationships_dropdown.dart';
-
-import '../utils/file_icon_resolver.dart';
+import '../widgets/object_info_dropdown.dart';
 
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({super.key, required this.view});
@@ -30,12 +28,27 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   final ScrollController _viewScroll = ScrollController();
 
+  // Track which item is currently expanded for info
+  int? _expandedInfoItemId;
+  // Track which item is currently expanded for relationships
+  int? _expandedRelationshipsItemId;
+
+  bool _dataLoaded = false;
+
+  // ✅ Add debounce timestamp
+  DateTime? _lastInfoToggle;
+  DateTime? _lastRelationshipsToggle;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
-  }
+
+    // ✅ Only fetch once, not on every dependency change
+    if (!_dataLoaded) {
+      _dataLoaded = true;
+      _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
+    }
+  } // ✅ FIX: This closing brace was missing!
 
   @override
   void dispose() {
@@ -56,13 +69,47 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   void _refreshThisView() {
     setState(() {
+      _dataLoaded = false; // ✅ Reset data loaded flag
       _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
     });
   }
 
-  // Hide raw types completely, and never show "Group" / "MFFolderContentItemTypeViewFolder".
-  // For objects: show ObjectTypeName or ClassTypeName.
-  // For folders/groups: show nothing (null) OR a meaningful label if you ever add one.
+  // ✅ ADD: Debounced toggle for info
+  void _toggleInfo(int itemId) {
+    final now = DateTime.now();
+    if (_lastInfoToggle != null && now.difference(_lastInfoToggle!) < const Duration(milliseconds: 300)) {
+      return;
+    }
+    _lastInfoToggle = now;
+
+    setState(() {
+      if (_expandedInfoItemId == itemId) {
+        _expandedInfoItemId = null;
+      } else {
+        _expandedInfoItemId = itemId;
+        _expandedRelationshipsItemId = null;
+      }
+    });
+  }
+
+  // ✅ ADD: Debounced toggle for relationships
+  void _toggleRelationships(int itemId) {
+    final now = DateTime.now();
+    if (_lastRelationshipsToggle != null && now.difference(_lastRelationshipsToggle!) < const Duration(milliseconds: 300)) {
+      return;
+    }
+    _lastRelationshipsToggle = now;
+
+    setState(() {
+      if (_expandedRelationshipsItemId == itemId) {
+        _expandedRelationshipsItemId = null;
+      } else {
+        _expandedRelationshipsItemId = itemId;
+        _expandedInfoItemId = null;
+      }
+    });
+  }
+
   String? _subtitleLabel(ViewContentItem item) {
     if (item.isObject) {
       final t = (item.objectTypeName ?? '').trim();
@@ -72,10 +119,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       return null;
     }
 
-    // ✅ FIX: Hide Group + ViewFolder tags in UI
     if (item.isGroupFolder) return null;
-
-    // Hide any other raw backend type strings too
     return null;
   }
 
@@ -85,10 +129,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
     return items.where((o) {
       final title = o.title.toLowerCase();
-
-      // ✅ FIX: searching should not depend on raw type or "group"
       final label = _subtitleLabel(o)?.toLowerCase() ?? '';
-
       return title.contains(q) || label.contains(q);
     }).toList();
   }
@@ -134,98 +175,158 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildRow(ViewContentItem item) {
-    
-    
     final subtitle = _subtitleLabel(item);
     final svc = context.watch<MFilesService>();
     final icon = svc.iconForContentItem(item);
 
-    //This will work for ALL objects including files
-    final bool canExpand = item.isObject && item.id > 0;
+    final bool isObject = item.isObject && item.id > 0;
+    final bool hasRelationships = isObject && item.objectTypeId > 0 && item.classId > 0;
+
+    final bool infoExpanded = _expandedInfoItemId == item.id;
+    final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
 
     return Container(
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          enabled: true,
-          trailing: canExpand ? const Icon(Icons.expand_more, size: 18) : const Icon(Icons.chevron_right, size: 18),
-
-          title: GestureDetector(
-            behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          // Main row
+          InkWell(
             onTap: () => _handleTap(item),
-            child: Row(
-              children: [
-                Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        item.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                      ),
-                      if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              child: Row(
+                children: [
+                  // Relationships chevron (left side)
+                  if (hasRelationships) ...[
+                    InkWell(
+                      onTap: () => _toggleRelationships(item.id), // ✅ Use debounced method
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
+                          size: 18,
+                          color: const Color(0xFF072F5F),
                         ),
-                      ],
-                    ],
-                  ),
-                ),
-                
-                // ✅ ADD INFO ICON HERE (only for objects)
-                if (canExpand) ...[
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () => _showObjectInfo(item),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: Icon(
-                        Icons.info_outline,
-                        size: 20,
-                        color: const Color(0xFF072F5F),
                       ),
                     ),
+                    const SizedBox(width: 6),
+                  ] else
+                    const SizedBox(width: 4),
+
+                  // Icon
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF072F5F).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
                   ),
+                  const SizedBox(width: 10),
+
+                  // Title & subtitle
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                        if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+
+                  // Info icon (right side) - only for objects
+                  if (isObject) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => _toggleInfo(item.id), // ✅ Use debounced method
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF072F5F).withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          infoExpanded ? Icons.info : Icons.info_outline,
+                          size: 18,
+                          color: const Color(0xFF072F5F),
+                        ),
+                      ),
+                    ),
+                  ] else
+                    Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
                 ],
-              ],
+              ),
             ),
           ),
 
+          // Info dropdown
+          if (infoExpanded && isObject) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            ObjectInfoDropdown(
+              obj: ViewObject(
+                id: item.id,
+                title: item.title,
+                objectTypeId: item.objectTypeId,
+                classId: item.classId,
+                versionId: item.versionId,
+                objectTypeName: item.objectTypeName ?? '',
+                classTypeName: item.classTypeName ?? '',
+                displayId: item.displayId ?? '',
+                createdUtc: item.createdUtc,
+                lastModifiedUtc: item.lastModifiedUtc,
+              ),
+            ),
+          ],
+
           // Relationships dropdown
-          children: canExpand
-              ? [
-                  RelationshipsDropdown(
-                    obj: ViewObject(
-                      id: item.id,
-                      title: item.title,
-                      objectTypeId: item.objectTypeId,
-                      classId: item.classId,
-                      versionId: item.versionId,
-                      objectTypeName: item.objectTypeName ?? '',
-                      classTypeName: item.classTypeName ?? '',
-                      displayId: item.displayId ?? '',
-                      createdUtc: item.createdUtc,
-                      lastModifiedUtc: item.lastModifiedUtc,
-                    ),
-                  ),
-                ]
-              : const [],
-        ),
+          if (relationshipsExpanded && hasRelationships) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: RelationshipsDropdown(
+                obj: ViewObject(
+                  id: item.id,
+                  title: item.title,
+                  objectTypeId: item.objectTypeId,
+                  classId: item.classId,
+                  versionId: item.versionId,
+                  objectTypeName: item.objectTypeName ?? '',
+                  classTypeName: item.classTypeName ?? '',
+                  displayId: item.displayId ?? '',
+                  createdUtc: item.createdUtc,
+                  lastModifiedUtc: item.lastModifiedUtc,
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -255,7 +356,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     }
 
     if (item.isViewFolder) {
-      // For MFFolderContentItemTypeViewFolder, child view id is item.id (confirmed: Staff -> id=117)
       final childViewId = item.id;
 
       Navigator.push(
@@ -318,28 +418,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     );
   }
 
-  void _showObjectInfo(ViewContentItem item) {
-    final obj = ViewObject(
-      id: item.id,
-      title: item.title,
-      objectTypeId: item.objectTypeId,
-      classId: item.classId,
-      versionId: item.versionId,
-      objectTypeName: item.objectTypeName ?? '',
-      classTypeName: item.classTypeName ?? '',
-      displayId: item.displayId ?? '',
-      createdUtc: item.createdUtc,
-      lastModifiedUtc: item.lastModifiedUtc,
-    );
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => ObjectInfoBottomSheet(obj: obj),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -374,13 +452,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
                 final items = snap.data ?? [];
 
-                // onload warm-up: fetch file extensions for objects & cache them
-                // This is safe to call repeatedly; your service should de-dupe in-flight IDs.
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  context.read<MFilesService>().warmExtensionsForItems(items);
-                });
-
+                // ✅ NO warm-up calls here - already done in service
+                
                 final filtered = _applyFilter(items);
 
                 if (items.isEmpty) {
@@ -402,12 +475,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     interactive: true,
                     thickness: 6,
                     radius: const Radius.circular(8),
-                    child: ListView.separated(
+                    child: ListView.builder(
                       controller: _viewScroll,
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(16),
                       itemCount: filtered.length,
-                      separatorBuilder: (_, __) => const SizedBox(height: 8),
                       itemBuilder: (context, i) => _buildRow(filtered[i]),
                     ),
                   ),
@@ -417,117 +489,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _ObjectsListScreen extends StatefulWidget {
-  const _ObjectsListScreen({required this.title, required this.objects});
-
-  final List<ViewObject> objects;
-  final String title;
-
-  @override
-  State<_ObjectsListScreen> createState() => _ObjectsListScreenState();
-}
-
-class _ObjectsListScreenState extends State<_ObjectsListScreen> {
-  late List<ViewObject> _objects;
-
-  final ScrollController _objListScroll = ScrollController();
-
-
-  @override
-  void initState() {
-    _objListScroll.dispose();
-    super.initState();
-    _objects = List<ViewObject>.from(widget.objects);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF072F5F),
-        foregroundColor: Colors.white,
-        titleSpacing: 12,
-        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-      body: _objects.isEmpty
-          ? const Center(child: Text('No objects found'))
-          : Scrollbar(
-              controller: _objListScroll,
-              thumbVisibility: false,
-              interactive: true,
-              thickness: 6,
-              radius: const Radius.circular(8),
-              child: ListView.separated(
-                controller: _objListScroll,
-                padding: const EdgeInsets.all(16),
-                itemCount: _objects.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 8),
-                itemBuilder: (context, i) {
-                final obj = _objects[i];
-
-                // Try icon mapping here too if you want it reflected in this internal screen:
-                final svc = context.watch<MFilesService>();
-                final ext = svc.cachedExtensionForObject(obj.id);
-                final icon = FileIconResolver.iconForExtension(ext);
-
-                return InkWell(
-                  onTap: () async {
-                    final deleted = await Navigator.push<bool>(
-                      context,
-                      MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
-                    );
-
-                    if (deleted == true && mounted) {
-                      setState(() {
-                        _objects.removeWhere((x) => x.id == obj.id);
-                      });
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                obj.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                obj.objectTypeName.isNotEmpty ? obj.objectTypeName : obj.classTypeName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const SizedBox(width: 8),
-                        Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
-                      ],
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
     );
   }
 }

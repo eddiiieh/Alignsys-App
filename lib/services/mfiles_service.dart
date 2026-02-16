@@ -1,4 +1,3 @@
-// lib/services/mfiles_service.dart
 import 'dart:convert';
 import 'dart:io';
 
@@ -112,17 +111,42 @@ class MFilesService extends ChangeNotifier {
   }
 
   int? _decodeJwtAndGetUserId(String token) {
-    try {
-      final parts = token.split('.');
-      if (parts.length != 3) return null;
-      final normalized = base64Url.normalize(parts[1]);
-      final decoded = utf8.decode(base64Url.decode(normalized));
-      final payloadMap = json.decode(decoded) as Map<String, dynamic>;
-      return payloadMap['user_id'] as int?;
-    } catch (_) {
+  try {
+    final parts = token.split('.');
+    if (parts.length != 3) {
+      print('❌ JWT has ${parts.length} parts, expected 3');
       return null;
     }
+    
+    final payload = parts[1];
+    print('🔐 JWT payload (raw): ${payload.substring(0, 20)}...');
+    
+    final normalized = base64Url.normalize(payload);
+    final decoded = utf8.decode(base64Url.decode(normalized));
+    
+    print('🔐 JWT decoded: $decoded');
+    
+    final payloadMap = json.decode(decoded) as Map<String, dynamic>;
+    
+    // Try multiple possible keys
+    final userId = payloadMap['user_id'] ?? 
+                   payloadMap['userId'] ?? 
+                   payloadMap['sub'] ?? 
+                   payloadMap['id'];
+    
+    print('🔐 Extracted userId: $userId (type: ${userId.runtimeType})');
+    
+    if (userId is int) return userId;
+    if (userId is String) return int.tryParse(userId);
+    if (userId is num) return userId.toInt();
+    
+    return null;
+  } catch (e, stackTrace) {
+    print('❌ JWT decode error: $e');
+    print('   Stack: $stackTrace');
+    return null;
   }
+}
 
   Future<void> saveTokens(
     String access,
@@ -149,6 +173,86 @@ class MFilesService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<bool> refreshAccessToken() async {
+    if (refreshToken == null || refreshToken!.isEmpty) {
+      print('❌ No refresh token available');
+      return false;
+    }
+
+    try {
+      print('🔄 Refreshing access token...');
+      
+      final response = await http.post(
+        Uri.parse('https://auth.alignsys.tech/api/token/refresh/'),
+        headers: const {'Content-Type': 'application/json'},
+        body: json.encode({'refresh': refreshToken}),
+      );
+
+      print('📡 Refresh response status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final newAccess = data['access'] as String?;
+
+        if (newAccess != null && newAccess.isNotEmpty) {
+          accessToken = newAccess;
+          
+          // Save the new access token
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('access_token', newAccess);
+          
+          // Optionally decode userId again if needed
+          if (userId == null) {
+            userId = _decodeJwtAndGetUserId(newAccess);
+            if (userId != null) {
+              await prefs.setInt('user_id', userId!);
+            }
+          }
+
+          print('✅ Access token refreshed successfully');
+          notifyListeners();
+          return true;
+        }
+      } else if (response.statusCode == 401) {
+        print('❌ Refresh token expired - user needs to log in again');
+        return false;
+      }
+
+      print('❌ Token refresh failed: ${response.statusCode}');
+      return false;
+    } catch (e) {
+      print('❌ Token refresh error: $e');
+      return false;
+    }
+  }
+
+  Future<http.Response> _authenticatedRequest(
+    Future<http.Response> Function() request, {
+    bool retryOnAuthFailure = true,
+  }) async {
+    // First attempt
+    http.Response response = await request();
+
+    // If we get a 401 (unauthorized) and we have a refresh token, try to refresh
+    if (response.statusCode == 401 && retryOnAuthFailure && refreshToken != null) {
+      print('🔄 Got 401, attempting to refresh token...');
+      
+      final refreshed = await refreshAccessToken();
+      
+      if (refreshed) {
+        // Retry the original request with the new token
+        print('♻️ Retrying original request with new token...');
+        response = await request();
+      } else {
+        // Refresh failed - user needs to log in again
+        print('❌ Token refresh failed - logging out');
+        await logout();
+      }
+    }
+
+    return response;
+  }
+
   Future<bool> tryAutoLogin() async {
     final prefs = await SharedPreferences.getInstance();
     final access = prefs.getString('access_token');
@@ -165,7 +269,6 @@ class MFilesService extends ChangeNotifier {
     return true;
   }
 
-
   Future<bool> loadTokens() async {
     final prefs = await SharedPreferences.getInstance();
     accessToken = prefs.getString('access_token');
@@ -174,14 +277,30 @@ class MFilesService extends ChangeNotifier {
     userId = prefs.getInt('user_id');
     mfilesUserId = prefs.getInt('mfiles_user_id');
 
+    print('📦 Loading tokens from SharedPreferences:');
+    print('   accessToken: ${accessToken != null ? "present (${accessToken!.length} chars)" : "null"}');
+    print('   refreshToken: ${refreshToken != null ? "present" : "null"}');
+    print('   username: $username');
+    print('   userId (from prefs): $userId');
+    print('   mfilesUserId (from prefs): $mfilesUserId');
+
+    // If userId is not in SharedPreferences, try to decode from token
     if (userId == null && accessToken != null) {
+      print('   Attempting to decode userId from JWT...');
       userId = _decodeJwtAndGetUserId(accessToken!);
-      if (userId != null) await prefs.setInt('user_id', userId!);
+      if (userId != null) {
+        print('   ✅ Decoded userId from JWT: $userId');
+        await prefs.setInt('user_id', userId!);
+      } else {
+        print('   ❌ Failed to decode userId from JWT');
+      }
     }
 
-    return accessToken != null && refreshToken != null;
+    final hasTokens = accessToken != null && refreshToken != null;
+    print('   Result: hasTokens = $hasTokens, userId = $userId');
+    
+    return hasTokens;
   }
-
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -222,20 +341,26 @@ class MFilesService extends ChangeNotifier {
   Future<bool> login(String email, String password) async {
     final body = {'username': email, 'password': password, 'auth_type': 'email'};
 
+    print('🔐 Attempting login for: $email');
+
     final response = await http.post(
       Uri.parse('https://auth.alignsys.tech/api/token/'),
       headers: const {'Content-Type': 'application/json'},
       body: json.encode(body),
     );
 
+    print('📡 Login response status: ${response.statusCode}');
+
     if (response.statusCode != 200) {
       throw Exception('Login failed: ${response.statusCode}');
     }
 
     final data = json.decode(response.body);
+    print('📡 Login response body: $data');
 
     final access = data['access'] as String?;
     final refresh = data['refresh'] as String?;
+    
     if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
       throw Exception('Login failed: token missing in response');
     }
@@ -243,7 +368,13 @@ class MFilesService extends ChangeNotifier {
     accessToken = access;
     refreshToken = refresh;
 
+    // Decode userId from JWT
     userId = _decodeJwtAndGetUserId(accessToken!);
+    print('🔐 Decoded userId from login token: $userId');
+
+    if (userId == null) {
+      print('⚠️ Warning: Could not decode userId from JWT token');
+    }
 
     await saveTokens(
       accessToken!,
@@ -252,6 +383,7 @@ class MFilesService extends ChangeNotifier {
       userIdValue: userId,
     );
 
+    print('✅ Login successful, tokens saved');
     return true;
   }
 
@@ -278,17 +410,46 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> fetchMFilesUserId() async {
-    if (selectedVault == null || accessToken == null) return;
+    print('🔍 fetchMFilesUserId called');
+    print('   selectedVault: ${selectedVault?.guid}');
+    print('   accessToken: ${accessToken != null ? "present" : "null"}');
+    print('   userId: $userId');
+    print('   mfilesUserId (cached): $mfilesUserId');
+    
+    if (mfilesUserId != null) {
+      print('   ✅ Using cached mfilesUserId: $mfilesUserId');
+      return;
+    }
+    
+    if (selectedVault == null) {
+      print('❌ No vault selected');
+      _setError('No vault selected');
+      return;
+    }
+    
+    if (accessToken == null) {
+      print('❌ No access token');
+      _setError('Not authenticated');
+      return;
+    }
 
     try {
-      final response = await http.get(
-        Uri.parse('$baseUrl/api/user/mfiles-profile/$vaultGuidNoBraces'),
-        headers: _authHeadersNoJson,
+      final url = '$baseUrl/api/user/mfiles-profile/$vaultGuidNoBraces';
+      print('🌐 Fetching: $url');
+      
+      // ✅ Use the helper instead of http.get directly
+      final response = await _authenticatedRequest(
+        () => http.get(Uri.parse(url), headers: _authHeadersNoJson),
       );
+
+      print('📡 Response status: ${response.statusCode}');
+      print('📡 Response body: ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         mfilesUserId = (data['id'] as num?)?.toInt();
+
+        print('✅ mfilesUserId set to: $mfilesUserId');
 
         final prefs = await SharedPreferences.getInstance();
         if (mfilesUserId != null) {
@@ -299,16 +460,47 @@ class MFilesService extends ChangeNotifier {
         return;
       }
 
+      if (response.statusCode == 404) {
+        print('⚠️ User profile not found (404), using fallback mapping');
+      } else {
+        print('⚠️ Non-200 status (${response.statusCode}), using fallback mapping');
+      }
+      
       await _useFallbackMapping();
-    } catch (_) {
+    } catch (e, stackTrace) {
+      print('❌ Exception in fetchMFilesUserId: $e');
+      print('   Stack: $stackTrace');
       await _useFallbackMapping();
     }
   }
 
   Future<void> _useFallbackMapping() async {
-    if (userId == null) return;
+    print('🔄 Using fallback mapping');
+    print('   userId before: $userId');
+    
+    if (userId == null) {
+      // Last resort: try to decode from token again
+      if (accessToken != null) {
+        print('   Attempting emergency JWT decode...');
+        userId = _decodeJwtAndGetUserId(accessToken!);
+        print('   Emergency decode result: $userId');
+        
+        if (userId != null) {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt('user_id', userId!);
+        }
+      }
+    }
+    
+    if (userId == null) {
+      print('❌ userId is still null, cannot use fallback');
+      _setError('M-Files user not resolved');
+      return;
+    }
 
+    // Apply your custom mapping logic
     mfilesUserId = (userId == 37) ? 20 : userId;
+    print('✅ mfilesUserId set to (fallback): $mfilesUserId');
 
     final prefs = await SharedPreferences.getInstance();
     if (mfilesUserId != null) {
@@ -431,6 +623,8 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
         searchResults = data.map((e) => ViewObject.fromJson(e)).toList();
+        // ✅ Warm up extensions for search results
+        warmExtensionsForObjects(searchResults);
         notifyListeners();
       } else {
         _setError('Search failed: ${response.statusCode}');
@@ -547,30 +741,51 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> fetchAllViews() async {
-    if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
+    if (accessToken == null) {
+      _setError('Not logged in (missing accessToken)');
+      return;
+    }
+    if (selectedVault == null) {
+      _setError('No vault selected');
+      return;
+    }
+    if (mfilesUserId == null) {
+      _setError('M-Files user not resolved');
+      return;
+    }
 
     _setLoading(true);
     _setError(null);
 
     try {
       final url = Uri.parse('$baseUrl/api/Views/GetViews/$vaultGuidWithBraces/$mfilesUserId');
-      final response = await http.get(url, headers: _authHeadersNoJson);
+      
+      // ✅ Use the helper
+      final response = await _authenticatedRequest(
+        () => http.get(url, headers: _authHeadersNoJson),
+      );
+
+      if (kDebugMode) {
+        debugPrint('VIEWS status=${response.statusCode}');
+        debugPrint('VIEWS body=${response.body}');
+      }
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body) as Map<String, dynamic>;
+        final decoded = json.decode(response.body);
 
-        commonViews = (data['commonViews'] as List? ?? [])
-            .map((e) => ViewItem.fromJson(e))
-            .toList();
+        if (decoded is Map<String, dynamic>) {
+          final common = (decoded['commonViews'] ?? decoded['CommonViews'] ?? decoded['common_views']) as List? ?? [];
+          final other  = (decoded['otherViews']  ?? decoded['OtherViews']  ?? decoded['other_views'])  as List? ?? [];
 
-        otherViews = (data['otherViews'] as List? ?? [])
-            .map((e) => ViewItem.fromJson(e))
-            .toList();
-
-        allViews = [...commonViews, ...otherViews];
-        notifyListeners();
+          commonViews = common.map((e) => ViewItem.fromJson(e)).toList();
+          otherViews  = other.map((e) => ViewItem.fromJson(e)).toList();
+          allViews = [...commonViews, ...otherViews];
+          notifyListeners();
+        } else {
+          _setError('Unexpected views response shape: ${decoded.runtimeType}');
+        }
       } else {
-        _setError('Failed to fetch views: ${response.statusCode}');
+        _setError('Failed to fetch views: ${response.statusCode} ${response.body}');
       }
     } catch (e) {
       _setError('Error fetching views: $e');
@@ -578,6 +793,7 @@ class MFilesService extends ChangeNotifier {
       _setLoading(false);
     }
   }
+
 
   Future<void> fetchRecentObjects() async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
@@ -587,7 +803,11 @@ class MFilesService extends ChangeNotifier {
 
     try {
       final url = Uri.parse('$baseUrl/api/Views/GetRecent/$vaultGuidWithBraces/$mfilesUserId');
-      final response = await http.get(url, headers: _authHeadersNoJson);
+      
+      // ✅ Use the helper
+      final response = await _authenticatedRequest(
+        () => http.get(url, headers: _authHeadersNoJson),
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
@@ -600,7 +820,11 @@ class MFilesService extends ChangeNotifier {
         });
 
         recentObjects = fetched;
+
+        // ✅ Warm up extensions after fetching
+        warmExtensionsForObjects(recentObjects);
         notifyListeners();
+
       } else {
         _setError('Failed to fetch recent objects: ${response.statusCode}');
       }
@@ -624,6 +848,10 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
         assignedObjects = data.map((e) => ViewObject.fromJson(e)).toList();
+        
+        // ✅ Warm up extensions after fetching
+        warmExtensionsForObjects(assignedObjects);
+
         notifyListeners();
       } else {
         _setError('Failed to fetch assigned objects: ${response.statusCode}');
@@ -905,16 +1133,33 @@ class MFilesService extends ChangeNotifier {
 
     if (isJson) {
       final text = utf8.decode(bodyBytes);
+      
+      // ✅ ADD: Debug print the JSON response
+      debugPrint('📄 JSON Response: ${text.substring(0, text.length > 500 ? 500 : text.length)}...');
+      
       final dynamic j = jsonDecode(text);
 
       if (j is! Map) {
         throw Exception('JSON returned but not an object.');
       }
 
+      // ✅ ADD: Debug print all keys in the JSON
+      debugPrint('📋 JSON Keys: ${j.keys.toList()}');
+
       final base64Value = _extractBase64Flexible(j);
 
       if (base64Value == null || base64Value.trim().isEmpty) {
         final base64Field = _pickAnyKeyCI(j, 'base64');
+        
+        // ✅ IMPROVED: Show actual field value types and sample data
+        debugPrint('❌ Failed to extract base64. JSON structure:');
+        j.forEach((key, value) {
+          final preview = value is String && value.length > 100 
+              ? '${value.substring(0, 100)}...' 
+              : value.toString();
+          debugPrint('  $key (${value.runtimeType}): $preview');
+        });
+        
         throw Exception(
           'JSON returned but base64 not extractable. '
           'base64Type=${base64Field?.runtimeType} keys=${j.keys.toList()}',
@@ -925,17 +1170,28 @@ class MFilesService extends ChangeNotifier {
           ? base64Value.split(',').last.trim()
           : base64Value.trim();
 
-      final decoded = base64Decode(cleaned);
-      final ctFromJson = _extractStringByKeysCI(
-        j,
-        ['contentType', 'content-type', 'mime', 'mimeType'],
-      );
-      return (bytes: decoded, contentType: ctFromJson);
+      // ✅ ADD: Verify base64 string looks valid
+      debugPrint('✅ Extracted base64 (${cleaned.length} chars)');
+      
+      try {
+        final decoded = base64Decode(cleaned);
+        debugPrint('✅ Decoded ${decoded.length} bytes');
+        
+        final ctFromJson = _extractStringByKeysCI(
+          j,
+          ['contentType', 'content-type', 'mime', 'mimeType'],
+        );
+        return (bytes: decoded, contentType: ctFromJson);
+      } catch (e) {
+        debugPrint('❌ Base64 decode failed: $e');
+        debugPrint('   First 100 chars: ${cleaned.substring(0, cleaned.length > 100 ? 100 : cleaned.length)}');
+        rethrow;
+      }
     }
 
     return (bytes: bodyBytes, contentType: contentType);
   }
-
+  
   Future<({List<int> bytes, String? contentType})> downloadFileBytesWithFallback({
     required int displayObjectId,
     required int classId,
@@ -1077,6 +1333,10 @@ class MFilesService extends ChangeNotifier {
             .whereType<Map<String, dynamic>>()
             .map((e) => ViewObject.fromJson(e))
             .toList();
+
+          // ✅ Warm up extensions
+          warmExtensionsForObjects(deletedObjects);
+
         notifyListeners();
         return;
       }
@@ -1091,44 +1351,52 @@ class MFilesService extends ChangeNotifier {
 
   Future<void> fetchReportObjects() async {
     reportObjects = [];
+    // ✅ Warm up extensions
+      warmExtensionsForObjects(reportObjects);
+
     notifyListeners();
   }
 
   // -------------------- View details --------------------
 
   Future<List<ViewContentItem>> fetchObjectsInViewRaw(int viewId) async {
-    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-      throw Exception('Session not ready');
-    }
-
-    final url = Uri.parse('$baseUrl/api/Views/GetObjectsInView').replace(
-      queryParameters: {
-        'vaultGuid': vaultGuidWithBraces,
-        'viewId': viewId.toString(),
-        'userID': mfilesUserId.toString(),
-      },
-    );
-
-    debugPrint("VIEW FETCH URL: $url");
-
-    final resp = await http.get(url, headers: _authHeadersNoJson);
-
-    if (resp.statusCode != 200) {
-      throw Exception('GetObjectsInView failed: ${resp.statusCode} ${resp.body}');
-    }
-
-    final decoded = json.decode(resp.body);
-
-    final List list = decoded is List
-        ? decoded
-        : (decoded is Map && decoded['items'] is List)
-            ? decoded['items'] as List
-            : (decoded is Map && decoded['data'] is List)
-                ? decoded['data'] as List
-                : <dynamic>[];
-
-    return list.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+    throw Exception('Session not ready');
   }
+
+  final url = Uri.parse('$baseUrl/api/Views/GetObjectsInView').replace(
+    queryParameters: {
+      'vaultGuid': vaultGuidWithBraces,
+      'viewId': viewId.toString(),
+      'userID': mfilesUserId.toString(),
+    },
+  );
+
+  debugPrint("VIEW FETCH URL: $url");
+
+  final resp = await http.get(url, headers: _authHeadersNoJson);
+
+  if (resp.statusCode != 200) {
+    throw Exception('GetObjectsInView failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  final decoded = json.decode(resp.body);
+
+  final List list = decoded is List
+      ? decoded
+      : (decoded is Map && decoded['items'] is List)
+          ? decoded['items'] as List
+          : (decoded is Map && decoded['data'] is List)
+              ? decoded['data'] as List
+              : <dynamic>[];
+
+  final items = list.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
+  
+  // ✅ Warm up extensions after parsing items
+  warmExtensionsForItems(items);
+  
+  return items;
+}
 
   Future<List<ViewContentItem>> fetchViewPropItems({
     required int viewId,
@@ -1538,6 +1806,43 @@ class MFilesService extends ChangeNotifier {
       return FileIconResolver.iconForExtension(ext);
     }
     return FileIconResolver.unknownIcon;
+  }
+
+  // ==================== VAULT SELECTION PERSISTENCE ====================
+  Future<void> saveSelectedVault(Vault v) async {
+    selectedVault = v;
+    final prefs = await SharedPreferences.getInstance();
+    
+    // ✅ Save all vault fields consistently
+    await prefs.setString('selectedVaultGuid', v.guid);
+    await prefs.setString('selectedVaultName', v.name);
+    await prefs.setString('selectedVaultId', v.vaultId);
+    
+    notifyListeners();
+  }
+
+  Future<void> restoreSelectedVault() async {
+    final prefs = await SharedPreferences.getInstance();
+    final guid = prefs.getString('selectedVaultGuid');  // ✅ Match this key
+    final name = prefs.getString('selectedVaultName');
+    final vaultId = prefs.getString('selectedVaultId');
+
+    print('🔄 Restoring vault from SharedPreferences:');
+    print('   guid: $guid');
+    print('   name: $name');
+    print('   vaultId: $vaultId');
+
+    if (guid != null && guid.isNotEmpty) {
+      selectedVault = Vault(
+        vaultId: vaultId ?? guid,
+        guid: guid,
+        name: name ?? 'Vault',
+      );
+      print('   ✅ Vault restored successfully');
+      notifyListeners();
+    } else {
+      print('   ⚠️ No vault found in SharedPreferences');
+    }
   }
 }
 

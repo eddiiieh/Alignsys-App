@@ -15,12 +15,16 @@ class MainApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
-      create: (_) => MFilesService(),
+      create: (_) {
+        final svc = MFilesService();
+
+        // ✅ Don't do initialization in create - let SplashScreen handle it
+        return svc;
+      },
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'ALIGNSYS',
 
-        // ✅ Enable scrollbars app-wide
         scrollBehavior: const MaterialScrollBehavior().copyWith(
           scrollbars: true,
         ),
@@ -28,8 +32,6 @@ class MainApp extends StatelessWidget {
         theme: ThemeData(
           primarySwatch: Colors.blue,
           useMaterial3: true,
-
-          // ✅ Only show scrollbar while scrolling + allow dragging
           scrollbarTheme: const ScrollbarThemeData(
             thumbVisibility: WidgetStatePropertyAll(false),
             interactive: true,

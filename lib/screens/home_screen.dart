@@ -5,6 +5,7 @@ import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/widgets/object_info_bottom_sheet.dart';
+import 'package:mfiles_app/widgets/object_info_dropdown.dart';
 import 'package:provider/provider.dart';
 import '../models/vault.dart';
 import '../models/view_item.dart';
@@ -40,6 +41,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     return svc.iconForViewObject(obj);
   }
 
+  // Track which item is currently expanded for info
+  int? _expandedInfoItemId;
+  // Track which item is currently expanded for relationships
+  int? _expandedRelationshipsItemId;
+
   List<ViewItem> _sortedViews(List<ViewItem> items) {
     final copy = List<ViewItem>.from(items);
     copy.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -59,12 +65,35 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Future<void> _loadInitialData() async {
     final service = context.read<MFilesService>();
 
-    // ✅ Ensure M-Files user id is available for vault-scoped endpoints
-    await service.fetchMFilesUserId();
+    try {
+      // ✅ Ensure M-Files user id is available
+      if (service.mfilesUserId == null) {
+        await service.fetchMFilesUserId();
+      }
+      
+      // ✅ Check again after fetch attempt
+      if (service.mfilesUserId == null) {
+        // Navigate back to login if still null
+        if (mounted) {
+          Navigator.pushReplacementNamed(context, '/login');
+        }
+        return;
+      }
 
-    await service.fetchObjectTypes();
-    await service.fetchAllViews();
-    await service.fetchRecentObjects();
+      await service.fetchObjectTypes();
+      await service.fetchAllViews();
+      await service.fetchRecentObjects();
+    } catch (e) {
+      print('Error loading initial data: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error loading data: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _onTabChanged(int index) {
@@ -666,8 +695,6 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       builder: (context, service, _) {
         final objects = selector(service);
 
-        service.warmExtensionsForObjects(objects);
-
         if (service.isLoading && objects.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -786,6 +813,9 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     final svc = context.watch<MFilesService>();
     final mappedIcon = _iconForObj(svc, obj);
 
+    final bool infoExpanded = _expandedInfoItemId == obj.id;
+    final bool relationshipsExpanded = _expandedRelationshipsItemId == obj.id;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -799,19 +829,10 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           ),
         ],
       ),
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          onExpansionChanged: (expanded) {
-            if (!canExpand) return;
-          },
-          trailing: canExpand
-              ? const Icon(Icons.expand_more_rounded, size: 20)
-              : Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey.shade400),
-          title: GestureDetector(
-            behavior: HitTestBehavior.opaque,
+      child: Column(
+        children: [
+          // Main row
+          InkWell(
             onTap: () async {
               final deleted = await Navigator.push<bool>(
                 context,
@@ -822,68 +843,127 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 await context.read<MFilesService>().fetchRecentObjects();
               }
             },
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF072F5F).withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(mappedIcon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        obj.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1A1A1A),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  // Relationships chevron (left side)
+                  if (canExpand) ...[
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (_expandedRelationshipsItemId == obj.id) {
+                            _expandedRelationshipsItemId = null;
+                          } else {
+                            _expandedRelationshipsItemId = obj.id;
+                            _expandedInfoItemId = null;
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(
+                          relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
+                          size: 18,
+                          color: const Color(0xFF072F5F),
                         ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (canExpand) ...[
-                  const SizedBox(width: 8),
-                  InkWell(
-                    onTap: () => _showObjectInfo(obj),
-                    borderRadius: BorderRadius.circular(20),
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF072F5F).withOpacity(0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.info_outline_rounded,
-                        size: 18,
-                        color: Color(0xFF072F5F),
                       ),
                     ),
+                    const SizedBox(width: 6),
+                  ] else
+                    const SizedBox(width: 4),
+
+                  // Icon
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF072F5F).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(mappedIcon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
                   ),
+                  const SizedBox(width: 12),
+
+                  // Title & subtitle
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          obj.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Info icon (right side) - only for valid objects
+                  if (canExpand) ...[
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () {
+                        setState(() {
+                          if (_expandedInfoItemId == obj.id) {
+                            _expandedInfoItemId = null;
+                          } else {
+                            _expandedInfoItemId = obj.id;
+                            _expandedRelationshipsItemId = null;
+                          }
+                        });
+                      },
+                      borderRadius: BorderRadius.circular(20),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF072F5F).withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          infoExpanded ? Icons.info : Icons.info_outline,
+                          size: 18,
+                          color: const Color(0xFF072F5F),
+                        ),
+                      ),
+                    ),
+                  ] else
+                    Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey.shade400),
                 ],
-              ],
+              ),
             ),
           ),
-          children: canExpand ? [RelationshipsDropdown(obj: obj)] : const [],
-        ),
+
+          // Info dropdown
+          if (infoExpanded && canExpand) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            ObjectInfoDropdown(obj: obj),
+          ],
+
+          // Relationships dropdown
+          if (relationshipsExpanded && canExpand) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: RelationshipsDropdown(obj: obj),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -1192,7 +1272,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
 
                           final newVault = vaults.firstWhere((v) => v.guid == guid);
 
-                          service.selectedVault = newVault;
+                          await service.saveSelectedVault(newVault);
                           await service.fetchMFilesUserId();
                           await service.fetchObjectTypes();
                           await service.fetchAllViews();
