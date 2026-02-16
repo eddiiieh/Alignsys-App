@@ -10,12 +10,15 @@ import '../services/mfiles_service.dart';
 import 'object_details_screen.dart';
 import 'view_details_screen.dart';
 import '../widgets/relationships_dropdown.dart';
+import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
 class ViewItemsScreen extends StatefulWidget {
   final String title;
   final int parentViewId;
   final List<ViewContentItem> items;
   final List<GroupFilter> filters;
+  final String? parentViewName;
+  final String? parentSection;
 
   const ViewItemsScreen({
     super.key,
@@ -23,6 +26,8 @@ class ViewItemsScreen extends StatefulWidget {
     required this.parentViewId,
     required this.items,
     required this.filters,
+    this.parentViewName,
+    this.parentSection,
   });
 
   @override
@@ -93,6 +98,32 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       final label = _subtitleLabel(o)?.toLowerCase() ?? '';
       return title.contains(q) || label.contains(q);
     }).toList();
+  }
+
+  // Build breadcrumb segments based on the current navigation path
+  Widget _buildBreadcrumbs() {
+    final segments = <BreadcrumbSegment>[
+      BreadcrumbSegment(
+        label: 'Home',
+        icon: Icons.home_rounded,
+        onTap: () => Navigator.popUntil(context, (route) => route.isFirst),
+      ),
+    ];
+
+    // Add parent view if available (e.g., "By Class")
+    if (widget.parentViewName != null) {
+      segments.add(BreadcrumbSegment(
+        label: widget.parentViewName!,
+        onTap: () => Navigator.pop(context),
+      ));
+    }
+
+    // Add current grouping/item (e.g., "Employee Contracts")
+    segments.add(BreadcrumbSegment(
+      label: widget.title,
+    ));
+
+    return BreadcrumbBar(segments: segments);
   }
 
   Widget _buildRow(ViewContentItem item) {
@@ -293,7 +324,14 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
       await Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
+        MaterialPageRoute(
+          builder: (_) => ObjectDetailsScreen(
+            obj: obj,
+            parentViewName: widget.parentViewName, // ✅ Pass parent view
+            parentSection: widget.parentSection, // ✅ Pass section (not shown in breadcrumb)
+            groupingName: widget.title, // ✅ Pass current grouping
+          ),
+        ),
       );
       return;
     }
@@ -306,6 +344,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         MaterialPageRoute(
           builder: (_) => ViewDetailsScreen(
             view: ViewItem(id: childViewId, name: item.title, count: 0),
+            parentSection: widget.parentSection, // ✅ Pass section forward
           ),
         ),
       );
@@ -353,6 +392,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             parentViewId: vid,
             items: children,
             filters: nextFilters,
+            parentViewName: widget.title, // ✅ Current becomes parent for next level
+            parentSection: widget.parentSection, // ✅ Pass section forward
           ),
         ),
       );
@@ -386,7 +427,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       ),
       body: Column(
         children: [
+          _buildBreadcrumbs(),
           if (_showSearch) _buildSearchBar(),
+          // ✅ REDUCED SPACING: No SizedBox here
           Expanded(
             child: filtered.isEmpty
                 ? const Center(child: Text('No items found'))

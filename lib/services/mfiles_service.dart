@@ -43,6 +43,9 @@ class MFilesService extends ChangeNotifier {
   // Class properties
   List<ClassProperty> classProperties = [];
 
+  // ✅ Cache for class properties to avoid repeated API calls
+  final Map<String, List<ClassProperty>> _classPropsCache = {};
+
   // Deleted objects
   List<ViewObject> deletedObjects = [];
 
@@ -333,6 +336,7 @@ class MFilesService extends ChangeNotifier {
     searchResults.clear();
 
     clearExtensionCache();
+    clearClassPropertiesCache();
 
     notifyListeners();
   }
@@ -570,6 +574,19 @@ class MFilesService extends ChangeNotifier {
   Future<void> fetchClassProperties(int objectTypeId, int classId) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
 
+    // ✅ Create a cache key
+    final cacheKey = '$objectTypeId-$classId';
+    
+    // ✅ Return cached data if available (no loading state, no notifyListeners)
+    if (_classPropsCache.containsKey(cacheKey)) {
+      classProperties = _classPropsCache[cacheKey]!;
+      if (kDebugMode) {
+        debugPrint('📦 Using cached class properties for $cacheKey (${classProperties.length} props)');
+      }
+      return;
+    }
+
+    // ✅ Only show loading state if we're actually making an API call
     _setLoading(true);
     _setError(null);
 
@@ -582,7 +599,15 @@ class MFilesService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        classProperties = data.map((e) => ClassProperty.fromJson(e)).toList();
+        final props = data.map((e) => ClassProperty.fromJson(e)).toList();
+        
+        // ✅ Update both the current list and the cache
+        classProperties = props;
+        _classPropsCache[cacheKey] = props;
+        
+        if (kDebugMode) {
+          debugPrint('✅ Fetched and cached class properties for $cacheKey (${props.length} props)');
+        }
       } else {
         _setError('Failed to fetch class properties: ${response.statusCode}');
       }
@@ -590,6 +615,14 @@ class MFilesService extends ChangeNotifier {
       _setError('Error fetching class properties: $e');
     } finally {
       _setLoading(false);
+    }
+  }
+
+  /// Clears the class properties cache
+  void clearClassPropertiesCache() {
+    _classPropsCache.clear();
+    if (kDebugMode) {
+      debugPrint('🧹 Cleared class properties cache');
     }
   }
 
@@ -1817,6 +1850,9 @@ class MFilesService extends ChangeNotifier {
     await prefs.setString('selectedVaultGuid', v.guid);
     await prefs.setString('selectedVaultName', v.name);
     await prefs.setString('selectedVaultId', v.vaultId);
+
+    // ✅ Clear cache when switching vaults since properties may differ
+    clearClassPropertiesCache();
     
     notifyListeners();
   }

@@ -10,11 +10,17 @@ import '../models/view_object.dart';
 import '../models/view_content_item.dart';
 import '../widgets/relationships_dropdown.dart';
 import '../widgets/object_info_dropdown.dart';
+import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
 class ViewDetailsScreen extends StatefulWidget {
-  const ViewDetailsScreen({super.key, required this.view});
+  const ViewDetailsScreen({
+    super.key,
+    required this.view,
+    this.parentSection, // NEW: e.g., "Common Views" or "Other Views"
+  });
 
   final ViewItem view;
+  final String? parentSection; // NEW
 
   @override
   State<ViewDetailsScreen> createState() => _ViewDetailsScreenState();
@@ -48,7 +54,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       _dataLoaded = true;
       _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
     }
-  } // ✅ FIX: This closing brace was missing!
+  }
 
   @override
   void dispose() {
@@ -69,7 +75,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   void _refreshThisView() {
     setState(() {
-      _dataLoaded = false; // ✅ Reset data loaded flag
+      _dataLoaded = false;
       _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
     });
   }
@@ -132,6 +138,26 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       final label = _subtitleLabel(o)?.toLowerCase() ?? '';
       return title.contains(q) || label.contains(q);
     }).toList();
+  }
+
+  Widget _buildBreadcrumbs() {
+    final segments = <BreadcrumbSegment>[
+      BreadcrumbSegment(
+        label: 'Home',
+        icon: Icons.home_rounded,
+        onTap: () => Navigator.popUntil(context, (route) => route.isFirst),
+      ),
+    ];
+
+    // Don't show section breadcrumbs - both Common and Other Views are on homepage
+    // This avoids redundant "Home > Common Views > Documents" when just "Home > Documents" is clearer
+
+    // Add current view (no onTap since it's the current page)
+    segments.add(BreadcrumbSegment(
+      label: widget.view.name,
+    ));
+
+    return BreadcrumbBar(segments: segments);
   }
 
   Widget _buildInViewSearchBar() {
@@ -210,7 +236,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   // Relationships chevron (left side)
                   if (hasRelationships) ...[
                     InkWell(
-                      onTap: () => _toggleRelationships(item.id), // ✅ Use debounced method
+                      onTap: () => _toggleRelationships(item.id),
                       borderRadius: BorderRadius.circular(4),
                       child: Padding(
                         padding: const EdgeInsets.all(4),
@@ -264,7 +290,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   if (isObject) ...[
                     const SizedBox(width: 8),
                     InkWell(
-                      onTap: () => _toggleInfo(item.id), // ✅ Use debounced method
+                      onTap: () => _toggleInfo(item.id),
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
                         padding: const EdgeInsets.all(8),
@@ -348,7 +374,13 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
       final deleted = await Navigator.push<bool>(
         context,
-        MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
+        MaterialPageRoute(
+          builder: (_) => ObjectDetailsScreen(
+            obj: obj,
+            parentViewName: widget.view.name, // ✅ Pass view name
+            parentSection: widget.parentSection, // ✅ Pass section (though we don't show it)
+          ),
+        ),
       );
 
       if (deleted == true) _refreshThisView();
@@ -367,6 +399,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               name: item.title,
               count: 0,
             ),
+            parentSection: widget.parentSection, // ✅ Pass section forward
           ),
         ),
       );
@@ -403,6 +436,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               items: items,
               parentViewId: vid,
               filters: [GroupFilter(propId: propId, propDatatype: propDatatype)],
+              parentViewName: widget.view.name, // ✅ Pass current view as parent
+              parentSection: widget.parentSection, // ✅ Pass section forward
             ),
           ),
         );
@@ -438,7 +473,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       ),
       body: Column(
         children: [
+          _buildBreadcrumbs(),
           if (_showSearch) _buildInViewSearchBar(),
+          // ✅ REDUCED SPACING: No SizedBox here, just expand the content
           Expanded(
             child: FutureBuilder<List<ViewContentItem>>(
               future: _future,
@@ -446,22 +483,36 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
+
+                // ✅ IMPROVED ERROR HANDLING
                 if (snap.hasError) {
-                  return Center(child: Text('Error: ${snap.error}'));
+                  final error = snap.error.toString();
+                  
+                  // Check if it's an empty view or configuration error
+                  final isEmptyOrConfigError = error.contains('400') || 
+                      error.contains('cannot be used to define a grouping level') ||
+                      error.contains('Unspecified error') ||
+                      error.contains('No items') ||
+                      error.contains('empty');
+
+                  if (isEmptyOrConfigError) {
+                    // Show friendly empty state instead of error
+                    return _buildEmptyState();
+                  }
+
+                  // For other errors, show a proper error UI
+                  return _buildErrorState(error);
                 }
 
                 final items = snap.data ?? [];
-
-                // ✅ NO warm-up calls here - already done in service
-                
                 final filtered = _applyFilter(items);
 
                 if (items.isEmpty) {
-                  return const Center(child: Text('No items found'));
+                  return _buildEmptyState();
                 }
 
                 if (filtered.isEmpty) {
-                  return const Center(child: Text('No matches'));
+                  return _buildNoMatchesState();
                 }
 
                 return RefreshIndicator(
@@ -488,6 +539,224 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ✅ NEW: Beautiful empty state
+  Widget _buildEmptyState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.inbox_outlined,
+                size: 64,
+                color: Colors.grey.shade400,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'No Items Found',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This view is currently empty',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: () {
+                setState(() {
+                  _dataLoaded = false;
+                  _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
+                });
+              },
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: const Text('Refresh'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF072F5F),
+                side: BorderSide(color: const Color(0xFF072F5F).withOpacity(0.3)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ NEW: Proper error state UI
+  Widget _buildErrorState(String error) {
+    // Extract meaningful error message
+    String userMessage = 'Unable to load this view';
+    
+    if (error.contains('cannot be used to define a grouping level')) {
+      userMessage = 'This view has a configuration issue';
+    } else if (error.contains('400')) {
+      userMessage = 'Unable to access this view';
+    } else if (error.contains('403') || error.contains('Forbidden')) {
+      userMessage = 'You don\'t have permission to view this';
+    } else if (error.contains('404')) {
+      userMessage = 'This view was not found';
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.warning_amber_rounded,
+                size: 64,
+                color: Colors.orange.shade400,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              userMessage,
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Please contact your administrator if this issue persists',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                  label: const Text('Go Back'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.grey.shade700,
+                    side: BorderSide(color: Colors.grey.shade300),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _dataLoaded = false;
+                      _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id);
+                    });
+                  },
+                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  label: const Text('Try Again'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF072F5F),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ NEW: No search matches state
+  Widget _buildNoMatchesState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 56,
+                color: Colors.blue.shade300,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'No Matches Found',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Try adjusting your search',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _filter = '';
+                  _searchController.clear();
+                });
+              },
+              icon: const Icon(Icons.clear_rounded, size: 18),
+              label: const Text('Clear Search'),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF072F5F),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

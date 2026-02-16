@@ -581,9 +581,15 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   Widget _buildFlatViewRow(ViewItem view) {
     return InkWell(
       onTap: () {
+
+        // Determine which section this view belongs to
+        final service = context.read<MFilesService>();
+        final isCommon = service.commonViews.any((v) => v.id == view.id);
+        final parentSection = isCommon ? 'Common Views' : 'Other Views';
+
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => ViewDetailsScreen(view: view)),
+          MaterialPageRoute(builder: (_) => ViewDetailsScreen(view: view, parentSection: parentSection)),
         );
       },
       child: Padding(

@@ -6,6 +6,8 @@ import '../models/object_file.dart';
 import '../services/mfiles_service.dart';
 import '../utils/file_icon_resolver.dart';
 
+import '../screens/document_preview_screen.dart';
+
 class ObjectInfoDropdown extends StatefulWidget {
   final ViewObject obj;
 
@@ -141,6 +143,67 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     return value.toString();
   }
 
+  Future<void> _previewFile(ObjectFile file) async {
+    final displayIdInt = int.tryParse(widget.obj.displayId);
+    if (displayIdInt == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid object display ID: ${widget.obj.displayId}'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.all(16),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.85,
+              maxWidth: MediaQuery.of(context).size.width * 0.95,
+            ),
+            child: Stack(
+              children: [
+                DocumentPreviewScreen(
+                  displayObjectId: displayIdInt,
+                  classId: widget.obj.classId,
+                  fileId: file.fileId,
+                  fileTitle: file.fileTitle,
+                  extension: file.extension,
+                  reportGuid: file.reportGuid,
+                ),
+                
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Material(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(20),
+                    child: InkWell(
+                      onTap: () => Navigator.pop(context),
+                      borderRadius: BorderRadius.circular(20),
+                      child: const Padding(
+                        padding: EdgeInsets.all(8),
+                        child: Icon(Icons.close, color: Colors.white, size: 20),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openFile(ObjectFile file) async {
     final displayIdInt = int.tryParse(widget.obj.displayId);
     if (displayIdInt == null) {
@@ -170,6 +233,52 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Open failed: $e'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  Future<void> _downloadFile(ObjectFile file) async {
+    final displayIdInt = int.tryParse(widget.obj.displayId);
+    if (displayIdInt == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid object display ID: ${widget.obj.displayId}'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _downloading = true);
+    try {
+      final svc = context.read<MFilesService>();
+      final savedPath = await svc.downloadAndSaveFile(
+        displayObjectId: displayIdInt,
+        classId: widget.obj.classId,
+        fileId: file.fileId,
+        fileTitle: file.fileTitle,
+        extension: file.extension,
+        reportGuid: file.reportGuid,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved to: $savedPath'),
+          backgroundColor: Colors.green.shade600,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $e'),
           backgroundColor: Colors.red.shade600,
         ),
       );
@@ -227,7 +336,44 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Basic Information (removed Version, Object Type, Created)
+              // ✅ NEW: Object Title Section
+              _buildSectionTitle('Object'),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.label_outline,
+                      size: 16,
+                      color: const Color(0xFF072F5F),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        widget.obj.title,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A1A1A),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+              Divider(height: 1, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+
+              // Basic Information
               _buildSectionTitle('Basic Information'),
               const SizedBox(height: 8),
               _buildInfoRow('Class', widget.obj.classTypeName),
@@ -315,7 +461,8 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     final icon = FileIconResolver.iconForExtension(file.extension);
 
     return InkWell(
-      onTap: _downloading ? null : () => _openFile(file),
+      // ✅ Tap opens preview dialog
+      onTap: _downloading ? null : () => _previewFile(file),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
@@ -359,7 +506,45 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              Icon(Icons.open_in_new, size: 14, color: Colors.grey.shade600),
+              // ✅ Menu button for additional options
+              PopupMenuButton<String>(
+                padding: EdgeInsets.zero,
+                icon: Icon(
+                  Icons.more_vert,
+                  size: 16,
+                  color: Colors.grey.shade600,
+                ),
+                tooltip: 'More options',
+                onSelected: (action) async {
+                  if (action == 'open') {
+                    await _openFile(file);
+                  } else if (action == 'download') {
+                    await _downloadFile(file);
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'open',
+                    child: Row(
+                      children: [
+                        Icon(Icons.open_in_new, size: 16),
+                        SizedBox(width: 12),
+                        Text('Open Externally'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'download',
+                    child: Row(
+                      children: [
+                        Icon(Icons.download, size: 16),
+                        SizedBox(width: 12),
+                        Text('Download'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),

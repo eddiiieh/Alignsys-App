@@ -8,13 +8,23 @@ import '../models/view_object.dart';
 import '../models/object_file.dart';
 import '../models/object_comment.dart';
 import '../widgets/lookup_field.dart';
+import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
 import '../utils/file_icon_resolver.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
+  final String? parentViewName;
+  final String? parentSection; 
+  final String? groupingName;
 
-  const ObjectDetailsScreen({super.key, required this.obj});
+  const ObjectDetailsScreen({
+    super.key, 
+    required this.obj,
+    this.parentViewName,
+    this.parentSection,
+    this.groupingName,
+  });
 
   @override
   State<ObjectDetailsScreen> createState() => _ObjectDetailsScreenState();
@@ -178,6 +188,60 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
   }
 
+  Widget _buildBreadcrumbs() {
+    final segments = <BreadcrumbSegment>[
+      BreadcrumbSegment(
+        label: 'Home',
+        icon: Icons.home_rounded,
+        onTap: () => Navigator.popUntil(context, (route) => route.isFirst),
+      ),
+    ];
+
+    // Don't add section-level breadcrumb (Common Views/Other Views)
+    // It's redundant and clutters the navigation
+
+    // Add parent view if available (e.g., "By Class")
+    if (widget.parentViewName != null) {
+      segments.add(BreadcrumbSegment(
+        label: widget.parentViewName!,
+        onTap: () {
+          // Pop back - how many screens depends on if we have grouping
+          if (widget.groupingName != null) {
+            // We're at: Home > View > Grouping > Object
+            // Pop 2 times to get to View
+            Navigator.pop(context);
+            Navigator.pop(context);
+          } else {
+            // We're at: Home > View > Object
+            // Pop 1 time to get to View
+            Navigator.pop(context);
+          }
+        },
+      ));
+    }
+
+    // Add grouping name if available (e.g., "Employee Contracts")
+    if (widget.groupingName != null) {
+      segments.add(BreadcrumbSegment(
+        label: widget.groupingName!,
+        onTap: () => Navigator.pop(context),
+      ));
+    }
+
+    // Add current object (truncate if too long)
+    final objTitle = _title.isEmpty ? widget.obj.title : _title;
+    final displayTitle = objTitle.length > 30 
+        ? '${objTitle.substring(0, 30)}...' 
+        : objTitle;
+
+    segments.add(BreadcrumbSegment(
+      label: displayTitle,
+    ));
+
+    return BreadcrumbBar(segments: segments);
+  }
+
+  // ✅ New method to load comments
   Future<List<_PropVm>> _loadProps() async {
     final svc = context.read<MFilesService>();
 
@@ -609,7 +673,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             icon: Icon(_editMode ? Icons.close : Icons.edit),
           ),
 
-          // ✅ Only show Tick when editing
+          // Only show Tick when editing
           if (_editMode)
             FutureBuilder<List<_PropVm>>(
               future: _future,
@@ -641,71 +705,77 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: FutureBuilder<List<_PropVm>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(child: Text('Error: ${snap.error}'));
-          }
+      body: Column(
+        children: [
+          _buildBreadcrumbs(),
+          // ✅ REDUCED SPACING: No SizedBox here, just expand directly
+          Expanded(
+            child: FutureBuilder<List<_PropVm>>(
+              future: _future,
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snap.hasError) {
+                  return Center(child: Text('Error: ${snap.error}'));
+                }
 
-          final props = snap.data ?? [];
-          final metaProps = props.where((p) => _allowedMetaPropIds.contains(p.id)).toList();
+                final props = snap.data ?? [];
+                final metaProps = props.where((p) => _allowedMetaPropIds.contains(p.id)).toList();
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              setState(() {
-                _future = _loadProps();
-                _filesFuture = _loadFiles();
-                _workflowFuture = _loadWorkflow();
-                _commentsFuture = _loadComments();
-                _dirty.clear();
-                _editMode = false;
-              });
-              await _future;
-            },
-            child: Scrollbar(
-              controller: _pageScroll,
-              thumbVisibility: false, // only while scrolling
-              thickness: 6,
-              radius: const Radius.circular(3),
-              interactive: true,      // draggable thumb
-              child: ListView(
-                controller: _pageScroll,
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(16),
-              children: [
-                _headerCard(obj),
-                const SizedBox(height: 12),
-                _metadataCard(metaProps),
-                FutureBuilder<WorkflowInfo?>(
-                  future: _workflowFuture,
-                  builder: (context, wsnap) {
-                    if (wsnap.connectionState == ConnectionState.waiting) return const SizedBox.shrink();
-                    final info = wsnap.data;
-
-                    return Column(
-                      children: [
-                        const SizedBox(height: 12),
-                        if (info == null) _assignWorkflowCard() else _workflowCard(info),
-                      ],
-
-                    );
+                return RefreshIndicator(
+                  onRefresh: () async {
+                    setState(() {
+                      _future = _loadProps();
+                      _filesFuture = _loadFiles();
+                      _workflowFuture = _loadWorkflow();
+                      _commentsFuture = _loadComments();
+                      _dirty.clear();
+                      _editMode = false;
+                    });
+                    await _future;
                   },
-                ),
-                const SizedBox(height: 12),
-                _previewCard(obj),
-                const SizedBox(height: 12),
-                //_permissionsCard(obj),
-                _commentsCard(),
-                const SizedBox(height: 12),
-              ],
+                  child: Scrollbar(
+                    controller: _pageScroll,
+                    thumbVisibility: false,
+                    thickness: 6,
+                    radius: const Radius.circular(3),
+                    interactive: true,
+                    child: ListView(
+                      controller: _pageScroll,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        _headerCard(obj),
+                        const SizedBox(height: 12),
+                        _metadataCard(metaProps),
+                        FutureBuilder<WorkflowInfo?>(
+                          future: _workflowFuture,
+                          builder: (context, wsnap) {
+                            if (wsnap.connectionState == ConnectionState.waiting) return const SizedBox.shrink();
+                            final info = wsnap.data;
+
+                            return Column(
+                              children: [
+                                const SizedBox(height: 12),
+                                if (info == null) _assignWorkflowCard() else _workflowCard(info),
+                              ],
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        _previewCard(obj),
+                        const SizedBox(height: 12),
+                        _commentsCard(),
+                        const SizedBox(height: 12),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
           ),
-          );
-        },
+        ],
       ),
     );
   }
