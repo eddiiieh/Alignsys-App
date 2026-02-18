@@ -139,8 +139,8 @@ class _SplashScreenState extends State<SplashScreen>
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
       child: Image.asset(
-        widget.logoAssetPath ?? 'assets/alignsysop.png',
-        height: 58,
+        widget.logoAssetPath ?? 'assets/alignsysnew.png',
+        height: 130,
         fit: BoxFit.contain,
       ),
     );

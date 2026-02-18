@@ -13,8 +13,9 @@ class BreadcrumbSegment {
   });
 }
 
-/// A breadcrumb navigation bar that shows the navigation path
-class BreadcrumbBar extends StatelessWidget {
+/// A breadcrumb navigation bar that shows the navigation path.
+/// Automatically scrolls to the active (last) segment when segments change.
+class BreadcrumbBar extends StatefulWidget {
   final List<BreadcrumbSegment> segments;
   final Color backgroundColor;
   final Color textColor;
@@ -31,15 +32,51 @@ class BreadcrumbBar extends StatelessWidget {
   });
 
   @override
+  State<BreadcrumbBar> createState() => _BreadcrumbBarState();
+}
+
+class _BreadcrumbBarState extends State<BreadcrumbBar> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(BreadcrumbBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Scroll to end whenever segments change (e.g. user navigated deeper)
+    if (oldWidget.segments.length != widget.segments.length ||
+        oldWidget.segments.lastOrNull?.label !=
+            widget.segments.lastOrNull?.label) {
+      _scrollToEnd();
+    }
+  }
+
+  void _scrollToEnd() {
+    // Wait for the new frame so the layout is complete before scrolling
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    if (segments.isEmpty) return const SizedBox.shrink();
+    if (widget.segments.isEmpty) return const SizedBox.shrink();
 
     return Container(
       width: double.infinity,
-      // ✅ REDUCED VERTICAL PADDING: Changed from 12 to 8
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: widget.backgroundColor,
         border: Border(
           bottom: BorderSide(
             color: Colors.grey.shade200,
@@ -48,6 +85,7 @@ class BreadcrumbBar extends StatelessWidget {
         ),
       ),
       child: SingleChildScrollView(
+        controller: _scrollController,
         scrollDirection: Axis.horizontal,
         child: Row(
           children: _buildBreadcrumbItems(),
@@ -58,6 +96,7 @@ class BreadcrumbBar extends StatelessWidget {
 
   List<Widget> _buildBreadcrumbItems() {
     final items = <Widget>[];
+    final segments = widget.segments;
 
     for (int i = 0; i < segments.length; i++) {
       final segment = segments[i];
@@ -69,7 +108,7 @@ class BreadcrumbBar extends StatelessWidget {
           Icon(
             segment.icon,
             size: 16,
-            color: isLast ? activeTextColor : textColor,
+            color: isLast ? widget.activeTextColor : widget.textColor,
           ),
         );
         items.add(const SizedBox(width: 6));
@@ -85,9 +124,13 @@ class BreadcrumbBar extends StatelessWidget {
             child: Text(
               segment.label,
               style: TextStyle(
-                fontSize: fontSize,
+                fontSize: widget.fontSize,
                 fontWeight: isLast ? FontWeight.w700 : FontWeight.w500,
-                color: isLast ? activeTextColor : textColor,
+                color: isLast ? widget.activeTextColor : widget.textColor,
+                decoration: (!isLast && segment.onTap != null)
+                    ? TextDecoration.underline
+                    : TextDecoration.none,
+                decorationColor: widget.textColor.withOpacity(0.4),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -100,7 +143,7 @@ class BreadcrumbBar extends StatelessWidget {
       if (!isLast) {
         items.add(
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Icon(
               Icons.chevron_right_rounded,
               size: 16,

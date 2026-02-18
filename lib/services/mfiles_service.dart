@@ -59,7 +59,7 @@ class MFilesService extends ChangeNotifier {
 
   List<ViewObject> recentObjects = [];
   List<ViewObject> assignedObjects = [];
-  List<ViewObject> searchResults = []; // search no longer overwrites recent
+  List<ViewObject> searchResults = []; // search no longer overwrites recen
 
   String currentTab = 'Home';
 
@@ -1544,7 +1544,7 @@ class MFilesService extends ChangeNotifier {
     return true;
   }
 
-  // -------------------- Delete object --------------------
+  // -------------------- Delete & Undelete object --------------------
 
   Future<bool> deleteObject({
     required int objectId,
@@ -1579,6 +1579,47 @@ class MFilesService extends ChangeNotifier {
       return false;
     } catch (e) {
       _setError('Error deleting object: $e');
+      return false;
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  Future<bool> unDeleteObject({
+    required int objectId,
+    required int classId,
+  }) async {
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      if (selectedVault == null) return false;
+      if (accessToken == null) return false;
+      if (mfilesUserId == null) return false;
+
+      final url = Uri.parse('$baseUrl/api/ObjectDeletion/UnDeleteObject');
+
+      final body = {
+        "vaultGuid": vaultGuidWithBraces,
+        "objectId": objectId,
+        "classId": classId,
+        "userID": mfilesUserId,
+      };
+
+      final resp = await http.post(
+        url,
+        headers: _authHeaders,
+        body: jsonEncode(body),
+      );
+
+      if (resp.statusCode == 200 ||
+          resp.statusCode == 201 ||
+          resp.statusCode == 204) return true;
+
+      _setError('Server returned ${resp.statusCode}: ${resp.body}');
+      return false;
+    } catch (e) {
+      _setError('Error restoring object: $e');
       return false;
     } finally {
       _setLoading(false);

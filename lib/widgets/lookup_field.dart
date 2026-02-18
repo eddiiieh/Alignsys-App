@@ -31,7 +31,10 @@ class _LookupFieldState extends State<LookupField> {
   @override
   void initState() {
     super.initState();
-    _fetchLookupItems();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _fetchLookupItems();
+    });
   }
 
   Future<void> _fetchLookupItems() async {
@@ -54,7 +57,10 @@ class _LookupFieldState extends State<LookupField> {
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: _showSelectionDialog,
+      onTap: () {
+        FocusManager.instance.primaryFocus?.unfocus(); // <-- key fix
+        _showSelectionDialog();
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
         child: Row(

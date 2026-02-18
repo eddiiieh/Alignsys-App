@@ -10,32 +10,89 @@ class LoginVaultScreen extends StatefulWidget {
   State<LoginVaultScreen> createState() => _LoginVaultScreenState();
 }
 
-class _LoginVaultScreenState extends State<LoginVaultScreen> {
+class _LoginVaultScreenState extends State<LoginVaultScreen>
+    with SingleTickerProviderStateMixin {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
-  bool _loading = false;           // login + fetch vaults
-  bool _proceedLoading = false;    // proceed to vault only
+  bool _loading = false;
+  bool _proceedLoading = false;
   bool _showPassword = false;
   List<Vault> _vaults = [];
   Vault? _selectedVault;
 
   String? _usernameError;
 
+  late final AnimationController _animController;
+  late final Animation<Offset> _loginSlide;
+  late final Animation<Offset> _vaultSlide;
+  late final Animation<double> _vaultFade;
+
+  static const _primaryBlue = Color(0xFF072F5F);
+  static const _accentBlue = Color.fromRGBO(25, 76, 129, 1);
+
+  @override
+  void initState() {
+    super.initState();
+    _animController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+
+    _loginSlide = Tween<Offset>(
+      begin: Offset.zero,
+      end: const Offset(-1.5, 0),
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeInOut));
+
+    _vaultSlide = Tween<Offset>(
+      begin: const Offset(1.5, 0),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(parent: _animController, curve: Curves.easeInOut));
+
+    _vaultFade = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _animController, curve: const Interval(0.4, 1.0)),
+    );
+  }
+
+  @override
+  void dispose() {
+    _animController.dispose();
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
   bool get _isLoggedIn => context.read<MFilesService>().accessToken != null;
+
+  String _friendlyLoginError(Object e) {
+    final msg = e.toString().toLowerCase();
+
+    // If your service throws "Exception: login failed 401"
+    if (msg.contains('401') || msg.contains('unauthorized')) {
+      return 'Invalid username or password.';
+    }
+
+    // Common network cases
+    if (msg.contains('socketexception') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('network')) {
+      return 'Network error. Check your connection and try again.';
+    }
+
+    // Fallback
+    return 'Login failed. Please try again.';
+  }
 
   Future<void> _logout() async {
     final s = context.read<MFilesService>();
-
-    // If you already have a logout() in the service, call it.
-    // Otherwise, clear the fields directly (see service notes below).
-    await s.logout(); // create this in MFilesService if missing
+    await s.logout();
 
     if (!mounted) return;
+    await _animController.reverse();
     setState(() {
       _vaults = [];
       _selectedVault = null;
-      _passwordController.clear(); // optional
+      _passwordController.clear();
       _loading = false;
       _proceedLoading = false;
     });
@@ -64,21 +121,21 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
         _vaults = vaults;
         _selectedVault = vaults.first;
       });
+      // Trigger the slide animation
+      _animController.forward();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.toString()),
-            backgroundColor: Colors.red.shade700,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            duration: const Duration(seconds: 4),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_friendlyLoginError(e)),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
+    setState(() => _loading = false);
   }
 
   void _proceedToVault() async {
@@ -113,7 +170,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color.fromARGB(255, 251, 251, 251),
+      backgroundColor: _primaryBlue,
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -124,291 +181,303 @@ class _LoginVaultScreenState extends State<LoginVaultScreen> {
               children: [
                 // Logo Section
                 Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.asset(
-                          'assets/alignsyslogo.png',
-                          height: 60,
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-
-                const Text(
-                        'Welcome back',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                          color: Color.fromRGBO(25, 75, 129, 1),
-                        ),
-                      ),
-                const SizedBox(height: 8),
-                
-                // Login Form Card
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Username Field
-                      TextField(
-                        controller: _usernameController,
-                        keyboardType: TextInputType.emailAddress,
-                        decoration: InputDecoration(
-                          labelText: 'Email / Username',
-                          prefixIcon: const Icon(
-                            Icons.person_outline,
-                            color: Color.fromRGBO(25, 76, 129, 1),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color.fromRGBO(25, 76, 129, 1),
-                              width: 2,
-                            ),
-                          ),
-                          errorText: _usernameError,
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Password Field
-                      TextField(
-                        controller: _passwordController,
-                        obscureText: !_showPassword,
-                        decoration: InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: const Icon(
-                            Icons.lock_outline,
-                            color: Color.fromRGBO(25, 76, 129, 1),
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade300),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: Color.fromRGBO(25, 76, 129, 1),
-                              width: 2,
-                            ),
-                          ),
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                          suffixIcon: IconButton(
-                            icon: Icon(
-                              _showPassword ? Icons.visibility : Icons.visibility_off,
-                              color: Colors.grey.shade600,
-                            ),
-                            onPressed: () => setState(() => _showPassword = !_showPassword),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Login Button
-                      _loading
-                          ? const Center(
-                              child: CircularProgressIndicator(
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Color.fromRGBO(25, 76, 129, 1),
-                                ),
-                              ),
-                            )
-                          : ElevatedButton(
-                              onPressed: _vaults.isNotEmpty ? _logout : _login,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: _vaults.isNotEmpty
-                                    ? Colors.red.shade600
-                                    :const Color.fromRGBO(25, 76, 129, 1),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                elevation: 2,
-                              ),
-                              child: Text(
-                                _vaults.isNotEmpty ? 'Logout' : 'Login',
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                    ],
-                  ),
-                ),
-
-                // Vault Selection (shown after login)
-                if (_vaults.isNotEmpty) ...[
-                  const SizedBox(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 10,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
+                  padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.asset(
+                      'assets/alignsysnew.png',
+                      height: 140,
+                      fit: BoxFit.cover,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Row(
+                  ),
+                ),
+                const SizedBox(height: 8),
+
+                // Animated area: login form slides out, vault picker slides in
+                ClipRect(
+                  child: Stack(
+                    children: [
+                      // ── LOGIN FORM ──
+                      SlideTransition(
+                        position: _loginSlide,
+                        child: Column(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: const Color.fromRGBO(25, 76, 129, 1).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(
-                                Icons.storage,
-                                color: Color.fromRGBO(25, 76, 129, 1),
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
                             const Text(
-                              'Select Vault',
+                              'Welcome back',
                               style: TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
-                                color: Color.fromRGBO(25, 76, 129, 1),
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _buildTextField(
+                                    controller: _usernameController,
+                                    label: 'Email / Username',
+                                    icon: Icons.person_outline,
+                                    keyboardType: TextInputType.emailAddress,
+                                    errorText: _usernameError,
+                                  ),
+                                  const SizedBox(height: 16),
+                                  _buildTextField(
+                                    controller: _passwordController,
+                                    label: 'Password',
+                                    icon: Icons.lock_outline,
+                                    obscureText: !_showPassword,
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _showPassword
+                                            ? Icons.visibility
+                                            : Icons.visibility_off,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                      onPressed: () => setState(
+                                          () => _showPassword = !_showPassword),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 20),
+                                  _loading
+                                      ? const Center(
+                                          child: CircularProgressIndicator(
+                                            valueColor:
+                                                AlwaysStoppedAnimation<Color>(
+                                                    _accentBlue),
+                                          ),
+                                        )
+                                      : ElevatedButton(
+                                          onPressed: _login,
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: _primaryBlue,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 16),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            elevation: 2,
+                                          ),
+                                          child: const Text(
+                                            'Login',
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        DropdownButtonFormField<Vault>(
-                          value: _selectedVault,
-                          items: _vaults
-                              .map((v) => DropdownMenuItem(
-                                    value: v,
-                                    child: Row(
+                      ),
+
+                      // ── VAULT PICKER ──
+                      SlideTransition(
+                        position: _vaultSlide,
+                        child: FadeTransition(
+                          opacity: _vaultFade,
+                          child: Column(
+                            children: [
+                              const Text(
+                                'Choose your vault',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              _buildCard(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Row(
                                       children: [
-                                        const Icon(
-                                          Icons.folder,
-                                          size: 18,
-                                          color: Color.fromRGBO(25, 76, 129, 1),
+                                        Container(
+                                          padding: const EdgeInsets.all(8),
+                                          decoration: BoxDecoration(
+                                            color: _primaryBlue.withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(Icons.storage,
+                                              color: _accentBlue, size: 20),
                                         ),
-                                        const SizedBox(width: 8),
-                                        Text(v.name),
+                                        const SizedBox(width: 12),
+                                        const Text(
+                                          'Select Vault',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: _accentBlue,
+                                          ),
+                                        ),
                                       ],
                                     ),
-                                  ))
-                              .toList(),
-                          onChanged: (v) => setState(() => _selectedVault = v),
-                          decoration: InputDecoration(
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: BorderSide(color: Colors.grey.shade300),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                              borderSide: const BorderSide(
-                                color: Color.fromRGBO(25, 76, 129, 1),
-                                width: 2,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey.shade50,
-                          ),
-                          icon: const Icon(
-                            Icons.arrow_drop_down,
-                            color: Color.fromRGBO(25, 76, 129, 1),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton(
-                          onPressed: (_selectedVault == null || _proceedLoading) ? null : _proceedToVault,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color.fromRGBO(25, 76, 129, 1),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 2,
-                            disabledBackgroundColor: Colors.grey.shade300,
-                          ),
-                          child: _proceedLoading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    valueColor: AlwaysStoppedAnimation<Color>(Color.fromRGBO(25, 76, 129, 1)),
-                                  ),
-                                )
-                              : const Text(
-                                  'Proceed to Vault',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                                    const SizedBox(height: 16),
+                                    DropdownButtonFormField<Vault>(
+                                      value: _selectedVault,
+                                      items: _vaults
+                                          .map((v) => DropdownMenuItem(
+                                                value: v,
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(Icons.folder,
+                                                        size: 18,
+                                                        color: _accentBlue),
+                                                    const SizedBox(width: 8),
+                                                    Text(v.name),
+                                                  ],
+                                                ),
+                                              ))
+                                          .toList(),
+                                      onChanged: (v) =>
+                                          setState(() => _selectedVault = v),
+                                      decoration: InputDecoration(
+                                        border: OutlineInputBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(12)),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          borderSide: BorderSide(
+                                              color: Colors.grey.shade300),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          borderSide: const BorderSide(
+                                              color: _accentBlue, width: 2),
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 16, vertical: 12),
+                                        filled: true,
+                                        fillColor: Colors.grey.shade50,
+                                      ),
+                                      icon: const Icon(Icons.arrow_drop_down,
+                                          color: _accentBlue),
+                                    ),
+                                    const SizedBox(height: 16),
+                                    ElevatedButton(
+                                      onPressed: (_selectedVault == null ||
+                                              _proceedLoading)
+                                          ? null
+                                          : _proceedToVault,
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: _primaryBlue,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 16),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                        elevation: 2,
+                                        disabledBackgroundColor:
+                                            Colors.grey.shade300,
+                                      ),
+                                      child: _proceedLoading
+                                          ? const SizedBox(
+                                              height: 20,
+                                              width: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                        Color>(_accentBlue),
+                                              ),
+                                            )
+                                          : const Text(
+                                              'Proceed to Vault',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    TextButton.icon(
+                                      onPressed: _logout,
+                                      icon: const Icon(Icons.arrow_back,
+                                          size: 16, color: Colors.grey),
+                                      label: const Text(
+                                        'Back to login',
+                                        style: TextStyle(color: Colors.grey),
+                                      ),
+                                    ),
+                                  ],
                                 ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCard({required Widget child}) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    TextInputType? keyboardType,
+    bool obscureText = false,
+    String? errorText,
+    Widget? suffixIcon,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      obscureText: obscureText,
+      decoration: InputDecoration(
+        labelText: label,
+        prefixIcon: Icon(icon, color: const Color.fromRGBO(25, 76, 129, 1)),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+              color: Color.fromRGBO(25, 76, 129, 1), width: 2),
+        ),
+        errorText: errorText,
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        suffixIcon: suffixIcon,
       ),
     );
   }
