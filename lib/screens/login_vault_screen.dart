@@ -62,8 +62,6 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     super.dispose();
   }
 
-  bool get _isLoggedIn => context.read<MFilesService>().accessToken != null;
-
   String _friendlyLoginError(Object e) {
     final msg = e.toString().toLowerCase();
 

@@ -1,6 +1,5 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:photo_view/photo_view.dart';
@@ -40,33 +39,39 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     _fileFuture = _downloadFile();
   }
 
+  String _cleanExt(String ext) => ext.trim().toLowerCase().replaceFirst('.', '');
+
+
   Future<File> _downloadFile() async {
     final svc = context.read<MFilesService>();
-    
+
+    final extToUse = _cleanExt(widget.extension); // always keep original extension
+
     final result = await svc.downloadFileBytesWithFallback(
       displayObjectId: widget.displayObjectId,
       classId: widget.classId,
       fileId: widget.fileId,
       reportGuid: widget.reportGuid,
+      expectedExtension: extToUse,
     );
 
-    final filename = _safeFilename(widget.fileTitle, widget.extension, widget.fileId);
+    final filename = _safeFilename(widget.fileTitle, extToUse, widget.fileId);
     final dir = await getTemporaryDirectory();
     final filePath = '${dir.path}/$filename';
+
     final file = File(filePath);
     await file.writeAsBytes(result.bytes, flush: true);
-    
     return file;
   }
 
   String _safeFilename(String title, String ext, int fileId) {
-    String safe = title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_');
+    var safe = title.replaceAll(RegExp(r'[<>:"/\\|?*]'), '_').trim();
     if (safe.isEmpty) safe = 'file_$fileId';
-    
-    final cleanExt = ext.trim().toLowerCase();
+
+    final cleanExt = _cleanExt(ext);
     if (cleanExt.isEmpty) return safe;
     if (safe.toLowerCase().endsWith('.$cleanExt')) return safe;
-    
+
     return '$safe.$cleanExt';
   }
 
@@ -122,9 +127,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
   }
 
   Widget _buildPreview(File file) {
-    final ext = widget.extension.toLowerCase();
+    final ext = _cleanExt(file.path.split('.').last);
 
-    // PDF files
     if (ext == 'pdf') {
       return SfPdfViewer.file(
         file,
@@ -134,7 +138,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
       );
     }
 
-    // Image files
     if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'].contains(ext)) {
       return PhotoView(
         imageProvider: FileImage(file),
@@ -143,13 +146,14 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
         backgroundDecoration: BoxDecoration(color: Colors.grey.shade50),
         loadingBuilder: (context, event) => Center(
           child: CircularProgressIndicator(
-            value: event == null ? 0 : event.cumulativeBytesLoaded / event.expectedTotalBytes!,
+            value: event == null
+                ? 0
+                : event.cumulativeBytesLoaded / (event.expectedTotalBytes ?? 1),
           ),
         ),
       );
     }
 
-    // Text files
     if (['txt', 'json', 'xml', 'csv', 'log', 'md'].contains(ext)) {
       return FutureBuilder<String>(
         future: file.readAsString(),
@@ -158,9 +162,12 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return _buildUnsupportedPreview('Error reading file: ${snap.error}');
+            return _buildUnsupportedPreview(
+              'Error reading file: ${snap.error}',
+              file: file,
+            );
           }
-          
+
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: SelectableText(
@@ -175,20 +182,14 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
       );
     }
 
-    // DOCX, XLSX, PPTX - Cannot be previewed natively
-    if (['docx', 'doc', 'xlsx', 'xls', 'pptx', 'ppt'].contains(ext)) {
-      return _buildUnsupportedPreview(
-        'Office documents cannot be previewed in-app.\n\nPlease use "Open Externally" to view this file in your device\'s default app.',
-      );
-    }
-
-    // Other unsupported formats
+    // Not previewable -> push user to open externally
     return _buildUnsupportedPreview(
       'Preview not available for .$ext files.\n\nUse "Open Externally" to view this file.',
+      file: file,
     );
   }
 
-  Widget _buildUnsupportedPreview(String message) {
+  Widget _buildUnsupportedPreview(String message, {required File file}) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -202,6 +203,12 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
             ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => _openExternally(file),
+              icon: const Icon(Icons.open_in_new),
+              label: const Text('Open Externally'),
+            ),
           ],
         ),
       ),
@@ -210,8 +217,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ext = widget.extension.isEmpty ? '' : '.${widget.extension}';
-    
+    final bannerExt = widget.extension.isEmpty ? '' : '.${_cleanExt(widget.extension)}';
+
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
@@ -223,7 +230,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          // Download button
           IconButton(
             onPressed: _downloading ? null : _downloadToDevice,
             icon: _downloading
@@ -238,8 +244,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
                 : const Icon(Icons.download),
             tooltip: 'Download',
           ),
-          
-          // Open externally button
           FutureBuilder<File>(
             future: _fileFuture,
             builder: (context, snap) {
@@ -250,13 +254,11 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
               );
             },
           ),
-          
           const SizedBox(width: 8),
         ],
       ),
       body: Column(
         children: [
-          // File info banner
           Container(
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -267,7 +269,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '${widget.fileTitle}$ext',
+                    '${widget.fileTitle}$bannerExt',
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
@@ -276,10 +278,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
               ],
             ),
           ),
-          
           const Divider(height: 1),
-          
-          // Preview area
           Expanded(
             child: FutureBuilder<File>(
               future: _fileFuture,
@@ -287,7 +286,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
                 if (snap.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                
+
                 if (snap.hasError) {
                   return Center(
                     child: Padding(
@@ -316,8 +315,16 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
                     ),
                   );
                 }
-                
-                return _buildPreview(snap.data!);
+
+                final file = snap.data!;
+                _cleanExt(file.path.split('.').last);
+
+                // Optional: if you want to AUTO-open external for non-previewables, uncomment:
+                // if (!_canPreview(ext)) {
+                //   WidgetsBinding.instance.addPostFrameCallback((_) => _openExternally(file));
+                // }
+
+                return _buildPreview(file);
               },
             ),
           ),

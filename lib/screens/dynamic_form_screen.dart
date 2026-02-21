@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -245,7 +247,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         if (showSingle) ...[
           const SizedBox(height: 8),
           Text(
-            selectedText!,
+            selectedText,
             style: _inputStyle.copyWith(
               fontSize: 13.5,
               color: const Color(0xFF0F172A),
@@ -257,7 +259,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         if (showMulti) ...[
           const SizedBox(height: 8),
           Text(
-            '${selectedTexts!.length} selected',
+            '${selectedTexts.length} selected',
             style: const TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w600,
@@ -268,7 +270,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: selectedTexts!.map((t) {
+            children: selectedTexts.map((t) {
               return Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(

@@ -1230,35 +1230,106 @@ class MFilesService extends ChangeNotifier {
     required int classId,
     required int fileId,
     required String reportGuid,
+    required String expectedExtension,
   }) async {
-    if (selectedVault == null || accessToken == null) throw Exception('Session not ready');
-
-    final vg = vaultGuidWithBraces;
-
-    final urlsToTry = <Uri>[
-      Uri.parse('$baseUrl/api/objectinstance/DownloadActualFile/$vg/$displayObjectId/$classId/$fileId'),
-      Uri.parse('$baseUrl/api/objectinstance/DownloadFile/$vg/$displayObjectId/$classId/$fileId'),
-    ];
-
-    final rg = reportGuid.trim();
-    if (rg.isNotEmpty) {
-      urlsToTry.addAll([
-        Uri.parse('$baseUrl/api/objectinstance/DownloadOtherFiles/$vg/$rg'),
-        Uri.parse('$baseUrl/api/objectinstance/DownloadOtherFiles/$vg/$displayObjectId/$classId/$fileId'),
-        Uri.parse('$baseUrl/api/objectinstance/DownloadOtherFiles/$vg/$displayObjectId/$classId/$fileId/$rg'),
-      ]);
+    if (selectedVault == null || accessToken == null) {
+      throw Exception('Session not ready');
     }
 
-    Object? lastErr;
-    for (final u in urlsToTry) {
-      try {
-        return await _getBytes(u);
-      } catch (e) {
-        lastErr = e;
+    // ✅ Query parameters - works for all file types
+    final url = Uri.parse('$baseUrl/api/objectinstance/DownloadOtherFiles').replace(
+      queryParameters: {
+        'ObjectId': displayObjectId.toString(),
+        'VaultGuid': vaultGuidWithBraces,
+        'fileID': fileId.toString(),
+        'ClassId': classId.toString(),
+      },
+    );
+
+    debugPrint('📥 Downloading file from: $url');
+
+    try {
+      final response = await http.get(url, headers: _authHeadersNoJson);
+
+      debugPrint('📡 Response status: ${response.statusCode}');
+      debugPrint('📡 Content-Type: ${response.headers['content-type']}');
+      debugPrint('📡 Content-Length: ${response.headers['content-length']}');
+
+      if (response.statusCode == 200) {
+        final contentType = response.headers['content-type'];
+        final bytes = response.bodyBytes;
+
+        String headAscii(List<int> b) {
+          final take = b.length > 32 ? b.sublist(0, 32) : b;
+          return String.fromCharCodes(take.map((x) => (x >= 32 && x <= 126) ? x : 46)); // printable else '.'
+        }
+
+        bool looksPdf(List<int> b) =>
+            b.length >= 4 && b[0] == 0x25 && b[1] == 0x50 && b[2] == 0x44 && b[3] == 0x46; // %PDF
+
+        bool looksZip(List<int> b) =>
+            b.length >= 2 && b[0] == 0x50 && b[1] == 0x4B; // PK (docx/xlsx)
+
+        debugPrint('🔎 HEAD(ASCII): ${headAscii(bytes)}');
+
+        bool looksJson(List<int> b) {
+          int i = 0;
+          while (i < b.length) {
+            final x = b[i];
+            if (x == 0x20 || x == 0x0A || x == 0x0D || x == 0x09) { i++; continue; }
+            return x == 0x7B /*{*/ || x == 0x5B /*[*/;
+          }
+          return false;
+        }
+
+        final head = headAscii(bytes).toLowerCase();
+
+        if (looksJson(bytes)) {
+          final body = utf8.decode(bytes);
+          throw Exception(
+            'Server returned JSON instead of file. '
+            'HEAD=${headAscii(bytes)} '
+            'BODY=${body.substring(0, body.length > 200 ? 200 : body.length)}',
+          );
+        }
+
+        if (head.contains('<!doctype') || head.contains('<html')) {
+          throw Exception('Server returned HTML instead of file. HEAD=${headAscii(bytes)}');
+        }
+
+        final exp = expectedExtension.trim().toLowerCase().replaceFirst('.', '');
+
+        // Check for M-Files error messages returned as text
+        if (contentType?.contains('text') == true) {
+          final body = utf8.decode(bytes);
+          if (body.contains('not been committed')) {
+            throw Exception('File not committed. Please check in the file in M-Files first.');
+          }
+          if (body.contains('Could not find')) {
+            throw Exception('File signature error. File may be corrupted.');
+          }
+          throw Exception('Server error: ${body.substring(0, body.length > 200 ? 200 : body.length)}');
+        }
+
+        if (exp == 'pdf' && !looksPdf(bytes)) {
+          throw Exception('Expected PDF but downloaded content is not PDF. HEAD=${headAscii(bytes)}');
+        }
+        if (['docx','xlsx','pptx'].contains(exp) && !looksZip(bytes)) {
+          throw Exception('Expected Office zip ($exp) but downloaded content is not ZIP. HEAD=${headAscii(bytes)}');
+        }
+
+        debugPrint('🔎 looksPdf=${looksPdf(bytes)} looksZip=${looksZip(bytes)} bytes=${bytes.length}');
+        
+        debugPrint('✅ Downloaded ${bytes.length} bytes');
+        
+        return (bytes: bytes, contentType: contentType);
       }
-    }
 
-    throw Exception('All download endpoints failed. Last error: $lastErr');
+      throw Exception('Download failed: ${response.statusCode}');
+    } catch (e) {
+      debugPrint('❌ Download error: $e');
+      rethrow;
+    }
   }
 
   String _safeFilename(String title, String extension, int fileId) {
@@ -1286,31 +1357,15 @@ class MFilesService extends ChangeNotifier {
       classId: classId,
       fileId: fileId,
       reportGuid: reportGuid,
+      expectedExtension: extension,
     );
 
-    void _debugSignature(List<int> b, String? ct) {
-      bool starts(List<int> s) =>
-          b.length >= s.length &&
-          List.generate(s.length, (i) => b[i] == s[i]).every((x) => x);
-
-      final sig = [
-        if (starts([0x25, 0x50, 0x44, 0x46])) 'PDF',
-        if (starts([0xFF, 0xD8, 0xFF])) 'JPG',
-        if (starts([0x89, 0x50, 0x4E, 0x47])) 'PNG',
-        if (starts([0x50, 0x4B, 0x03, 0x04])) 'ZIP(DOCX/XLSX)',
-      ].join(',');
-
-      debugPrint('OPEN bytes=${b.length} ct=$ct sig=$sig');
-    }
-
-    _debugSignature(result.bytes, result.contentType);
-
     final filename = _safeFilename(fileTitle, extension, fileId);
-
     final dir = await getTemporaryDirectory();
     final filePath = '${dir.path}/$filename';
-    final f = File(filePath);
-    await f.writeAsBytes(result.bytes, flush: true);
+    
+    final file = File(filePath);
+    await file.writeAsBytes(result.bytes, flush: true);
 
     final opened = await OpenFilex.open(filePath);
     if (opened.type != ResultType.done) {
@@ -1333,17 +1388,85 @@ class MFilesService extends ChangeNotifier {
       classId: classId,
       fileId: fileId,
       reportGuid: reportGuid,
+      expectedExtension: extension,
     );
 
     final filename = _safeFilename(fileTitle, extension, fileId);
-
     final dir = await getApplicationDocumentsDirectory();
     final path = '${dir.path}/$filename';
+    
     final out = File(path);
     await out.writeAsBytes(result.bytes, flush: true);
 
     return path;
   }
+
+  // ==================== CONVERT TO PDF ====================
+Future<Map<String, dynamic>> convertToPdf({
+  required int objectId,
+  required int classId,
+  required int fileId,
+  bool overWriteOriginal = false,
+  bool separateFile = true,
+}) async {
+  if (selectedVault == null || accessToken == null || mfilesUserId == null) {
+    throw Exception('Session not ready');
+  }
+
+  final url = Uri.parse('$baseUrl/api/objectinstance/ConvertToPdf');
+
+  final body = {
+    "vaultGuid": vaultGuidWithBraces,
+    "objectId": objectId,
+    "classId": classId,
+    "fileID": fileId,
+    "overWriteOriginal": overWriteOriginal,
+    "separateFile": separateFile,
+    "userID": mfilesUserId,
+  };
+
+  final resp = await http.post(url, headers: _authHeaders, body: jsonEncode(body));
+
+  if (resp.statusCode != 200 && resp.statusCode != 201) {
+    throw Exception('ConvertToPdf failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  final decoded = jsonDecode(resp.body);
+  if (decoded is Map<String, dynamic>) return decoded;
+
+  // some APIs return a list or string; keep it explicit
+  throw Exception('ConvertToPdf unexpected response: ${resp.body}');
+}
+
+/// Extract the new PDF fileId from the ConvertToPdf response.
+/// Adjust keys here once you see the real response.
+int extractPdfFileId(Map<String, dynamic> m) {
+  int? asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse('${v ?? ''}');
+  }
+
+  // Common possibilities
+  final candidates = [
+    m['pdfFileId'],
+    m['PdfFileId'],
+    m['newFileId'],
+    m['fileId'],
+    m['fileID'],
+    m['convertedFileId'],
+    m['ConvertedFileId'],
+    (m['data'] is Map ? (m['data'] as Map)['fileId'] : null),
+    (m['result'] is Map ? (m['result'] as Map)['fileId'] : null),
+  ];
+
+  for (final c in candidates) {
+    final id = asInt(c);
+    if (id != null && id > 0) return id;
+  }
+
+  throw Exception('Could not find pdf fileId in ConvertToPdf response. Keys=${m.keys.toList()}');
+}
 
   // -------------------- Deleted / Reports --------------------
 

@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
@@ -5,7 +7,6 @@ import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
-import 'package:mfiles_app/widgets/object_info_bottom_sheet.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
 import 'package:provider/provider.dart';
 import '../models/vault.dart';
