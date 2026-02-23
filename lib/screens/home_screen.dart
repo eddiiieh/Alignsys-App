@@ -13,6 +13,7 @@ import '../models/vault.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../widgets/relationships_dropdown.dart';
+import 'package:mfiles_app/widgets/file_type_badge.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -40,6 +41,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   IconData _iconForObj(MFilesService svc, ViewObject obj) =>
       svc.iconForViewObject(obj);
+
+  bool _isDocumentObj(MFilesService svc, ViewObject obj) =>
+      svc.isDocumentViewObject(obj);
 
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
@@ -104,7 +108,6 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  /// Re-fetches whichever tab is currently visible after a delete/restore.
   Future<void> _refreshActiveTab() async {
     final service = context.read<MFilesService>();
     final tab = tabs[_tabController.index];
@@ -611,7 +614,6 @@ class _HomeScreenState extends State<HomeScreen>
       onRefresh: (s) => _searchQuery.isNotEmpty
           ? s.searchVault(_searchQuery)
           : s.fetchRecentObjects(),
-      // delete on long-press for active objects
       onLongPress: (obj) => showLongPressDeleteSheet(
         context,
         obj: obj,
@@ -642,7 +644,6 @@ class _HomeScreenState extends State<HomeScreen>
       emptyText: 'No deleted items',
       emptySubtext: 'Deleted documents will appear here',
       onRefresh: (s) => s.fetchDeletedObjects(),
-      // restore on long-press for deleted objects
       onLongPress: (obj) => showLongPressRestoreSheet(
         context,
         obj: obj,
@@ -715,10 +716,7 @@ class _HomeScreenState extends State<HomeScreen>
     final subtitle =
         type.isEmpty ? 'Modified: $modified' : '$type | $modified';
 
-    // Relaxed guard: only need obj.id > 0 for delete/restore.
-    // classId may legitimately be 0 for document objects from the list APIs.
-    final canExpand =
-        obj.id != 0 && obj.objectTypeId != 0 && obj.classId != 0;
+    final bool canExpand = obj.id != 0 && obj.classId != 0;
 
     final svc = context.watch<MFilesService>();
     final mappedIcon = _iconForObj(svc, obj);
@@ -726,155 +724,186 @@ class _HomeScreenState extends State<HomeScreen>
     final bool infoExpanded = _expandedInfoItemId == obj.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == obj.id;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2))
-        ],
-      ),
-      child: Column(
-        children: [
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () async {
-                final deleted = await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) => ObjectDetailsScreen(obj: obj)),
-                );
-                if (deleted == true) {
-                  await context.read<MFilesService>().fetchRecentObjects();
-                }
-              },
-              // ── Long-press: action depends on which tab called us ─────
-              onLongPress: canLongPress(obj) ? () => onLongPress(obj) : null,
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    if (canExpand) ...[
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              if (_expandedRelationshipsItemId == obj.id) {
-                                _expandedRelationshipsItemId = null;
-                              } else {
-                                _expandedRelationshipsItemId = obj.id;
-                                _expandedInfoItemId = null;
-                              }
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(4),
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              relationshipsExpanded
-                                  ? Icons.expand_more
-                                  : Icons.chevron_right,
-                              size: 18,
-                              color: const Color(0xFF072F5F),
+    final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 200),
+      opacity: isDimmed ? 0.45 : 1.0,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: infoExpanded
+              ? Border.all(color: const Color(0xFF072F5F), width: 1.5)
+              : null,
+          boxShadow: infoExpanded
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF072F5F).withOpacity(0.25),
+                    blurRadius: 14,
+                    spreadRadius: 1,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Column(
+          children: [
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () async {
+                  if (isDimmed) {
+                    setState(() => _expandedInfoItemId = null);
+                    return;
+                  }
+                  final deleted = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => ObjectDetailsScreen(obj: obj)),
+                  );
+                  if (deleted == true) {
+                    await context.read<MFilesService>().fetchRecentObjects();
+                  }
+                },
+                onLongPress: canLongPress(obj) ? () => onLongPress(obj) : null,
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      if (canExpand && !_isDocumentObj(svc, obj)) ...[
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              setState(() {
+                                if (_expandedRelationshipsItemId == obj.id) {
+                                  _expandedRelationshipsItemId = null;
+                                } else {
+                                  _expandedRelationshipsItemId = obj.id;
+                                  _expandedInfoItemId = null;
+                                }
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                relationshipsExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                                color: const Color(0xFF072F5F),
+                              ),
                             ),
                           ),
                         ),
+                        const SizedBox(width: 6),
+                      ] else
+                        const SizedBox(width: 4),
+
+                      _isDocumentObj(svc, obj)
+                          ? FileTypeBadge(
+                              extension:
+                                  svc.cachedExtensionForObject(obj.id) ?? '',
+                              size: 28,
+                            )
+                          : const Icon(
+                              Icons.folder_rounded,
+                              color: Color(0xFF072F5F),
+                              size: 22,
+                            ),
+
+                      const SizedBox(width: 12),
+
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(obj.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF1A1A1A))),
+                            const SizedBox(height: 4),
+                            Text(subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600)),
+                          ],
+                        ),
                       ),
-                      const SizedBox(width: 6),
-                    ] else
-                      const SizedBox(width: 4),
 
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                          color: const Color(0xFF072F5F).withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(8)),
-                      child: Icon(mappedIcon,
-                          size: 18,
-                          color: const Color.fromRGBO(25, 76, 129, 1)),
-                    ),
-                    const SizedBox(width: 12),
-
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(obj.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1A1A1A))),
-                          const SizedBox(height: 4),
-                          Text(subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey.shade600)),
-                        ],
-                      ),
-                    ),
-
-                    if (canExpand) ...[
-                      const SizedBox(width: 8),
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              if (_expandedInfoItemId == obj.id) {
-                                _expandedInfoItemId = null;
-                              } else {
-                                _expandedInfoItemId = obj.id;
-                                _expandedRelationshipsItemId = null;
-                              }
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                                color: const Color(0xFF072F5F).withOpacity(0.08),
-                                shape: BoxShape.circle),
-                            child: Icon(
-                              infoExpanded ? Icons.info : Icons.info_outline,
-                              size: 18,
-                              color: const Color(0xFF072F5F),
+                      if (canExpand) ...[
+                        const SizedBox(width: 8),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              setState(() {
+                                if (_expandedInfoItemId == obj.id) {
+                                  _expandedInfoItemId = null;
+                                } else {
+                                  _expandedInfoItemId = obj.id;
+                                  _expandedRelationshipsItemId = null;
+                                }
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: infoExpanded
+                                    ? const Color(0xFF072F5F).withOpacity(0.15)
+                                    : const Color(0xFF072F5F).withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                infoExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.info_outline,
+                                size: 18,
+                                color: const Color(0xFF072F5F),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ] else
-                      Icon(Icons.chevron_right_rounded,
-                          size: 20, color: Colors.grey.shade400),
-                  ],
+                      ] else
+                        Icon(Icons.chevron_right_rounded,
+                            size: 20, color: Colors.grey.shade400),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
-          if (infoExpanded && canExpand) ...[
-            Divider(height: 1, color: Colors.grey.shade200),
-            ObjectInfoDropdown(obj: obj),
-          ],
+            if (infoExpanded && canExpand) ...[
+              Divider(height: 1, color: Colors.grey.shade200),
+              ObjectInfoDropdown(obj: obj),
+            ],
 
-          if (relationshipsExpanded && canExpand) ...[
-            Divider(height: 1, color: Colors.grey.shade200),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-              child: RelationshipsDropdown(obj: obj),
-            ),
+            if (relationshipsExpanded && canExpand) ...[
+              Divider(height: 1, color: Colors.grey.shade200),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: RelationshipsDropdown(obj: obj),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -943,13 +972,12 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ─── SEARCH ───────────────────────────────────────────────────────────────
+
   void _resetSearch({bool clearResults = true}) {
     _searchController.clear();
     _searchFocus.unfocus();
     if (mounted) setState(() => _searchQuery = '');
-
     if (clearResults) {
-      // optional: if you have a way to clear search results in the service
       context.read<MFilesService>().clearSearchResults();
     }
   }
@@ -961,7 +989,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (_tabController.index != 1) _tabController.animateTo(1);
   }
 
-  // ─── CREATE BOTTOM SHEET ──────────────────────────────────────────────────
+  // ─── CREATE BOTTOM SHEET (with search) ────────────────────────────────────
 
   void _showCreateBottomSheet(BuildContext context) {
     final service = context.read<MFilesService>();
@@ -972,100 +1000,209 @@ class _HomeScreenState extends State<HomeScreen>
       ));
       return;
     }
+
+    final sortedTypes = [...service.objectTypes]
+      ..sort((a, b) =>
+          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+
+    final searchController = TextEditingController();
+    List filteredTypes = List.from(sortedTypes);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
-        constraints:
-            BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2))),
-            const SizedBox(height: 20),
-            Row(children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                    color: const Color(0xFF072F5F).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.add_circle_outline_rounded,
-                    color: Color(0xFF072F5F), size: 24),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                  child: Text('Create New',
-                      style: TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold))),
-              IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.pop(context)),
-            ]),
-            const SizedBox(height: 20),
-            Flexible(
-              child: Builder(builder: (context) {
-                final sortedTypes = [...service.objectTypes]
-                  ..sort((a, b) => a.displayName
-                      .toLowerCase()
-                      .compareTo(b.displayName.toLowerCase()));
-                return ListView.separated(
-                shrinkWrap: true,
-                itemCount: sortedTypes.length,
-                separatorBuilder: (_, __) =>
-                    Divider(height: 1, color: Colors.grey.shade200),
-                itemBuilder: (context, index) {
-                  final ot = sortedTypes[index];
-                  return Material(
-                    color: Colors.transparent,
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                            color: const Color(0xFF072F5F).withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8)),
-                        child: Icon(
-                          ot.isDocument
-                              ? Icons.description_rounded
-                              : Icons.folder_rounded,
-                          size: 20,
-                          color: const Color.fromRGBO(25, 76, 129, 1),
-                        ),
-                      ),
-                      title: Text(ot.displayName,
-                          style: const TextStyle(
-                              fontSize: 15, fontWeight: FontWeight.w600)),
-                      trailing: Icon(Icons.chevron_right_rounded,
-                          color: Colors.grey.shade400),
-                      onTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) =>
-                                  DynamicFormScreen(objectType: ot)),
-                        );
-                      },
-                    ),
-                  );
-                },
-                );
-              }),
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-          ],
-        ),
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 14,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // Header
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFF072F5F).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.add_circle_outline_rounded,
+                        color: Color(0xFF072F5F), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text('Create New',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ]),
+                const SizedBox(height: 16),
+
+                // Search field
+                TextField(
+                  controller: searchController,
+                  autofocus: false,
+                  decoration: InputDecoration(
+                    hintText: 'Search object types...',
+                    hintStyle: TextStyle(
+                        color: Colors.grey.shade400, fontSize: 14),
+                    prefixIcon: Icon(Icons.search,
+                        color: Colors.grey.shade400, size: 20),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                          color: Color(0xFF072F5F), width: 2),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    isDense: true,
+                    suffixIcon: searchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.close,
+                                size: 16, color: Colors.grey.shade400),
+                            onPressed: () {
+                              searchController.clear();
+                              setSheet(() => filteredTypes =
+                                  List.from(sortedTypes));
+                            },
+                          )
+                        : null,
+                  ),
+                  onChanged: (q) {
+                    setSheet(() {
+                      filteredTypes = sortedTypes
+                          .where((t) => t.displayName
+                              .toLowerCase()
+                              .contains(q.toLowerCase()))
+                          .toList();
+                    });
+                  },
+                ),
+                const SizedBox(height: 8),
+
+                // Count
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${filteredTypes.length} type${filteredTypes.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                  ),
+                ),
+
+                // List
+                Flexible(
+                  child: filteredTypes.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.search_off,
+                                  size: 36, color: Colors.grey.shade300),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No matches found',
+                                style: TextStyle(
+                                    color: Colors.grey.shade500,
+                                    fontSize: 13),
+                              ),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: filteredTypes.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color: Colors.grey.shade100),
+                          itemBuilder: (context, index) {
+                            final ot = filteredTypes[index];
+                            return Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                contentPadding:
+                                    const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                leading: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                      color: const Color(0xFF072F5F)
+                                          .withOpacity(0.08),
+                                      borderRadius:
+                                          BorderRadius.circular(8)),
+                                  child: Icon(
+                                    ot.isDocument
+                                        ? Icons.description_rounded
+                                        : Icons.folder_rounded,
+                                    size: 20,
+                                    color: const Color.fromRGBO(
+                                        25, 76, 129, 1),
+                                  ),
+                                ),
+                                title: Text(ot.displayName,
+                                    style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600)),
+                                trailing: Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: Colors.grey.shade400),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (_) => DynamicFormScreen(
+                                            objectType: ot)),
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -1143,8 +1280,7 @@ class _HomeScreenState extends State<HomeScreen>
                     return Container(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         alignment: Alignment.centerLeft,
-                        child:
-                            const LinearProgressIndicator(minHeight: 2));
+                        child: const LinearProgressIndicator(minHeight: 2));
                   }
                   if (snapshot.hasError) {
                     return Text(

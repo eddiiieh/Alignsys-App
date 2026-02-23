@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
+import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
 import 'package:provider/provider.dart';
 
@@ -43,9 +44,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   final ScrollController _itemsScroll = ScrollController();
 
-  // Track which item is currently expanded for info
   int? _expandedInfoItemId;
-  // Track which item is currently expanded for relationships
   int? _expandedRelationshipsItemId;
 
   @override
@@ -79,6 +78,28 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     });
   }
 
+  void _toggleInfo(int itemId) {
+    setState(() {
+      if (_expandedInfoItemId == itemId) {
+        _expandedInfoItemId = null;
+      } else {
+        _expandedInfoItemId = itemId;
+        _expandedRelationshipsItemId = null;
+      }
+    });
+  }
+
+  void _toggleRelationships(int itemId) {
+    setState(() {
+      if (_expandedRelationshipsItemId == itemId) {
+        _expandedRelationshipsItemId = null;
+      } else {
+        _expandedRelationshipsItemId = itemId;
+        _expandedInfoItemId = null;
+      }
+    });
+  }
+
   String? _subtitleLabel(ViewContentItem item) {
     if (item.isObject) {
       final t = (item.objectTypeName ?? '').trim();
@@ -92,7 +113,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   List<ViewContentItem> _applyFilter(List<ViewContentItem> items) {
     final q = _filter.trim().toLowerCase();
     if (q.isEmpty) return items;
-
     return items.where((o) {
       final title = o.title.toLowerCase();
       final label = _subtitleLabel(o)?.toLowerCase() ?? '';
@@ -100,7 +120,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     }).toList();
   }
 
-  // Build breadcrumb segments based on the current navigation path
   Widget _buildBreadcrumbs() {
     final segments = <BreadcrumbSegment>[
       BreadcrumbSegment(
@@ -110,82 +129,99 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       ),
     ];
 
-    // Add parent view if available (e.g., "By Class")
     if (widget.parentViewName != null) {
-      segments.add(BreadcrumbSegment(
-        label: widget.parentViewName!,
-        onTap: () => Navigator.pop(context),
-      ));
+      segments.add(
+        BreadcrumbSegment(
+          label: widget.parentViewName!,
+          onTap: () => Navigator.pop(context),
+        ),
+      );
     }
 
-    // Add current grouping/item (e.g., "Employee Contracts")
-    segments.add(BreadcrumbSegment(
-      label: widget.title,
-    ));
+    segments.add(BreadcrumbSegment(label: widget.title));
 
     return BreadcrumbBar(segments: segments);
   }
+
+  // ─── ROW (Fix A: Material + clipBehavior) ─────────────────────────────────
 
   Widget _buildRow(ViewContentItem item, bool isLast) {
     final subtitle = _subtitleLabel(item);
     final svc = context.watch<MFilesService>();
 
-    final IconData icon;
-    if (item.isGroupFolder || item.isViewFolder) {
-      icon = Icons.folder_outlined;
-    } else {
-      icon = svc.iconForContentItem(item);
-    }
-
     final bool isObject = item.isObject && item.id > 0;
-    final bool hasRelationships = isObject && item.objectTypeId > 0 && item.classId > 0;
+    final bool hasRelationships =
+        isObject && item.objectTypeId > 0 && item.classId > 0;
 
     final bool infoExpanded = _expandedInfoItemId == item.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
 
+    // Dim other rows when one is expanded
+    final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+
+    final BorderRadius radius = isLast
+        ? const BorderRadius.vertical(bottom: Radius.circular(12))
+        : BorderRadius.zero;
+
+    final ViewObject asViewObj = ViewObject(
+      id: item.id,
+      title: item.title,
+      objectTypeId: item.objectTypeId,
+      classId: item.classId,
+      versionId: item.versionId,
+      objectTypeName: item.objectTypeName ?? '',
+      classTypeName: item.classTypeName ?? '',
+      displayId: item.displayId ?? '',
+      createdUtc: item.createdUtc,
+      lastModifiedUtc: item.lastModifiedUtc,
+    );
+
     return Column(
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: isLast 
-                ? const BorderRadius.vertical(bottom: Radius.circular(12))
-                : BorderRadius.zero,
-          ),
-          child: Column(
-            children: [
-              // Main row with ripple effect
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: isLast 
-                      ? const BorderRadius.vertical(bottom: Radius.circular(12))
-                      : BorderRadius.zero,
-                  onTap: () => _handleTap(item),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        AnimatedOpacity(
+          duration: const Duration(milliseconds: 200),
+          opacity: isDimmed ? 0.45 : 1.0,
+          child: Material(
+            color: infoExpanded
+                ? const Color(0xFF072F5F).withOpacity(0.03)
+                : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: infoExpanded
+                  ? const BorderSide(color: Color(0xFF072F5F), width: 1.5)
+                  : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias, // <- stops the blue wash
+            elevation: 0,
+            child: InkWell(
+              borderRadius: radius,
+              onTap: () {
+                if (isDimmed) {
+                  setState(() => _expandedInfoItemId = null);
+                  return;
+                }
+                _handleTap(item);
+              },
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
                     child: Row(
                       children: [
-                        // Relationships chevron (left side)
+                        // Relationships chevron
                         if (hasRelationships) ...[
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  if (_expandedRelationshipsItemId == item.id) {
-                                    _expandedRelationshipsItemId = null;
-                                  } else {
-                                    _expandedRelationshipsItemId = item.id;
-                                    _expandedInfoItemId = null;
-                                  }
-                                });
-                              },
+                              onTap: () => _toggleRelationships(item.id),
                               borderRadius: BorderRadius.circular(4),
                               child: Padding(
-                                padding: const EdgeInsets.all(0),
+                                padding: const EdgeInsets.all(4),
                                 child: Icon(
-                                  relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
+                                  relationshipsExpanded
+                                      ? Icons.expand_more
+                                      : Icons.chevron_right,
                                   size: 18,
                                   color: const Color(0xFF072F5F),
                                 ),
@@ -197,14 +233,17 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           const SizedBox(width: 4),
 
                         // Icon
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF072F5F).withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(icon, size: 18, color: const Color.fromRGBO(25, 76, 129, 1)),
-                        ),
+                        (item.isObject && svc.isDocumentContentItem(item))
+                            ? FileTypeBadge(
+                                extension:
+                                    svc.cachedExtensionForObject(item.id) ?? '',
+                                size: 28,
+                              )
+                            : const Icon(
+                                Icons.folder_rounded,
+                                color: Color(0xFF072F5F),
+                                size: 22,
+                              ),
                         const SizedBox(width: 10),
 
                         // Title & subtitle
@@ -216,46 +255,50 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                 item.title,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
-                              if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                              if (subtitle != null &&
+                                  subtitle.trim().isNotEmpty) ...[
                                 const SizedBox(height: 2),
                                 Text(
                                   subtitle,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
                                 ),
                               ],
                             ],
                           ),
                         ),
 
-                        // Info icon (right side) - only for objects
+                        // Info icon — objects only
                         if (isObject) ...[
                           const SizedBox(width: 8),
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () {
-                                setState(() {
-                                  if (_expandedInfoItemId == item.id) {
-                                    _expandedInfoItemId = null;
-                                  } else {
-                                    _expandedInfoItemId = item.id;
-                                    _expandedRelationshipsItemId = null;
-                                  }
-                                });
-                              },
+                              onTap: () => _toggleInfo(item.id),
                               borderRadius: BorderRadius.circular(20),
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
-                                  color: const Color(0xFF072F5F).withOpacity(0.08),
+                                  color: infoExpanded
+                                      ? const Color(0xFF072F5F)
+                                          .withOpacity(0.15)
+                                      : const Color(0xFF072F5F)
+                                          .withOpacity(0.08),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
-                                  infoExpanded ? Icons.info : Icons.info_outline,
+                                  infoExpanded
+                                      ? Icons.keyboard_arrow_up_rounded
+                                      : Icons.info_outline,
                                   size: 18,
                                   color: const Color(0xFF072F5F),
                                 ),
@@ -263,57 +306,31 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                             ),
                           ),
                         ] else
-                          Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+                          Icon(Icons.chevron_right,
+                              size: 18, color: Colors.grey.shade500),
                       ],
                     ),
                   ),
-                ),
-              ),
 
-              // Info dropdown
-              if (infoExpanded && isObject) ...[
-                Divider(height: 1, color: Colors.grey.shade200),
-                ObjectInfoDropdown(
-                  obj: ViewObject(
-                    id: item.id,
-                    title: item.title,
-                    objectTypeId: item.objectTypeId,
-                    classId: item.classId,
-                    versionId: item.versionId,
-                    objectTypeName: item.objectTypeName ?? '',
-                    classTypeName: item.classTypeName ?? '',
-                    displayId: item.displayId ?? '',
-                    createdUtc: item.createdUtc,
-                    lastModifiedUtc: item.lastModifiedUtc,
-                  ),
-                ),
-              ],
+                  // Info dropdown
+                  if (infoExpanded && isObject) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    ObjectInfoDropdown(obj: asViewObj),
+                  ],
 
-              // Relationships dropdown
-              if (relationshipsExpanded && hasRelationships) ...[
-                Divider(height: 1, color: Colors.grey.shade200),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                  child: RelationshipsDropdown(
-                    obj: ViewObject(
-                      id: item.id,
-                      title: item.title,
-                      objectTypeId: item.objectTypeId,
-                      classId: item.classId,
-                      versionId: item.versionId,
-                      objectTypeName: item.objectTypeName ?? '',
-                      classTypeName: item.classTypeName ?? '',
-                      displayId: item.displayId ?? '',
-                      createdUtc: item.createdUtc,
-                      lastModifiedUtc: item.lastModifiedUtc,
+                  // Relationships dropdown
+                  if (relationshipsExpanded && hasRelationships) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: RelationshipsDropdown(obj: asViewObj),
                     ),
-                  ),
-                ),
-              ],
-            ],
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
-        // Divider between items (except last)
         if (!isLast)
           Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
       ],
@@ -340,9 +357,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         MaterialPageRoute(
           builder: (_) => ObjectDetailsScreen(
             obj: obj,
-            parentViewName: widget.parentViewName, // ✅ Pass parent view
-            parentSection: widget.parentSection, // ✅ Pass section (not shown in breadcrumb)
-            groupingName: widget.title, // ✅ Pass current grouping
+            parentViewName: widget.parentViewName,
+            parentSection: widget.parentSection,
+            groupingName: widget.title,
           ),
         ),
       );
@@ -350,14 +367,12 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     }
 
     if (item.isViewFolder) {
-      final childViewId = item.id;
-
       Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => ViewDetailsScreen(
-            view: ViewItem(id: childViewId, name: item.title, count: 0),
-            parentSection: widget.parentSection, // ✅ Pass section forward
+            view: ViewItem(id: item.id, name: item.title, count: 0),
+            parentSection: widget.parentSection,
           ),
         ),
       );
@@ -376,9 +391,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       }
 
       final isTwoDigitMonth = RegExp(r'^(0[1-9]|1[0-2])$').hasMatch(key);
-      if (isTwoDigitMonth) {
-        dtype = 'MFDatatypeText';
-      }
+      if (isTwoDigitMonth) dtype = 'MFDatatypeText';
 
       final svc = context.read<MFilesService>();
       final vid = (item.viewId > 0) ? item.viewId : widget.parentViewId;
@@ -405,8 +418,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             parentViewId: vid,
             items: children,
             filters: nextFilters,
-            parentViewName: widget.title, // ✅ Current becomes parent for next level
-            parentSection: widget.parentSection, // ✅ Pass section forward
+            parentViewName: widget.title,
+            parentSection: widget.parentSection,
           ),
         ),
       );
@@ -417,6 +430,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       const SnackBar(content: Text('Unsupported item type')),
     );
   }
+
+  // ─── BUILD ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -429,7 +444,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         titleSpacing: 12,
-        title: Text(widget.title, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          widget.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
           IconButton(
             icon: Icon(_showSearch ? Icons.close : Icons.search),
@@ -453,6 +472,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     radius: const Radius.circular(8),
                     child: ListView(
                       controller: _itemsScroll,
+                      physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(10),
                       children: [
                         Container(
@@ -470,7 +490,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           child: Column(
                             children: List.generate(
                               filtered.length,
-                              (i) => _buildRow(filtered[i], i == filtered.length - 1),
+                              (i) => _buildRow(
+                                filtered[i],
+                                i == filtered.length - 1,
+                              ),
                             ),
                           ),
                         ),
@@ -501,11 +524,15 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: Color.fromRGBO(25, 76, 129, 1), width: 2),
+            borderSide: const BorderSide(
+              color: Color.fromRGBO(25, 76, 129, 1),
+              width: 2,
+            ),
           ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
           suffixIcon: _filter.isEmpty
               ? null
               : IconButton(

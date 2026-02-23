@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -1090,24 +1092,6 @@ class MFilesService extends ChangeNotifier {
     return null;
   }
 
-  String? _extractBase64Flexible(Map m) {
-    final v = _pickAnyKeyCI(m, 'base64');
-
-    if (v is String) return v;
-
-    if (v is Map) {
-      final nested = _extractStringByKeysCI(v, ['value', 'data', 'content', 'base64']);
-      if (nested != null) return nested;
-    }
-
-    if (v is List) {
-      final parts = v.whereType<String>().toList();
-      if (parts.isNotEmpty) return parts.join();
-    }
-
-    return _deepFindBase64(m);
-  }
-
   String? _deepFindBase64(dynamic node) {
     if (node is String) {
       final s = node.trim();
@@ -1149,80 +1133,6 @@ class MFilesService extends ChangeNotifier {
       return b == 0x7B /* { */ || b == 0x5B /* [ */;
     }
     return false;
-  }
-
-  Future<({List<int> bytes, String? contentType})> _getBytes(Uri url) async {
-    final resp = await http.get(url, headers: _authHeadersNoJson);
-
-    if (resp.statusCode != 200) {
-      throw Exception('${resp.statusCode} ${resp.body}');
-    }
-
-    final contentType = resp.headers['content-type'];
-    final bodyBytes = resp.bodyBytes;
-
-    final isJson = (contentType?.toLowerCase().contains('application/json') ?? false) ||
-        _looksLikeJson(bodyBytes);
-
-    if (isJson) {
-      final text = utf8.decode(bodyBytes);
-      
-      // ✅ ADD: Debug print the JSON response
-      debugPrint('📄 JSON Response: ${text.substring(0, text.length > 500 ? 500 : text.length)}...');
-      
-      final dynamic j = jsonDecode(text);
-
-      if (j is! Map) {
-        throw Exception('JSON returned but not an object.');
-      }
-
-      // ✅ ADD: Debug print all keys in the JSON
-      debugPrint('📋 JSON Keys: ${j.keys.toList()}');
-
-      final base64Value = _extractBase64Flexible(j);
-
-      if (base64Value == null || base64Value.trim().isEmpty) {
-        final base64Field = _pickAnyKeyCI(j, 'base64');
-        
-        // ✅ IMPROVED: Show actual field value types and sample data
-        debugPrint('❌ Failed to extract base64. JSON structure:');
-        j.forEach((key, value) {
-          final preview = value is String && value.length > 100 
-              ? '${value.substring(0, 100)}...' 
-              : value.toString();
-          debugPrint('  $key (${value.runtimeType}): $preview');
-        });
-        
-        throw Exception(
-          'JSON returned but base64 not extractable. '
-          'base64Type=${base64Field?.runtimeType} keys=${j.keys.toList()}',
-        );
-      }
-
-      final cleaned = base64Value.contains(',')
-          ? base64Value.split(',').last.trim()
-          : base64Value.trim();
-
-      // ✅ ADD: Verify base64 string looks valid
-      debugPrint('✅ Extracted base64 (${cleaned.length} chars)');
-      
-      try {
-        final decoded = base64Decode(cleaned);
-        debugPrint('✅ Decoded ${decoded.length} bytes');
-        
-        final ctFromJson = _extractStringByKeysCI(
-          j,
-          ['contentType', 'content-type', 'mime', 'mimeType'],
-        );
-        return (bytes: decoded, contentType: ctFromJson);
-      } catch (e) {
-        debugPrint('❌ Base64 decode failed: $e');
-        debugPrint('   First 100 chars: ${cleaned.substring(0, cleaned.length > 100 ? 100 : cleaned.length)}');
-        rethrow;
-      }
-    }
-
-    return (bytes: bodyBytes, contentType: contentType);
   }
   
   Future<({List<int> bytes, String? contentType})> downloadFileBytesWithFallback({

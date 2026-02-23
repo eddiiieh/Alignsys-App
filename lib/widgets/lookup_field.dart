@@ -8,7 +8,11 @@ class LookupField extends StatefulWidget {
   final int propertyId;
   final bool isMultiSelect;
   final Function(List<LookupItem>) onSelected;
-  final List<int>? preSelectedIds; // NEW: Pass in already selected IDs
+
+  final List<int>? preSelectedIds;
+
+  // ✅ NEW: fallback when API gives display text but not IDs
+  final List<String>? preSelectedLabels;
 
   const LookupField({
     super.key,
@@ -17,6 +21,7 @@ class LookupField extends StatefulWidget {
     this.isMultiSelect = false,
     required this.onSelected,
     this.preSelectedIds,
+    this.preSelectedLabels, // ✅
   });
 
   @override
@@ -28,28 +33,87 @@ class _LookupFieldState extends State<LookupField> {
   List<LookupItem> _selectedItems = [];
   bool _isLoading = false;
 
+  static const _primaryBlue = Color(0xFF072F5F);
+
+  int _requestSeq = 0;
+
   @override
   void initState() {
     super.initState();
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _fetchLookupItems();
     });
   }
 
+  @override
+  void didUpdateWidget(covariant LookupField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.propertyId != widget.propertyId) {
+      _fetchLookupItems();
+      return;
+    }
+
+    final oldIds = oldWidget.preSelectedIds ?? const <int>[];
+    final newIds = widget.preSelectedIds ?? const <int>[];
+    final idsChanged = oldIds.length != newIds.length || !oldIds.every(newIds.contains);
+
+    final oldLabels = oldWidget.preSelectedLabels ?? const <String>[];
+    final newLabels = widget.preSelectedLabels ?? const <String>[];
+    final labelsChanged =
+        oldLabels.length != newLabels.length || !oldLabels.every((x) => newLabels.contains(x));
+
+    if ((_items.isNotEmpty) && (idsChanged || labelsChanged)) {
+      if (!mounted) return;
+      setState(() {
+        _selectedItems = _computeSelectedFromItems(_items);
+      });
+    }
+  }
+
+  List<LookupItem> _computeSelectedFromItems(List<LookupItem> items) {
+    final ids = widget.preSelectedIds ?? const <int>[];
+    if (ids.isNotEmpty) {
+      return items.where((it) => ids.contains(it.id)).toList();
+    }
+
+    // ✅ fallback by label match (case-insensitive, trimmed)
+    final labels = (widget.preSelectedLabels ?? const <String>[])
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.isNotEmpty)
+        .toSet();
+
+    if (labels.isNotEmpty) {
+      return items
+          .where((it) => labels.contains(it.displayValue.trim().toLowerCase()))
+          .toList();
+    }
+
+    // keep existing selection only if still present
+    final selectedIds = _selectedItems.map((e) => e.id).toSet();
+    return items.where((i) => selectedIds.contains(i.id)).toList();
+  }
+
   Future<void> _fetchLookupItems() async {
-    setState(() => _isLoading = true);
+    final int seq = ++_requestSeq;
+
+    if (mounted) setState(() => _isLoading = true);
+
     try {
       final service = Provider.of<MFilesService>(context, listen: false);
       final items = await service.fetchLookupItems(widget.propertyId);
+
+      if (!mounted || seq != _requestSeq) return;
+
       setState(() {
         _items = items;
-        // Pre-select items based on preSelectedIds
-        if (widget.preSelectedIds != null && widget.preSelectedIds!.isNotEmpty) {
-          _selectedItems = items.where((item) => widget.preSelectedIds!.contains(item.id)).toList();
-        }
+        _selectedItems = _computeSelectedFromItems(items);
       });
+    } catch (_) {
+      if (!mounted || seq != _requestSeq) return;
     } finally {
+      if (!mounted || seq != _requestSeq) return;
       setState(() => _isLoading = false);
     }
   }
@@ -58,7 +122,7 @@ class _LookupFieldState extends State<LookupField> {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: () {
-        FocusManager.instance.primaryFocus?.unfocus(); // <-- key fix
+        FocusScope.of(context).unfocus();
         _showSelectionDialog();
       },
       child: Container(
@@ -79,7 +143,10 @@ class _LookupFieldState extends State<LookupField> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600, size: 20),
+            if (_isLoading)
+              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+            else
+              Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600, size: 20),
           ],
         ),
       ),
@@ -87,146 +154,213 @@ class _LookupFieldState extends State<LookupField> {
   }
 
   void _showSelectionDialog() {
-    // Create a local copy to avoid modifying the original until confirmed
     final tempSelected = List<LookupItem>.from(_selectedItems);
-    
+    final searchController = TextEditingController();
+    final focusNode = FocusNode();
+
+    List<LookupItem> filtered = List.from(_items);
+    bool searchEnabled = false;
+
     showDialog(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF072F5F).withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  widget.isMultiSelect ? Icons.checklist_rounded : Icons.check_circle_outline,
-                  color: const Color(0xFF072F5F),
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Select ${widget.title}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(0, 16, 0, 0),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: _isLoading
-                ? const Padding(
-                    padding: EdgeInsets.all(32),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : _items.isEmpty
-                    ? Padding(
-                        padding: const EdgeInsets.all(32),
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.inbox_outlined, size: 48, color: Colors.grey.shade400),
-                              const SizedBox(height: 12),
-                              Text(
-                                'No items available',
-                                style: TextStyle(color: Colors.grey.shade600),
-                              ),
-                            ],
+        builder: (ctx, setDialogState) {
+          void resetSearch() {
+            searchController.clear();
+            filtered = List.from(_items);
+            FocusScope.of(ctx).unfocus();
+          }
+
+          void enableSearch() {
+            searchEnabled = true;
+            setDialogState(() {});
+            Future.microtask(() => focusNode.requestFocus());
+          }
+
+          void disableSearch() {
+            searchEnabled = false;
+            resetSearch();
+            setDialogState(() {});
+          }
+
+          return Dialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.75),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(20, 20, 12, 16),
+                    decoration: const BoxDecoration(
+                      color: _primaryBlue,
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Select ${widget.title}',
+                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Colors.white),
                           ),
                         ),
-                      )
-                    : ListView.separated(
-                        shrinkWrap: true,
-                        itemCount: _items.length,
-                        separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade200),
-                        itemBuilder: (context, index) {
-                          final item = _items[index];
-                          final isSelected = tempSelected.any((i) => i.id == item.id);
-
-                          return widget.isMultiSelect
-                              ? CheckboxListTile(
-                                  title: Text(
-                                    item.displayValue,
-                                    style: TextStyle(
-                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                                      color: isSelected ? const Color(0xFF072F5F) : Colors.black87,
-                                    ),
-                                  ),
-                                  value: isSelected,
-                                  activeColor: const Color(0xFF072F5F),
-                                  checkColor: Colors.white,
-                                  controlAffinity: ListTileControlAffinity.leading,
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                                  onChanged: (value) {
-                                    setDialogState(() {
-                                      if (value == true) {
-                                        tempSelected.add(item);
-                                      } else {
-                                        tempSelected.removeWhere((i) => i.id == item.id);
-                                      }
-                                    });
-                                  },
-                                )
-                              : ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                                  title: Text(
-                                    item.displayValue,
-                                    style: TextStyle(
-                                      fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
-                                      color: isSelected ? const Color(0xFF072F5F) : Colors.black87,
-                                    ),
-                                  ),
-                                  leading: isSelected
-                                      ? const Icon(Icons.check_circle, color: Color(0xFF072F5F), size: 22)
-                                      : Icon(Icons.circle_outlined, color: Colors.grey.shade400, size: 22),
-                                  onTap: () {
-                                    setState(() => _selectedItems = [item]);
-                                    widget.onSelected([item]);
-                                    Navigator.pop(dialogContext);
-                                  },
-                                );
-                        },
+                        IconButton(
+                          icon: Icon(
+                            searchEnabled ? Icons.search_off_rounded : Icons.search_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
+                          onPressed: () => searchEnabled ? disableSearch() : enableSearch(),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                          onPressed: () => Navigator.pop(dialogContext),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: IgnorePointer(
+                      ignoring: !searchEnabled,
+                      child: Opacity(
+                        opacity: searchEnabled ? 1 : 0.55,
+                        child: TextField(
+                          controller: searchController,
+                          focusNode: focusNode,
+                          decoration: InputDecoration(
+                            hintText: searchEnabled ? 'Search...' : 'Tap the 🔍 icon to search',
+                            hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                            prefixIcon: Icon(Icons.search, color: Colors.grey.shade400, size: 20),
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.grey.shade200),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: Colors.grey.shade200),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: const BorderSide(color: _primaryBlue, width: 2),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                            isDense: true,
+                          ),
+                          onChanged: (q) {
+                            setDialogState(() {
+                              filtered = _items
+                                  .where((i) => i.displayValue.toLowerCase().contains(q.toLowerCase()))
+                                  .toList();
+                            });
+                          },
+                        ),
                       ),
-          ),
-          actions: widget.isMultiSelect
-              ? [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: Text(
-                      'Cancel',
-                      style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
                     ),
                   ),
-                  ElevatedButton(
-                    onPressed: () {
-                      setState(() => _selectedItems = tempSelected);
-                      widget.onSelected(tempSelected);
-                      Navigator.pop(dialogContext);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF072F5F),
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    ),
-                    child: Text(
-                      'Done (${tempSelected.length})',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
+                      itemBuilder: (context, index) {
+                        final item = filtered[index];
+                        final isSelected = tempSelected.any((i) => i.id == item.id);
+
+                        if (widget.isMultiSelect) {
+                          return Material(
+                            color: isSelected ? const Color(0xFFEFF6FF) : Colors.transparent,
+                            child: CheckboxListTile(
+                              title: Text(item.displayValue),
+                              value: isSelected,
+                              activeColor: _primaryBlue,
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  if (value == true) {
+                                    if (!tempSelected.any((i) => i.id == item.id)) tempSelected.add(item);
+                                  } else {
+                                    tempSelected.removeWhere((i) => i.id == item.id);
+                                  }
+                                });
+                              },
+                            ),
+                          );
+                        }
+
+                        return Material(
+                          color: isSelected ? const Color(0xFFEFF6FF) : Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              if (!mounted) return;
+                              setState(() => _selectedItems = [item]);
+                              widget.onSelected([item]);
+                              Navigator.pop(dialogContext);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                              child: Row(
+                                children: [
+                                  Expanded(child: Text(item.displayValue)),
+                                  if (isSelected)
+                                    const Icon(Icons.check_rounded, size: 18, color: Color(0xFF2563EB)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                ]
-              : null,
-        ),
+                  if (widget.isMultiSelect) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(dialogContext),
+                            child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: () {
+                              if (!mounted) return;
+                              setState(() => _selectedItems = tempSelected);
+                              widget.onSelected(tempSelected);
+                              Navigator.pop(dialogContext);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _primaryBlue,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            ),
+                            child: Text('Done (${tempSelected.length})'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        },
       ),
-    );
+    ).whenComplete(() {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        searchController.dispose();
+        focusNode.dispose();
+      });
+    });
   }
 }

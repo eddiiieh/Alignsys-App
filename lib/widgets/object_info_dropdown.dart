@@ -17,7 +17,7 @@ class ObjectInfoDropdown extends StatefulWidget {
 }
 
 class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
-  late Future<Map<String, dynamic>> _infoFuture;
+  Future<Map<String, dynamic>>? _infoFuture;
   bool _downloading = false;
 
   final Map<int, String> _propNameById = {};
@@ -27,7 +27,32 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   @override
   void initState() {
     super.initState();
-    _infoFuture = _loadInfo();
+
+    // Critical: defer provider work until after the first frame to avoid
+    // "notifyListeners during build" from fetchClassProperties/_setLoading.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _infoFuture = _loadInfo();
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ObjectInfoDropdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    // If the row is reused for another object, reload.
+    if (oldWidget.obj.id != widget.obj.id ||
+        oldWidget.obj.classId != widget.obj.classId ||
+        oldWidget.obj.objectTypeId != widget.obj.objectTypeId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _infoFuture = _loadInfo();
+        });
+      });
+    }
   }
 
   Future<Map<String, dynamic>> _loadInfo() async {
@@ -38,7 +63,9 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     _allowedMetaPropIds
       ..clear()
       ..addAll(
-        svc.classProperties.where((p) => !p.isHidden && !p.isAutomatic).map((p) => p.id),
+        svc.classProperties
+            .where((p) => !p.isHidden && !p.isAutomatic)
+            .map((p) => p.id),
       )
       ..add(0)
       ..removeAll(_excludeMetaPropIds);
@@ -121,7 +148,14 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     }
 
     if (value is Map) {
-      for (final key in ['displayValue', 'title', 'name', 'caption', 'text', 'label']) {
+      for (final key in [
+        'displayValue',
+        'title',
+        'name',
+        'caption',
+        'text',
+        'label'
+      ]) {
         final x = value[key];
         if (x is String && x.trim().isNotEmpty) return x;
         if (x is num || x is bool) return x.toString();
@@ -279,8 +313,24 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
 
   @override
   Widget build(BuildContext context) {
+    final future = _infoFuture;
+
+    // While waiting for the post-frame setState that assigns _infoFuture.
+    if (future == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
     return FutureBuilder<Map<String, dynamic>>(
-      future: _infoFuture,
+      future: future,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Padding(
@@ -325,7 +375,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Basic Information (with Title as first field)
               _buildSectionTitle('Basic Information'),
               const SizedBox(height: 8),
               _buildInfoRow('Title', widget.obj.title),
@@ -336,7 +385,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               Divider(height: 1, color: Colors.grey.shade300),
               const SizedBox(height: 12),
 
-              // Metadata
               _buildSectionTitle('Metadata'),
               const SizedBox(height: 8),
               if (metaProps.isEmpty)
@@ -355,10 +403,9 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                 const SizedBox(height: 12),
                 Divider(height: 1, color: Colors.grey.shade300),
                 const SizedBox(height: 12),
-
                 _buildSectionTitle('Preview Files (${files.length})'),
                 const SizedBox(height: 8),
-                ...files.map((file) => _buildFileRow(file)),
+                ...files.map(_buildFileRow),
               ],
             ],
           ),
@@ -472,8 +519,8 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                     await _downloadFile(file);
                   }
                 },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
+                itemBuilder: (context) => const [
+                  PopupMenuItem(
                     value: 'open',
                     child: Row(
                       children: [
@@ -483,7 +530,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                       ],
                     ),
                   ),
-                  const PopupMenuItem(
+                  PopupMenuItem(
                     value: 'download',
                     child: Row(
                       children: [

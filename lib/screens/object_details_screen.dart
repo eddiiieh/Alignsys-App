@@ -1,5 +1,6 @@
 // object_details_screen.dart
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:provider/provider.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
 
@@ -15,11 +16,11 @@ import '../utils/file_icon_resolver.dart';
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
   final String? parentViewName;
-  final String? parentSection; 
+  final String? parentSection;
   final String? groupingName;
 
   const ObjectDetailsScreen({
-    super.key, 
+    super.key,
     required this.obj,
     this.parentViewName,
     this.parentSection,
@@ -58,20 +59,21 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   final ScrollController _pageScroll = ScrollController();
 
-  //Comments
+  // Comments
   late Future<List<ObjectComment>> _commentsFuture;
   final TextEditingController _commentCtrl = TextEditingController();
   bool _postingComment = false;
+
+  // ── Design constants (matching DynamicFormScreen) ──
+  static const _primaryBlue = Color(0xFF072F5F);
+  static const _filledBorder = Color(0xFF2563EB);
+  static const _filledFill = Color(0xFFF0F6FF);
 
   @override
   void initState() {
     super.initState();
     _title = widget.obj.title;
-
-    //Comments
     _commentsFuture = _loadComments();
-
-    // ✅ Initialize futures immediately so build() never sees uninitialized late fields.
     _future = _loadProps();
     _filesFuture = _loadFiles();
     _workflowFuture = _loadWorkflow();
@@ -89,7 +91,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     const map = <int, int>{
       101: 101,
     };
-
     final v = map[workflowId];
     if (v == null) {
       throw Exception(
@@ -103,11 +104,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   String _friendlyPropLabel(_PropVm p) {
     final mapped = _propNameById[p.id];
     if (mapped != null && mapped.trim().isNotEmpty) return mapped;
-
     final n = p.name.trim();
     final isFallback = n.startsWith('Property ');
     if (!isFallback && n.isNotEmpty) return n;
-
     return 'Property (${p.id})';
   }
 
@@ -115,11 +114,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     if (v == null) return '';
     if (v is String) return v;
     if (v is num || v is bool) return v.toString();
-
     if (v is List) {
       return v.map(_valueToText).where((s) => s.trim().isNotEmpty).join(', ');
     }
-
     if (v is Map) {
       for (final key in const ['displayValue', 'title', 'name', 'caption', 'text', 'label']) {
         final x = v[key];
@@ -130,16 +127,84 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       if (v.containsKey('id')) return 'ID ${v['id']}';
       return '';
     }
-
     return v.toString();
   }
 
   bool _isLookup(_PropVm p) => p.datatype == 'MFDatatypeLookup';
   bool _isMultiLookup(_PropVm p) => p.datatype == 'MFDatatypeMultiSelectLookup';
 
-  String _lookupDisplayText(_PropVm p) {
+  // ✅ NEW: derive selected IDs for LookupField so it can show selection in the field + dialog
+  List<int> _selectedIdsForLookup(_PropVm p, {required bool isMulti}) {
     final source = _dirty[p.id]?.editedValue ?? p.value;
 
+    int? toInt(dynamic x) {
+      if (x == null) return null;
+      if (x is int) return x;
+      if (x is num) return x.toInt();
+      if (x is String) return int.tryParse(x.trim());
+      if (x is Map) {
+        final id = x['id'] ?? x['itemId'] ?? x['value'];
+        if (id is int) return id;
+        if (id is num) return id.toInt();
+        if (id is String) return int.tryParse(id.trim());
+      }
+      return null;
+    }
+
+    if (isMulti) {
+      if (source is List<int>) return List<int>.from(source);
+      if (source is List) return source.map(toInt).whereType<int>().toList();
+      if (source is String && source.contains(',')) {
+        return source
+            .split(',')
+            .map((s) => int.tryParse(s.trim()))
+            .whereType<int>()
+            .toList();
+      }
+      final one = toInt(source);
+      return one == null ? <int>[] : <int>[one];
+    }
+
+    final one = toInt(source);
+    return one == null ? <int>[] : <int>[one];
+  }
+
+  List<String> _selectedLabelsForLookup(_PropVm p) {
+    final source = _dirty[p.id]?.editedValue ?? p.value;
+
+    // If editedValue is just IDs, we might not have labels. Keep empty fallback.
+    if (source is int || source is List<int>) return const <String>[];
+
+    final out = <String>[];
+
+    void addFrom(dynamic x) {
+      if (x == null) return;
+      if (x is String) {
+        final t = x.trim();
+        if (t.isNotEmpty) out.add(t);
+        return;
+      }
+      if (x is Map) {
+        final t = (x['displayValue'] ?? x['title'] ?? x['name'])?.toString();
+        if (t != null && t.trim().isNotEmpty) out.add(t.trim());
+        return;
+      }
+      final s = x.toString().trim();
+      if (s.isNotEmpty) out.add(s);
+    }
+
+    if (source is List) {
+      for (final e in source) addFrom(e);
+    } else {
+      addFrom(source);
+    }
+
+    // de-dupe
+    return out.toSet().toList();
+  }
+
+  String _lookupDisplayText(_PropVm p) {
+    final source = _dirty[p.id]?.editedValue ?? p.value;
     if (source is List) {
       final titles = <String>[];
       for (final e in source) {
@@ -153,7 +218,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       }
       return titles.join(', ');
     }
-
     return _valueToText(source);
   }
 
@@ -161,7 +225,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     if (!mounted) return;
     if (newTitle.trim().isEmpty) return;
     if (newTitle == _title) return;
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (newTitle == _title) return;
@@ -171,21 +234,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   void _maybeUpdateTitleFromProps(List<_PropVm> vms) {
     final byId = {for (final p in vms) p.id: p};
-
     String? candidate;
     if (byId.containsKey(0)) {
       final t = _valueToText(byId[0]!.value).trim();
       if (t.isNotEmpty) candidate = t;
     }
-
     candidate ??= vms
         .where((p) => p.datatype == 'MFDatatypeText' || p.datatype == 'MFDatatypeMultiLineText')
         .map((p) => _valueToText(p.value).trim())
         .firstWhere((s) => s.isNotEmpty, orElse: () => '');
-
-    if (candidate.trim().isNotEmpty) {
-      _scheduleTitleUpdate(candidate);
-    }
+    if (candidate.trim().isNotEmpty) _scheduleTitleUpdate(candidate);
   }
 
   Widget _buildBreadcrumbs() {
@@ -196,57 +254,34 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         onTap: () => Navigator.popUntil(context, (route) => route.isFirst),
       ),
     ];
-
-    // Don't add section-level breadcrumb (Common Views/Other Views)
-    // It's redundant and clutters the navigation
-
-    // Add parent view if available (e.g., "By Class")
     if (widget.parentViewName != null) {
       segments.add(BreadcrumbSegment(
         label: widget.parentViewName!,
         onTap: () {
-          // Pop back - how many screens depends on if we have grouping
           if (widget.groupingName != null) {
-            // We're at: Home > View > Grouping > Object
-            // Pop 2 times to get to View
             Navigator.pop(context);
             Navigator.pop(context);
           } else {
-            // We're at: Home > View > Object
-            // Pop 1 time to get to View
             Navigator.pop(context);
           }
         },
       ));
     }
-
-    // Add grouping name if available (e.g., "Employee Contracts")
     if (widget.groupingName != null) {
       segments.add(BreadcrumbSegment(
         label: widget.groupingName!,
         onTap: () => Navigator.pop(context),
       ));
     }
-
-    // Add current object (truncate if too long)
     final objTitle = _title.isEmpty ? widget.obj.title : _title;
-    final displayTitle = objTitle.length > 30 
-        ? '${objTitle.substring(0, 30)}...' 
-        : objTitle;
-
-    segments.add(BreadcrumbSegment(
-      label: displayTitle,
-    ));
-
+    final displayTitle = objTitle.length > 30 ? '${objTitle.substring(0, 30)}...' : objTitle;
+    segments.add(BreadcrumbSegment(label: displayTitle));
     return BreadcrumbBar(segments: segments);
   }
 
-  // ✅ New method to load comments
   Future<List<_PropVm>> _loadProps() async {
     final svc = context.read<MFilesService>();
-
     await svc.fetchClassProperties(widget.obj.objectTypeId, widget.obj.classId);
-
     _allowedMetaPropIds
       ..clear()
       ..addAll(
@@ -254,7 +289,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       )
       ..add(0)
       ..removeAll(_excludeMetaPropIds);
-
     _propNameById
       ..clear()
       ..addAll({0: 'Name or title', 100: 'Class'})
@@ -270,16 +304,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           (m['propId'] as num?)?.toInt() ??
           (m['propertyId'] as num?)?.toInt();
       if (id == null) continue;
-
       final candidate = (m['propName'] as String?) ??
           (m['propertyName'] as String?) ??
           (m['name'] as String?) ??
           (m['title'] as String?);
-
       if (candidate == null) continue;
       final trimmed = candidate.trim();
       if (trimmed.isEmpty || trimmed.startsWith('Property ')) continue;
-
       _propNameById[id] = trimmed;
     }
 
@@ -295,29 +326,24 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   Future<WorkflowInfo?> _loadWorkflow() async {
     final svc = context.read<MFilesService>();
-
     final info = await svc.getObjectWorkflowState(
       objectTypeId: widget.obj.objectTypeId,
       objectId: widget.obj.id,
     );
-
     if (info == null) {
       _selectedNextStateId = null;
       return null;
     }
-
     if (mounted) {
       setState(() {
         _selectedNextStateId = info.nextStates.isNotEmpty ? info.nextStates.first.id : null;
       });
     }
-
     return info;
   }
 
   Widget _workflowCard(WorkflowInfo info) {
     final canChange = info.nextStates.isNotEmpty && !_changingWorkflow && !_saving && !_downloading;
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
@@ -378,7 +404,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               workflowId: info.workflowId,
                               stateId: _selectedNextStateId!,
                             );
-
                             if (!ok) {
                               if (!mounted) return;
                               final msg = svc.error ?? 'Unknown';
@@ -390,7 +415,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               );
                               return;
                             }
-
                             if (!mounted) return;
                             setState(() {
                               _workflowFuture = _loadWorkflow();
@@ -405,7 +429,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     elevation: 0,
-                    // Add visual feedback
                     overlayColor: Colors.white.withOpacity(0.1),
                   ),
                   child: const Text('Apply'),
@@ -427,7 +450,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   Widget _assignWorkflowCard() {
     final canInteract = !_assigningWorkflow && !_saving && !_downloading && !_changingWorkflow;
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
@@ -458,14 +480,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   child: LinearProgressIndicator(minHeight: 2),
                 );
               }
-
               if (snap.hasError) {
                 return Text(
                   'Failed to load workflows: ${snap.error}',
                   style: TextStyle(fontSize: 12, color: Colors.red.shade700),
                 );
               }
-
               final workflows = snap.data ?? [];
               if (workflows.isEmpty) {
                 return Text(
@@ -473,9 +493,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 );
               }
-
               _selectedWorkflowId ??= workflows.first.id;
-
               return Row(
                 children: [
                   Expanded(
@@ -502,11 +520,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         ? null
                         : () async {
                             setState(() => _assigningWorkflow = true);
-
                             try {
                               final workflowId = _selectedWorkflowId!;
                               final initialStateId = _initialStateForWorkflow(workflowId);
-
                               final svc = context.read<MFilesService>();
                               final ok = await svc.setObjectWorkflowState(
                                 objectTypeId: widget.obj.objectTypeId,
@@ -514,9 +530,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 workflowId: workflowId,
                                 stateId: initialStateId,
                               );
-
                               if (!ok) throw Exception(svc.error ?? 'Unknown');
-
                               if (!mounted) return;
                               setState(() {
                                 _workflowFuture = _loadWorkflow();
@@ -539,7 +553,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
-                      // Add visual feedback
                       overlayColor: Colors.white.withOpacity(0.1),
                     ),
                     child: const Text('Assign'),
@@ -556,23 +569,19 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Future<void> _save(List<_PropVm> current) async {
     if (_saving) return;
     if (_dirty.isEmpty) return;
-
     setState(() => _saving = true);
     try {
       final svc = context.read<MFilesService>();
-
       final payloadProps = _dirty.values
           .where((p) => _allowedMetaPropIds.contains(p.id))
           .map((p) {
             dynamic v = p.editedValue ?? p.value ?? '';
-
             if (p.datatype == 'MFDatatypeLookup') {
               if (v is int) v = v.toString();
               if (v is List<int> && v.isNotEmpty) v = v.first.toString();
             } else if (p.datatype == 'MFDatatypeMultiSelectLookup') {
               if (v is List<int>) v = v.map((x) => x.toString()).join(',');
             }
-
             return {"id": p.id, "value": v.toString(), "datatype": p.datatype};
           })
           .toList();
@@ -622,18 +631,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         ],
       ),
     );
-
     if (ok != true) return;
     if (!mounted) return;
-
     final svc = context.read<MFilesService>();
     final success = await svc.deleteObject(
       objectId: widget.obj.id,
       classId: widget.obj.classId,
     );
-
     if (!mounted) return;
-
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: const Text('Deleted'), backgroundColor: Colors.green.shade600),
@@ -641,7 +646,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       Navigator.pop(context, true);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: ${svc.error ?? 'Unknown'}'), backgroundColor: Colors.red.shade600),
+        SnackBar(
+          content: Text('Delete failed: ${svc.error ?? 'Unknown'}'),
+          backgroundColor: Colors.red.shade600,
+        ),
       );
     }
   }
@@ -649,20 +657,19 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   String _fmt(DateTime? dt) {
     if (dt == null) return '-';
     final local = dt.toLocal();
-    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} ${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} '
+        '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
     final obj = widget.obj;
-
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
       appBar: AppBar(
         backgroundColor: const Color(0xFF072F5F),
         foregroundColor: Colors.white,
         titleSpacing: 12,
-        // ✅ IMPROVED: Allow title to wrap to 2 lines with smaller font
         title: Text(
           _title.isEmpty ? obj.title : _title,
           maxLines: 2,
@@ -670,7 +677,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           style: const TextStyle(fontSize: 15, height: 1.2),
         ),
         actions: [
-          // Edit / Close
           IconButton(
             onPressed: (_saving || _downloading || _changingWorkflow)
                 ? null
@@ -682,15 +688,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   },
             icon: Icon(_editMode ? Icons.close : Icons.edit),
           ),
-
-          // Only show Tick when editing
           if (_editMode)
             FutureBuilder<List<_PropVm>>(
               future: _future,
               builder: (context, snap) {
                 final props = snap.data;
                 final canSave = _editMode && !_saving && _dirty.isNotEmpty && props != null;
-
                 return IconButton(
                   onPressed: canSave ? () => _save(props) : null,
                   icon: _saving
@@ -706,8 +709,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 );
               },
             ),
-
-          // Delete
           IconButton(
             onPressed: (_saving || _downloading || _changingWorkflow) ? null : _confirmAndDelete,
             icon: const Icon(Icons.delete_outline),
@@ -718,7 +719,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       body: Column(
         children: [
           _buildBreadcrumbs(),
-          // ✅ REDUCED SPACING: No SizedBox here, just expand directly
           Expanded(
             child: FutureBuilder<List<_PropVm>>(
               future: _future,
@@ -729,10 +729,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 if (snap.hasError) {
                   return Center(child: Text('Error: ${snap.error}'));
                 }
-
                 final props = snap.data ?? [];
                 final metaProps = props.where((p) => _allowedMetaPropIds.contains(p.id)).toList();
-
                 return RefreshIndicator(
                   onRefresh: () async {
                     setState(() {
@@ -762,9 +760,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         FutureBuilder<WorkflowInfo?>(
                           future: _workflowFuture,
                           builder: (context, wsnap) {
-                            if (wsnap.connectionState == ConnectionState.waiting) return const SizedBox.shrink();
+                            if (wsnap.connectionState == ConnectionState.waiting) {
+                              return const SizedBox.shrink();
+                            }
                             final info = wsnap.data;
-
                             return Column(
                               children: [
                                 const SizedBox(height: 12),
@@ -801,7 +800,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             children: [
               const Icon(Icons.description_outlined, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
               const SizedBox(width: 10),
-              // ✅ IMPROVED: Allow title to wrap in header card too
               Expanded(
                 child: Text(
                   _title.isEmpty ? obj.title : _title,
@@ -815,7 +813,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   onTap: () => setState(() => _headerDetailsExpanded = !_headerDetailsExpanded),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
-                    child: Icon(_headerDetailsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                    child: Icon(
+                      _headerDetailsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                    ),
                   ),
                 ),
               ),
@@ -873,7 +873,25 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          ...props.map(_propField).toList(),
+          if (props.isNotEmpty)
+            Column(
+              children: List.generate(
+                props.length * 2 - 1,
+                (index) {
+                  if (index.isOdd) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Colors.grey.shade100,
+                      ),
+                    );
+                  }
+                  return _propField(props[index ~/ 2]);
+                },
+              ),
+            ),
         ],
       ),
     );
@@ -882,99 +900,384 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget _propField(_PropVm p) {
     final label = _friendlyPropLabel(p);
 
+    // LOOKUP / MULTI-LOOKUP
     if (_isLookup(p) || _isMultiLookup(p)) {
       final isMulti = _isMultiLookup(p);
-      final hasValue = _lookupDisplayText(p).trim().isNotEmpty;
+      final displayText = _lookupDisplayText(p);
+      final hasValue = displayText.trim().isNotEmpty;
 
-      return Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Column(
+      if (_editMode) {
+        return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_editMode)
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade300),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475569),
                 ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  child: LookupField(
-                    title: '',
-                    propertyId: p.id,
-                    isMultiSelect: isMulti,
-                    onSelected: (items) {
-                      setState(() {
-                        if (isMulti) {
-                          final ids = items.map((x) => x.id).toList();
-                          _dirty[p.id] = p.copyWith(editedValue: ids);
+              ),
+            ),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: LookupField(
+                  title: label,
+                  propertyId: p.id,
+                  isMultiSelect: isMulti,
+                  preSelectedIds: _selectedIdsForLookup(p, isMulti: isMulti),
+                  preSelectedLabels: _selectedLabelsForLookup(p),
+                  onSelected: (items) {
+                    setState(() {
+                      if (isMulti) {
+                        final ids = items.map((x) => x.id).toList();
+                        if (ids.isEmpty) {
+                          _dirty.remove(p.id);
                         } else {
-                          final id = items.isNotEmpty ? items.first.id : null;
-                          if (id == null) {
-                            _dirty.remove(p.id);
-                          } else {
-                            _dirty[p.id] = p.copyWith(editedValue: id);
-                          }
+                          _dirty[p.id] = p.copyWith(editedValue: ids);
                         }
-                      });
-                    },
-                  ),
-                ),
-              )
-            else
-              TextFormField(
-                enabled: false,
-                initialValue: _lookupDisplayText(p),
-                decoration: InputDecoration(
-                  labelText: label,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                  isDense: true,
+                      } else {
+                        final id = items.isNotEmpty ? items.first.id : null;
+                        if (id == null) {
+                          _dirty.remove(p.id);
+                        } else {
+                          _dirty[p.id] = p.copyWith(editedValue: id);
+                        }
+                      }
+                    });
+                  },
                 ),
               ),
-            if (_editMode)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Text(
-                  hasValue ? 'Selected' : 'Select',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
+            ),
+            // (optional) keep this hint; now it will match what the field shows
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: hasValue
+                  ? Row(
+                      children: [
+                        Icon(Icons.check_circle_outline, size: 13, color: Colors.green.shade600),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'Current: $displayText',
+                            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    )
+                  : Text(
+                      'No value — tap above to select',
+                      style: TextStyle(fontSize: 11.5, color: Colors.grey.shade400),
+                    ),
+            ),
           ],
-        ),
-      );
+        );
+      }
+
+      return _readOnlyField(label: label, value: displayText);
     }
 
+    // TEXT / OTHER
     final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
     final currentText = _valueToText(rawCurrent);
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: TextFormField(
-        enabled: _editMode,
-        initialValue: currentText,
-        decoration: InputDecoration(
-          labelText: label,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-          isDense: true,
-        ),
-        onChanged: (v) {
-          if (!_editMode) return;
+    if (_editMode) {
+      final isDirty = _dirty.containsKey(p.id);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF475569),
+              ),
+            ),
+          ),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            child: TextFormField(
+              initialValue: currentText,
+              style: const TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF111827),
+              ),
+              decoration: InputDecoration(
+                hintText: 'Enter ${label.toLowerCase()}',
+                hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                isDense: true,
+                filled: true,
+                fillColor: isDirty ? _filledFill : Colors.grey.shade50,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: isDirty
+                      ? const BorderSide(color: _filledBorder, width: 1.5)
+                      : BorderSide(color: Colors.grey.shade200),
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade200),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _primaryBlue, width: 2),
+                ),
+                suffixIcon: isDirty
+                    ? const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18)
+                    : null,
+              ),
+              onChanged: (v) {
+                if (!_editMode) return;
+                setState(() {
+                  final originalText = _valueToText(p.value);
+                  if (v == originalText) {
+                    _dirty.remove(p.id);
+                  } else {
+                    _dirty[p.id] = p.copyWith(editedValue: v);
+                  }
+                });
+              },
+            ),
+          ),
+        ],
+      );
+    }
 
-          setState(() {
-            final originalText = _valueToText(p.value);
-            if (v == originalText) {
-              _dirty.remove(p.id);
-            } else {
-              _dirty[p.id] = p.copyWith(editedValue: v);
-            }
-          });
-        },
+    return _readOnlyField(label: label, value: currentText);
+  }
+
+  // Read-only field — greyed out, no blue border, no tick icons.
+  Widget _readOnlyField({required String label, required String value}) {
+    final hasValue = value.trim().isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+            ),
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200, width: 1),
+          ),
+          child: Text(
+            hasValue ? value : '—',
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
+              color: hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _previewCard(ViewObject obj) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              ),
+              if (_downloading)
+                const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          FutureBuilder<List<ObjectFile>>(
+            future: _filesFuture,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 10),
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (snap.hasError) {
+                return Text(
+                  'Failed to load files: ${snap.error}',
+                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                );
+              }
+              final files = snap.data ?? [];
+              if (files.isEmpty) {
+                return Column(
+                  children: [
+                    Icon(Icons.insert_drive_file_outlined, color: Colors.grey.shade400),
+                    const SizedBox(height: 4),
+                    Text(
+                      'There are no files attached to this item yet.',
+                      style: TextStyle(color: Colors.grey.shade600),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                );
+              }
+              return Column(
+                children: files.map((f) {
+                  final ext = (f.extension.isEmpty ? '' : '.${f.extension}').toLowerCase();
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: (_saving || _downloading || _changingWorkflow)
+                            ? null
+                            : () => _previewFileInApp(obj, f),
+                        child: ListTile(
+                          dense: true,
+                          leading: FileTypeBadge(extension: f.extension, size: 36),
+                          title: Text(
+                            f.fileTitle.isEmpty ? 'File ${f.fileId}' : f.fileTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (action) async {
+                              final displayIdInt = int.tryParse(obj.displayId);
+                              if (displayIdInt == null) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Invalid object display ID: ${obj.displayId}'),
+                                    backgroundColor: Colors.red.shade600,
+                                  ),
+                                );
+                                return;
+                              }
+                              setState(() => _downloading = true);
+                              try {
+                                final svc = context.read<MFilesService>();
+                                if (action == 'preview') {
+                                  await _previewFileInApp(obj, f);
+                                } else if (action == 'open') {
+                                  await svc.downloadAndOpenFile(
+                                    displayObjectId: displayIdInt,
+                                    classId: obj.classId,
+                                    fileId: f.fileId,
+                                    fileTitle: f.fileTitle,
+                                    extension: f.extension,
+                                    reportGuid: f.reportGuid,
+                                  );
+                                } else if (action == 'download') {
+                                  final savedPath = await svc.downloadAndSaveFile(
+                                    displayObjectId: displayIdInt,
+                                    classId: obj.classId,
+                                    fileId: f.fileId,
+                                    fileTitle: f.fileTitle,
+                                    extension: f.extension,
+                                    reportGuid: f.reportGuid,
+                                  );
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Saved to: $savedPath'),
+                                      backgroundColor: Colors.green.shade600,
+                                      duration: const Duration(seconds: 4),
+                                    ),
+                                  );
+                                }
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Action failed: $e'),
+                                    backgroundColor: Colors.red.shade600,
+                                  ),
+                                );
+                              } finally {
+                                if (mounted) setState(() => _downloading = false);
+                              }
+                            },
+                            itemBuilder: (_) => const [
+                              PopupMenuItem(
+                                value: 'preview',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.visibility, size: 18),
+                                    SizedBox(width: 12),
+                                    Text('Preview'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'open',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.open_in_new, size: 18),
+                                    SizedBox(width: 12),
+                                    Text('Open Externally'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'download',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.download, size: 18),
+                                    SizedBox(width: 12),
+                                    Text('Download'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            child: const Icon(Icons.more_vert, size: 18),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _openFileFromPreview(ViewObject obj, ObjectFile f) async {
+  Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
     final displayIdInt = int.tryParse(obj.displayId);
     if (displayIdInt == null) {
       if (!mounted) return;
@@ -986,263 +1289,29 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
       return;
     }
-
-    setState(() => _downloading = true);
-    try {
-      final svc = context.read<MFilesService>();
-      await svc.downloadAndOpenFile(
-        displayObjectId: displayIdInt,
-        classId: obj.classId,
-        fileId: f.fileId,
-        fileTitle: f.fileTitle,
-        extension: f.extension,
-        reportGuid: f.reportGuid,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Open failed: $e'),
-          backgroundColor: Colors.red.shade600,
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DocumentPreviewScreen(
+          displayObjectId: displayIdInt,
+          classId: obj.classId,
+          fileId: f.fileId,
+          fileTitle: f.fileTitle,
+          extension: f.extension,
+          reportGuid: f.reportGuid,
         ),
-      );
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
-  }
-
-  // Replace your existing _previewCard method in ObjectDetailsScreen with this:
-
-Widget _previewCard(ViewObject obj) {
-  return Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Expanded(
-              child: Text('Preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-            ),
-            if (_downloading)
-              const SizedBox(
-                height: 16,
-                width: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-          ],
-        ),
-        const SizedBox(height: 10),
-        FutureBuilder<List<ObjectFile>>(
-          future: _filesFuture,
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Center(child: CircularProgressIndicator()),
-              );
-            }
-
-            if (snap.hasError) {
-              return Text(
-                'Failed to load files: ${snap.error}',
-                style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-              );
-            }
-
-            final files = snap.data ?? [];
-
-            if (files.isEmpty) {
-              return Column(
-                children: [
-                  Icon(Icons.insert_drive_file_outlined, color: Colors.grey.shade400),
-                  const SizedBox(height: 4),
-                  Text(
-                    'There are no files attached to this item yet.',
-                    style: TextStyle(color: Colors.grey.shade600),
-                    textAlign: TextAlign.center,
-                  ),
-                ],
-              );
-            }
-
-            return Column(
-              children: files.map((f) {
-                final ext = (f.extension.isEmpty ? '' : '.${f.extension}').toLowerCase();
-                final icon = FileIconResolver.iconForExtension(f.extension);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: (_saving || _downloading || _changingWorkflow) 
-                          ? null 
-                          : () => _previewFileInApp(obj, f),
-                      child: ListTile(
-                        dense: true,
-                        leading: Icon(icon),
-                        title: Text(
-                          f.fileTitle.isEmpty ? 'File ${f.fileId}' : f.fileTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
-
-                        trailing: PopupMenuButton<String>(
-                      onSelected: (action) async {
-                        final displayIdInt = int.tryParse(obj.displayId);
-                        if (displayIdInt == null) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Invalid object display ID: ${obj.displayId}'),
-                              backgroundColor: Colors.red.shade600,
-                            ),
-                          );
-                          return;
-                        }
-
-                        setState(() => _downloading = true);
-                        try {
-                          final svc = context.read<MFilesService>();
-
-                          if (action == 'preview') {
-                            await _previewFileInApp(obj, f);
-                          } else if (action == 'open') {
-                            await svc.downloadAndOpenFile(
-                              displayObjectId: displayIdInt,
-                              classId: obj.classId,
-                              fileId: f.fileId,
-                              fileTitle: f.fileTitle,
-                              extension: f.extension,
-                              reportGuid: f.reportGuid,
-                            );
-                          } else if (action == 'download') {
-                            final savedPath = await svc.downloadAndSaveFile(
-                              displayObjectId: displayIdInt,
-                              classId: obj.classId,
-                              fileId: f.fileId,
-                              fileTitle: f.fileTitle,
-                              extension: f.extension,
-                              reportGuid: f.reportGuid,
-                            );
-
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Saved to: $savedPath'),
-                                backgroundColor: Colors.green.shade600,
-                                duration: const Duration(seconds: 4),
-                              ),
-                            );
-                          }
-                        } catch (e) {
-                          if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Action failed: $e'),
-                              backgroundColor: Colors.red.shade600,
-                            ),
-                          );
-                        } finally {
-                          if (mounted) setState(() => _downloading = false);
-                        }
-                      },
-                      itemBuilder: (_) => const [
-                        PopupMenuItem(
-                          value: 'preview',
-                          child: Row(
-                            children: [
-                              Icon(Icons.visibility, size: 18),
-                              SizedBox(width: 12),
-                              Text('Preview'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'open',
-                          child: Row(
-                            children: [
-                              Icon(Icons.open_in_new, size: 18),
-                              SizedBox(width: 12),
-                              Text('Open Externally'),
-                            ],
-                          ),
-                        ),
-                        PopupMenuItem(
-                          value: 'download',
-                          child: Row(
-                            children: [
-                              Icon(Icons.download, size: 18),
-                              SizedBox(width: 12),
-                              Text('Download'),
-                            ],
-                          ),
-                        ),
-                      ],
-                      child: const Icon(Icons.more_vert, size: 18),
-                    ),
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
-            );
-          },
-        ),
-      ],
-    ),
-  );
-}
-
-// ✅ Add this new method to ObjectDetailsScreen
-Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
-  final displayIdInt = int.tryParse(obj.displayId);
-  if (displayIdInt == null) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Invalid object display ID: ${obj.displayId}'),
-        backgroundColor: Colors.red.shade600,
       ),
     );
-    return;
   }
-
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => DocumentPreviewScreen(
-        displayObjectId: displayIdInt,
-        classId: obj.classId,
-        fileId: f.fileId,
-        fileTitle: f.fileTitle,
-        extension: f.extension,
-        reportGuid: f.reportGuid,
-      ),
-    ),
-  );
-}
-
-// ✅ Also add this import at the top of your object_details_screen.dart file:
-// import 'package:mfiles_app/screens/document_preview_screen.dart';
 
   Future<List<ObjectComment>> _loadComments() async {
     final svc = context.read<MFilesService>();
-    try{
+    try {
       final items = await svc.fetchComments(
-      objectId: widget.obj.id,
-      objectTypeId: widget.obj.objectTypeId,
-      vaultGuid: svc.vaultGuidWithBraces,
-    );
+        objectId: widget.obj.id,
+        objectTypeId: widget.obj.objectTypeId,
+        vaultGuid: svc.vaultGuidWithBraces,
+      );
       return items;
     } catch (_) {
       return <ObjectComment>[];
@@ -1253,7 +1322,6 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
     final text = _commentCtrl.text.trim();
     if (text.isEmpty) return;
     if (_postingComment) return;
-
     setState(() => _postingComment = true);
     try {
       final svc = context.read<MFilesService>();
@@ -1263,7 +1331,6 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
         objectTypeId: widget.obj.objectTypeId,
         vaultGuid: svc.vaultGuidWithBraces,
       );
-
       if (!ok) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -1274,12 +1341,9 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
         );
         return;
       }
-
       _commentCtrl.clear();
       if (!mounted) return;
-      setState(() {
-        _commentsFuture = _loadComments();
-      });
+      setState(() => _commentsFuture = _loadComments());
     } finally {
       if (mounted) setState(() => _postingComment = false);
     }
@@ -1290,18 +1354,15 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
     final now = DateTime.now();
     final local = dt.toLocal();
     final diff = now.difference(local);
-    
     if (diff.inMinutes < 1) return 'Just now';
     if (diff.inHours < 1) return '${diff.inMinutes}m ago';
     if (diff.inDays < 1) return '${diff.inHours}h ago';
     if (diff.inDays < 7) return '${diff.inDays}d ago';
-    
     return '${local.month}/${local.day}/${local.year}';
   }
 
   Widget _commentsCard() {
     final disabled = _saving || _downloading || _changingWorkflow || _assigningWorkflow;
-
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
@@ -1318,10 +1379,8 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
             ],
           ),
           const SizedBox(height: 10),
-
-          // Scrollable comments list with fixed height
           SizedBox(
-            height: 180, // Fixed height for the comments section
+            height: 180,
             child: FutureBuilder<List<ObjectComment>>(
               future: _commentsFuture,
               builder: (context, snap) {
@@ -1342,7 +1401,6 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
                     ),
                   );
                 }
-
                 final items = snap.data ?? [];
                 if (items.isEmpty) {
                   return Center(
@@ -1351,36 +1409,27 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
                       children: [
                         Icon(Icons.chat_bubble_outline, size: 40, color: Colors.grey.shade300),
                         const SizedBox(height: 8),
-                        Text(
-                          'No comments yet',
-                          style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                        ),
+                        Text('No comments yet', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
                         const SizedBox(height: 4),
-                        Text(
-                          'Be the first to comment',
-                          style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
-                        ),
+                        Text('Be the first to comment', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
                       ],
                     ),
                   );
                 }
-
                 return Scrollbar(
-                  thumbVisibility: items.length > 3, // Show scrollbar if more than 3 comments
+                  thumbVisibility: items.length > 3,
                   thickness: 4,
                   radius: const Radius.circular(2),
                   child: ListView.separated(
                     padding: const EdgeInsets.only(right: 8, bottom: 4),
                     itemCount: items.length,
-                    separatorBuilder: (context, index) => const SizedBox(height: 12),
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
                     itemBuilder: (context, index) {
                       final c = items[index];
                       final dateText = _fmtCommentDate(c.modifiedDate);
-
                       return Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Avatar circle
                           Container(
                             width: 32,
                             height: 32,
@@ -1389,20 +1438,14 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
                               shape: BoxShape.circle,
                             ),
                             child: const Center(
-                              child: Icon(
-                                Icons.person_outline,
-                                size: 18,
-                                color: Color(0xFF072F5F),
-                              ),
+                              child: Icon(Icons.person_outline, size: 18, color: Color(0xFF072F5F)),
                             ),
                           ),
                           const SizedBox(width: 10),
-                          // Comment content
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // Date/time badge
                                 if (dateText.isNotEmpty)
                                   Padding(
                                     padding: const EdgeInsets.only(bottom: 4),
@@ -1415,27 +1458,17 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
                                       ),
                                     ),
                                   ),
-                                // Comment text bubble
                                 Container(
                                   width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                                   decoration: BoxDecoration(
                                     color: Colors.grey.shade50,
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade200,
-                                      width: 1,
-                                    ),
+                                    border: Border.all(color: Colors.grey.shade200, width: 1),
                                   ),
                                   child: Text(
                                     c.text,
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      height: 1.4,
-                                    ),
+                                    style: const TextStyle(fontSize: 13, height: 1.4),
                                   ),
                                 ),
                               ],
@@ -1449,13 +1482,9 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
               },
             ),
           ),
-
           const SizedBox(height: 12),
-          // Divider before composer
           Divider(height: 1, color: Colors.grey.shade200),
           const SizedBox(height: 12),
-
-          // Composer
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -1489,9 +1518,7 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
               ),
               const SizedBox(width: 8),
               ElevatedButton(
-                onPressed: (disabled || _postingComment) 
-                    ? null 
-                    : _submitComment,
+                onPressed: (disabled || _postingComment) ? null : _submitComment,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF072F5F),
                   foregroundColor: Colors.white,
@@ -1500,7 +1527,6 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   elevation: 0,
-                  // Add visual feedback
                   overlayColor: Colors.white.withOpacity(0.1),
                 ),
                 child: const Icon(Icons.send, size: 18),
@@ -1517,9 +1543,15 @@ Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         children: [
-          SizedBox(width: 110, child: Text(k, style: TextStyle(fontSize: 12, color: Colors.grey.shade700))),
+          SizedBox(
+            width: 110,
+            child: Text(k, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+          ),
           Expanded(
-            child: Text(v.isEmpty ? '-' : v, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+            child: Text(
+              v.isEmpty ? '-' : v,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
           ),
         ],
       ),

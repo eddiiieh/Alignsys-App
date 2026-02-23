@@ -195,7 +195,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
+            children: [
             Icon(Icons.visibility_off, size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             Text(
@@ -208,6 +208,10 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
               onPressed: () => _openExternally(file),
               icon: const Icon(Icons.open_in_new),
               label: const Text('Open Externally'),
+              style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF072F5F),
+              foregroundColor: Colors.white,
+              ),
             ),
           ],
         ),
