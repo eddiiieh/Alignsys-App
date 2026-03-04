@@ -1,7 +1,7 @@
 name: mfiles_app
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.1
+
 
 environment:
   sdk: ^3.7.2
@@ -41,10 +41,11 @@ flutter:
     - assets/TechEdgeLogo.png
     - assets/alignsysop.png 
     - assets/alignsysnew.png
+    - assets/alignsysapplogo.png
     # You can add more assets or use a folder:
     # - assets/
 
 flutter_launcher_icons:
     android: true
     ios: true
-    image_path: "assets/alignsysop.png"
+    image_path: "assets/alignsysapplogo.png"

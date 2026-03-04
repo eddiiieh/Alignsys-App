@@ -63,6 +63,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   late Future<List<ObjectComment>> _commentsFuture;
   final TextEditingController _commentCtrl = TextEditingController();
   bool _postingComment = false;
+  // ── CHANGE 3: track whether comment input is focused for YouTube-style expand
+  final FocusNode _commentFocusNode = FocusNode();
+  bool _commentInputFocused = false;
 
   // ── Design constants (matching DynamicFormScreen) ──
   static const _primaryBlue = Color(0xFF072F5F);
@@ -78,12 +81,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     _filesFuture = _loadFiles();
     _workflowFuture = _loadWorkflow();
     _workflowsFuture = _loadWorkflowsForThisObject();
+    _commentFocusNode.addListener(() {
+      if (mounted) {
+        setState(() => _commentInputFocused = _commentFocusNode.hasFocus);
+      }
+    });
   }
 
   @override
   void dispose() {
     _pageScroll.dispose();
     _commentCtrl.dispose();
+    _commentFocusNode.dispose();
     super.dispose();
   }
 
@@ -133,7 +142,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _isLookup(_PropVm p) => p.datatype == 'MFDatatypeLookup';
   bool _isMultiLookup(_PropVm p) => p.datatype == 'MFDatatypeMultiSelectLookup';
 
-  // ✅ NEW: derive selected IDs for LookupField so it can show selection in the field + dialog
   List<int> _selectedIdsForLookup(_PropVm p, {required bool isMulti}) {
     final source = _dirty[p.id]?.editedValue ?? p.value;
 
@@ -172,7 +180,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   List<String> _selectedLabelsForLookup(_PropVm p) {
     final source = _dirty[p.id]?.editedValue ?? p.value;
 
-    // If editedValue is just IDs, we might not have labels. Keep empty fallback.
     if (source is int || source is List<int>) return const <String>[];
 
     final out = <String>[];
@@ -199,7 +206,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       addFrom(source);
     }
 
-    // de-dupe
     return out.toSet().toList();
   }
 
@@ -342,99 +348,259 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return info;
   }
 
+  // ── CHANGE 2: Improved workflow card with better text visibility ──
   Widget _workflowCard(WorkflowInfo info) {
     final canChange = info.nextStates.isNotEmpty && !_changingWorkflow && !_saving && !_downloading;
+    final hasDescription = info.assignmentDesc.trim().isNotEmpty;
+
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Workflow', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              ),
-              if (_changingWorkflow)
-                const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _kv('Name', info.workflowTitle),
-          _kv('Current', info.currentStateTitle),
-          if (info.assignmentDesc.trim().isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Text(info.assignmentDesc, style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
-          ],
-          const SizedBox(height: 10),
-          if (info.nextStates.isEmpty)
-            Text('No next steps available.', style: TextStyle(color: Colors.grey.shade600, fontSize: 12))
-          else
-            Row(
+          // Header bar with blue accent
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF072F5F).withOpacity(0.04),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+            ),
+            child: Row(
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<int>(
-                    value: _selectedNextStateId,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: 'Next state',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                      isDense: true,
+                const Icon(Icons.account_tree_outlined, size: 16, color: Color(0xFF072F5F)),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Workflow',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF072F5F),
                     ),
-                    items: info.nextStates
-                        .map((s) => DropdownMenuItem<int>(
-                              value: s.id,
-                              child: Text(s.title, overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: canChange ? (v) => setState(() => _selectedNextStateId = v) : null,
                   ),
                 ),
-                const SizedBox(width: 10),
-                ElevatedButton(
-                  onPressed: (!canChange || _selectedNextStateId == null)
-                      ? null
-                      : () async {
-                          setState(() => _changingWorkflow = true);
-                          try {
-                            final svc = context.read<MFilesService>();
-                            final ok = await svc.setObjectWorkflowState(
-                              objectTypeId: widget.obj.objectTypeId,
-                              objectId: widget.obj.id,
-                              workflowId: info.workflowId,
-                              stateId: _selectedNextStateId!,
-                            );
-                            if (!ok) {
-                              if (!mounted) return;
-                              final msg = svc.error ?? 'Unknown';
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Workflow update failed: $msg'),
-                                  backgroundColor: Colors.red.shade600,
-                                ),
-                              );
-                              return;
-                            }
-                            if (!mounted) return;
-                            setState(() {
-                              _workflowFuture = _loadWorkflow();
-                              _future = _loadProps();
-                            });
-                          } finally {
-                            if (mounted) setState(() => _changingWorkflow = false);
-                          }
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF072F5F),
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    elevation: 0,
-                    overlayColor: Colors.white.withOpacity(0.1),
+                if (_changingWorkflow)
+                  const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                  child: const Text('Apply'),
-                ),
               ],
             ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Workflow name row
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Workflow',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade500,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        info.workflowTitle,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E293B),
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Current state with badge
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Current state',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade500,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF072F5F).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0xFF072F5F).withOpacity(0.2),
+                        ),
+                      ),
+                      child: Text(
+                        info.currentStateTitle,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF072F5F),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Description block — prominent when present
+                if (hasDescription) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF8E1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.info_outline, size: 15, color: Color(0xFF92700A)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            info.assignmentDesc.trim(),
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF5C4A00),
+                              height: 1.45,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 12),
+                Divider(height: 1, color: Colors.grey.shade100),
+                const SizedBox(height: 12),
+
+                // Next state selector
+                if (info.nextStates.isEmpty)
+                  Row(
+                    children: [
+                      Icon(Icons.block, size: 14, color: Colors.grey.shade400),
+                      const SizedBox(width: 6),
+                      Text(
+                        'No next steps available.',
+                        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                      ),
+                    ],
+                  )
+                else
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'ADVANCE TO',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade400,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: _selectedNextStateId,
+                              isExpanded: true,
+                              decoration: InputDecoration(
+                                labelText: 'Next state',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                isDense: true,
+                              ),
+                              items: info.nextStates
+                                  .map((s) => DropdownMenuItem<int>(
+                                        value: s.id,
+                                        child: Text(s.title, overflow: TextOverflow.ellipsis),
+                                      ))
+                                  .toList(),
+                              onChanged: canChange
+                                  ? (v) => setState(() => _selectedNextStateId = v)
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            onPressed: (!canChange || _selectedNextStateId == null)
+                                ? null
+                                : () async {
+                                    setState(() => _changingWorkflow = true);
+                                    try {
+                                      final svc = context.read<MFilesService>();
+                                      final ok = await svc.setObjectWorkflowState(
+                                        objectTypeId: widget.obj.objectTypeId,
+                                        objectId: widget.obj.id,
+                                        workflowId: info.workflowId,
+                                        stateId: _selectedNextStateId!,
+                                      );
+                                      if (!ok) {
+                                        if (!mounted) return;
+                                        final msg = svc.error ?? 'Unknown';
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Workflow update failed: $msg'),
+                                            backgroundColor: Colors.red.shade600,
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      if (!mounted) return;
+                                      setState(() {
+                                        _workflowFuture = _loadWorkflow();
+                                        _future = _loadProps();
+                                      });
+                                    } finally {
+                                      if (mounted) setState(() => _changingWorkflow = false);
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF072F5F),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              elevation: 0,
+                              overlayColor: Colors.white.withOpacity(0.1),
+                            ),
+                            child: const Text('Apply'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -451,115 +617,153 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget _assignWorkflowCard() {
     final canInteract = !_assigningWorkflow && !_saving && !_downloading && !_changingWorkflow;
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Workflow', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              ),
-              if (_assigningWorkflow)
-                const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'No workflow is assigned to this object.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-          ),
-          const SizedBox(height: 10),
-          FutureBuilder<List<WorkflowOption>>(
-            future: _workflowsFuture,
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 6),
-                  child: LinearProgressIndicator(minHeight: 2),
-                );
-              }
-              if (snap.hasError) {
-                return Text(
-                  'Failed to load workflows: ${snap.error}',
-                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                );
-              }
-              final workflows = snap.data ?? [];
-              if (workflows.isEmpty) {
-                return Text(
-                  'No workflows available for this object type/class.',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                );
-              }
-              _selectedWorkflowId ??= workflows.first.id;
-              return Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _selectedWorkflowId,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        labelText: 'Workflow',
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        isDense: true,
-                      ),
-                      items: workflows
-                          .map((w) => DropdownMenuItem<int>(
-                                value: w.id,
-                                child: Text(w.title, overflow: TextOverflow.ellipsis),
-                              ))
-                          .toList(),
-                      onChanged: !canInteract ? null : (v) => setState(() => _selectedWorkflowId = v),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF072F5F).withOpacity(0.04),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.account_tree_outlined, size: 16, color: Color(0xFF072F5F)),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Workflow',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF072F5F),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: (!canInteract || _selectedWorkflowId == null)
-                        ? null
-                        : () async {
-                            setState(() => _assigningWorkflow = true);
-                            try {
-                              final workflowId = _selectedWorkflowId!;
-                              final initialStateId = _initialStateForWorkflow(workflowId);
-                              final svc = context.read<MFilesService>();
-                              final ok = await svc.setObjectWorkflowState(
-                                objectTypeId: widget.obj.objectTypeId,
-                                objectId: widget.obj.id,
-                                workflowId: workflowId,
-                                stateId: initialStateId,
-                              );
-                              if (!ok) throw Exception(svc.error ?? 'Unknown');
-                              if (!mounted) return;
-                              setState(() {
-                                _workflowFuture = _loadWorkflow();
-                                _future = _loadProps();
-                              });
-                            } catch (e) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(e.toString()),
-                                  backgroundColor: Colors.red.shade600,
-                                ),
-                              );
-                            } finally {
-                              if (mounted) setState(() => _assigningWorkflow = false);
-                            }
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF072F5F),
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      elevation: 0,
-                      overlayColor: Colors.white.withOpacity(0.1),
-                    ),
-                    child: const Text('Assign'),
+                ),
+                if (_assigningWorkflow)
+                  const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
-                ],
-              );
-            },
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 6),
+                    Text(
+                      'No workflow is assigned to this object.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                FutureBuilder<List<WorkflowOption>>(
+                  future: _workflowsFuture,
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 6),
+                        child: LinearProgressIndicator(minHeight: 2),
+                      );
+                    }
+                    if (snap.hasError) {
+                      return Text(
+                        'Failed to load workflows: ${snap.error}',
+                        style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                      );
+                    }
+                    final workflows = snap.data ?? [];
+                    if (workflows.isEmpty) {
+                      return Text(
+                        'No workflows available for this object type/class.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      );
+                    }
+                    _selectedWorkflowId ??= workflows.first.id;
+                    return Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            value: _selectedWorkflowId,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              labelText: 'Workflow',
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                              isDense: true,
+                            ),
+                            items: workflows
+                                .map((w) => DropdownMenuItem<int>(
+                                      value: w.id,
+                                      child: Text(w.title, overflow: TextOverflow.ellipsis),
+                                    ))
+                                .toList(),
+                            onChanged:
+                                !canInteract ? null : (v) => setState(() => _selectedWorkflowId = v),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        ElevatedButton(
+                          onPressed: (!canInteract || _selectedWorkflowId == null)
+                              ? null
+                              : () async {
+                                  setState(() => _assigningWorkflow = true);
+                                  try {
+                                    final workflowId = _selectedWorkflowId!;
+                                    final initialStateId = _initialStateForWorkflow(workflowId);
+                                    final svc = context.read<MFilesService>();
+                                    final ok = await svc.setObjectWorkflowState(
+                                      objectTypeId: widget.obj.objectTypeId,
+                                      objectId: widget.obj.id,
+                                      workflowId: workflowId,
+                                      stateId: initialStateId,
+                                    );
+                                    if (!ok) throw Exception(svc.error ?? 'Unknown');
+                                    if (!mounted) return;
+                                    setState(() {
+                                      _workflowFuture = _loadWorkflow();
+                                      _future = _loadProps();
+                                    });
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(e.toString()),
+                                        backgroundColor: Colors.red.shade600,
+                                      ),
+                                    );
+                                  } finally {
+                                    if (mounted) setState(() => _assigningWorkflow = false);
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF072F5F),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            elevation: 0,
+                            overlayColor: Colors.white.withOpacity(0.1),
+                          ),
+                          child: const Text('Assign'),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -730,7 +934,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   return Center(child: Text('Error: ${snap.error}'));
                 }
                 final props = snap.data ?? [];
-                final metaProps = props.where((p) => _allowedMetaPropIds.contains(p.id)).toList();
+                final metaProps =
+                    props.where((p) => _allowedMetaPropIds.contains(p.id)).toList();
                 return RefreshIndicator(
                   onRefresh: () async {
                     setState(() {
@@ -754,7 +959,15 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(8),
                       children: [
-                        _headerCard(obj),
+                        // ── CHANGE 1: pass files future to header so it can pick icon ──
+                        FutureBuilder<List<ObjectFile>>(
+                          future: _filesFuture,
+                          builder: (context, filesSnap) {
+                            final firstFile =
+                                (filesSnap.data?.isNotEmpty ?? false) ? filesSnap.data!.first : null;
+                            return _headerCard(obj, firstFile: firstFile);
+                          },
+                        ),
                         const SizedBox(height: 12),
                         _metadataCard(metaProps),
                         FutureBuilder<WorkflowInfo?>(
@@ -767,7 +980,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             return Column(
                               children: [
                                 const SizedBox(height: 12),
-                                if (info == null) _assignWorkflowCard() else _workflowCard(info),
+                                if (info == null)
+                                  _assignWorkflowCard()
+                                else
+                                  _workflowCard(info),
                               ],
                             );
                           },
@@ -789,7 +1005,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
-  Widget _headerCard(ViewObject obj) {
+  // ── CHANGE 1: headerCard now accepts firstFile and shows FileTypeBadge ──
+  Widget _headerCard(ViewObject obj, {ObjectFile? firstFile}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
@@ -798,23 +1015,47 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.description_outlined, size: 20, color: Color.fromRGBO(25, 76, 129, 1)),
+              // Show FileTypeBadge if we have a file, otherwise fallback icon
+              firstFile != null
+                  ? FileTypeBadge(extension: firstFile.extension, size: 36)
+                  : Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF072F5F).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.description_outlined,
+                          size: 20,
+                          color: Color(0xFF072F5F),
+                        ),
+                      ),
+                    ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   _title.isEmpty ? obj.title : _title,
-                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, height: 1.3),
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    height: 1.3,
+                  ),
                 ),
               ),
               Material(
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(20),
-                  onTap: () => setState(() => _headerDetailsExpanded = !_headerDetailsExpanded),
+                  onTap: () =>
+                      setState(() => _headerDetailsExpanded = !_headerDetailsExpanded),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: Icon(
-                      _headerDetailsExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                      _headerDetailsExpanded
+                          ? Icons.keyboard_arrow_up
+                          : Icons.keyboard_arrow_down,
                     ),
                   ),
                 ),
@@ -846,7 +1087,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 ],
               ),
             ),
-            crossFadeState: _headerDetailsExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+            crossFadeState: _headerDetailsExpanded
+                ? CrossFadeState.showSecond
+                : CrossFadeState.showFirst,
             duration: const Duration(milliseconds: 180),
           ),
         ],
@@ -864,7 +1107,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Row(
             children: [
               const Expanded(
-                child: Text('Metadata', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                child: Text('Metadata',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
               ),
               Text(
                 _editMode ? 'Editing' : 'Read-only',
@@ -900,7 +1144,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget _propField(_PropVm p) {
     final label = _friendlyPropLabel(p);
 
-    // LOOKUP / MULTI-LOOKUP
     if (_isLookup(p) || _isMultiLookup(p)) {
       final isMulti = _isMultiLookup(p);
       final displayText = _lookupDisplayText(p);
@@ -958,13 +1201,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 ),
               ),
             ),
-            // (optional) keep this hint; now it will match what the field shows
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: hasValue
                   ? Row(
                       children: [
-                        Icon(Icons.check_circle_outline, size: 13, color: Colors.green.shade600),
+                        Icon(Icons.check_circle_outline,
+                            size: 13, color: Colors.green.shade600),
                         const SizedBox(width: 4),
                         Expanded(
                           child: Text(
@@ -988,7 +1231,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       return _readOnlyField(label: label, value: displayText);
     }
 
-    // TEXT / OTHER
     final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
     final currentText = _valueToText(rawCurrent);
 
@@ -1023,7 +1265,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 isDense: true,
                 filled: true,
                 fillColor: isDirty ? _filledFill : Colors.grey.shade50,
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: isDirty
@@ -1039,7 +1282,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   borderSide: const BorderSide(color: _primaryBlue, width: 2),
                 ),
                 suffixIcon: isDirty
-                    ? const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18)
+                    ? const Icon(Icons.check_circle_rounded,
+                        color: _filledBorder, size: 18)
                     : null,
               ),
               onChanged: (v) {
@@ -1062,7 +1306,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return _readOnlyField(label: label, value: currentText);
   }
 
-  // Read-only field — greyed out, no blue border, no tick icons.
   Widget _readOnlyField({required String label, required String value}) {
     final hasValue = value.trim().isNotEmpty;
 
@@ -1111,10 +1354,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Row(
             children: [
               const Expanded(
-                child: Text('Preview', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+                child: Text('Preview',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
               ),
               if (_downloading)
-                const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
             ],
           ),
           const SizedBox(height: 10),
@@ -1149,7 +1396,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               }
               return Column(
                 children: files.map((f) {
-                  final ext = (f.extension.isEmpty ? '' : '.${f.extension}').toLowerCase();
+                  final ext =
+                      (f.extension.isEmpty ? '' : '.${f.extension}').toLowerCase();
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
@@ -1172,7 +1420,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          subtitle: Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+                          subtitle:
+                              Text('v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
                           trailing: PopupMenuButton<String>(
                             onSelected: (action) async {
                               final displayIdInt = int.tryParse(obj.displayId);
@@ -1180,7 +1429,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: Text('Invalid object display ID: ${obj.displayId}'),
+                                    content: Text(
+                                        'Invalid object display ID: ${obj.displayId}'),
                                     backgroundColor: Colors.red.shade600,
                                   ),
                                 );
@@ -1342,6 +1592,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         return;
       }
       _commentCtrl.clear();
+      _commentFocusNode.unfocus();
       if (!mounted) return;
       setState(() => _commentsFuture = _loadComments());
     } finally {
@@ -1361,6 +1612,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return '${local.month}/${local.day}/${local.year}';
   }
 
+  // ── CHANGE 3: YouTube-style comments — no fixed-height box ──
   Widget _commentsCard() {
     final disabled = _saving || _downloading || _changingWorkflow || _assigningWorkflow;
     return Container(
@@ -1369,170 +1621,268 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Comments', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              ),
-              if (_postingComment)
-                const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 180,
-            child: FutureBuilder<List<ObjectComment>>(
-              future: _commentsFuture,
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
+          // Header row
+          FutureBuilder<List<ObjectComment>>(
+            future: _commentsFuture,
+            builder: (context, snap) {
+              final count = snap.data?.length ?? 0;
+              return Row(
+                children: [
+                  Text(
+                    count > 0 ? 'Comments ($count)' : 'Comments',
+                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                  ),
+                  const Spacer(),
+                  if (_postingComment)
+                    const SizedBox(
+                      height: 16,
+                      width: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
-                  );
-                }
-                if (snap.hasError) {
-                  return Center(
-                    child: Text(
-                      'Failed to load comments: ${snap.error}',
-                      style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                      textAlign: TextAlign.center,
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+
+          // ── Comment input row (always visible at top, YouTube-style) ──
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              // Avatar circle
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF072F5F).withOpacity(0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Center(
+                  child: Icon(Icons.person_outline, size: 18, color: Color(0xFF072F5F)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    TextField(
+                      controller: _commentCtrl,
+                      focusNode: _commentFocusNode,
+                      enabled: !disabled && !_postingComment,
+                      minLines: 1,
+                      maxLines: _commentInputFocused ? 4 : 1,
+                      decoration: InputDecoration(
+                        hintText: 'Add a comment…',
+                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                        filled: false,
+                        border: InputBorder.none,
+                        enabledBorder: UnderlineInputBorder(
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: const UnderlineInputBorder(
+                          borderSide: BorderSide(color: Color(0xFF072F5F), width: 1.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
+                        isDense: true,
+                      ),
+                      style: const TextStyle(fontSize: 13.5),
                     ),
-                  );
-                }
-                final items = snap.data ?? [];
-                if (items.isEmpty) {
-                  return Center(
+                    // Action buttons appear only when focused (YouTube pattern)
+                    if (_commentInputFocused) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              _commentCtrl.clear();
+                              _commentFocusNode.unfocus();
+                            },
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.grey.shade600,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                            ),
+                            child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+                          ),
+                          const SizedBox(width: 6),
+                          ElevatedButton(
+                            onPressed: (disabled || _postingComment) ? null : _submitComment,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF072F5F),
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey.shade200,
+                              disabledForegroundColor: Colors.grey.shade400,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                              elevation: 0,
+                              textStyle: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            child: const Text('Comment'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+          Divider(height: 1, color: Colors.grey.shade100),
+
+          // ── Comments list — no fixed height, flows naturally ──
+          FutureBuilder<List<ObjectComment>>(
+            future: _commentsFuture,
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                );
+              }
+              if (snap.hasError) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Text(
+                    'Failed to load comments: ${snap.error}',
+                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                    textAlign: TextAlign.center,
+                  ),
+                );
+              }
+              final items = snap.data ?? [];
+              if (items.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(Icons.chat_bubble_outline, size: 40, color: Colors.grey.shade300),
-                        const SizedBox(height: 8),
-                        Text('No comments yet', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                        const SizedBox(height: 4),
-                        Text('Be the first to comment', style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
+                        Icon(Icons.chat_bubble_outline,
+                            size: 32, color: Colors.grey.shade300),
+                        const SizedBox(height: 6),
+                        Text(
+                          'No comments yet. Be the first!',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                        ),
                       ],
                     ),
-                  );
-                }
-                return Scrollbar(
-                  thumbVisibility: items.length > 3,
-                  thickness: 4,
-                  radius: const Radius.circular(2),
-                  child: ListView.separated(
-                    padding: const EdgeInsets.only(right: 8, bottom: 4),
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final c = items[index];
-                      final dateText = _fmtCommentDate(c.modifiedDate);
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF072F5F).withOpacity(0.1),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Center(
-                              child: Icon(Icons.person_outline, size: 18, color: Color(0xFF072F5F)),
-                            ),
+                  ),
+                );
+              }
+              return Column(
+                children: List.generate(items.length, (index) {
+                  final c = items[index];
+                  final dateText = _fmtCommentDate(c.modifiedDate);
+                  final authorName = c.author.trim();
+                  final hasAuthor = authorName.isNotEmpty;
+
+                  // Initials avatar when author is known, generic icon otherwise
+                  Widget avatarWidget;
+                  if (hasAuthor) {
+                    final parts = authorName.split(' ').where((s) => s.isNotEmpty).toList();
+                    final initials = parts.length >= 2
+                        ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
+                        : authorName.substring(0, authorName.length.clamp(0, 2)).toUpperCase();
+                    avatarWidget = Container(
+                      width: 32,
+                      height: 32,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF072F5F),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Center(
+                        child: Text(
+                          initials,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                if (dateText.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(bottom: 4),
-                                    child: Text(
+                        ),
+                      ),
+                    );
+                  } else {
+                    avatarWidget = Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF072F5F).withOpacity(0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Center(
+                        child: Icon(Icons.person_outline, size: 17, color: Color(0xFF072F5F)),
+                      ),
+                    );
+                  }
+
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        avatarWidget,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.baseline,
+                                textBaseline: TextBaseline.alphabetic,
+                                children: [
+                                  if (hasAuthor) ...[
+                                    Text(
+                                      authorName,
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  if (dateText.isNotEmpty)
+                                    Text(
                                       dateText,
                                       style: TextStyle(
                                         fontSize: 11,
                                         color: Colors.grey.shade500,
-                                        fontWeight: FontWeight.w500,
+                                        fontWeight: FontWeight.w400,
                                       ),
                                     ),
-                                  ),
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.grey.shade200, width: 1),
-                                  ),
-                                  child: Text(
-                                    c.text,
-                                    style: const TextStyle(fontSize: 13, height: 1.4),
-                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                c.text,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  height: 1.45,
+                                  color: Color(0xFF1E293B),
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        ],
-                      );
-                    },
-                  ),
-                );
-              },
-            ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              );
+            },
           ),
-          const SizedBox(height: 12),
-          Divider(height: 1, color: Colors.grey.shade200),
-          const SizedBox(height: 12),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _commentCtrl,
-                  enabled: !disabled && !_postingComment,
-                  minLines: 1,
-                  maxLines: 4,
-                  decoration: InputDecoration(
-                    hintText: 'Write a comment…',
-                    hintStyle: TextStyle(color: Colors.grey.shade400),
-                    filled: true,
-                    fillColor: Colors.grey.shade50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade300),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(color: Color(0xFF072F5F), width: 1.5),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    isDense: true,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: (disabled || _postingComment) ? null : _submitComment,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF072F5F),
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade300,
-                  disabledForegroundColor: Colors.grey.shade500,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                  elevation: 0,
-                  overlayColor: Colors.white.withOpacity(0.1),
-                ),
-                child: const Icon(Icons.send, size: 18),
-              ),
-            ],
-          ),
+          const SizedBox(height: 4),
         ],
       ),
     );
