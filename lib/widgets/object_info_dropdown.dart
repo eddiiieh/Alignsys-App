@@ -42,10 +42,19 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   void didUpdateWidget(covariant ObjectInfoDropdown oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    // If the row is reused for another object, reload.
-    if (oldWidget.obj.id != widget.obj.id ||
-        oldWidget.obj.classId != widget.obj.classId ||
-        oldWidget.obj.objectTypeId != widget.obj.objectTypeId) {
+    // ✅ Compare by field values, NOT by object identity.
+    // The parent builds a new ViewObject(...) on every setState (e.g. when
+    // toggling the info icon), so identity always differs even when nothing
+    // meaningful changed. Reloading on every parent rebuild causes the
+    // spurious fetchClassProperties / fetchObjectFiles calls seen in the logs.
+    final o = oldWidget.obj;
+    final n = widget.obj;
+    final meaningfullyChanged = o.id != n.id ||
+        o.classId != n.classId ||
+        o.objectTypeId != n.objectTypeId ||
+        o.versionId != n.versionId;
+
+    if (meaningfullyChanged) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         setState(() {
@@ -459,9 +468,13 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     final ext = file.extension.isEmpty ? '' : '.${file.extension}';
     final icon = FileIconResolver.iconForExtension(file.extension);
 
-    return InkWell(
+    return GestureDetector(
+      // ✅ HitTestBehavior.opaque ensures this gesture is fully consumed here
+      // and never bubbles up to any ancestor InkWell (e.g. the row tap in
+      // ViewDetailsScreen / ViewItemsScreen), which would otherwise navigate
+      // to ObjectDetailsScreen instead of opening the preview dialog.
+      behavior: HitTestBehavior.opaque,
       onTap: _downloading ? null : () => _previewFile(file),
-      borderRadius: BorderRadius.circular(8),
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -504,43 +517,49 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              PopupMenuButton<String>(
-                padding: EdgeInsets.zero,
-                icon: Icon(
-                  Icons.more_vert,
-                  size: 16,
-                  color: Colors.grey.shade600,
+              // ✅ Also wrap the PopupMenuButton tap area so the "⋮" menu
+              // tap does not bubble to the row either.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () {}, // absorb tap so it doesn't reach the row
+                child: PopupMenuButton<String>(
+                  padding: EdgeInsets.zero,
+                  icon: Icon(
+                    Icons.more_vert,
+                    size: 16,
+                    color: Colors.grey.shade600,
+                  ),
+                  tooltip: 'More options',
+                  onSelected: (action) async {
+                    if (action == 'open') {
+                      await _openFile(file);
+                    } else if (action == 'download') {
+                      await _downloadFile(file);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(
+                      value: 'open',
+                      child: Row(
+                        children: [
+                          Icon(Icons.open_in_new, size: 16),
+                          SizedBox(width: 12),
+                          Text('Open Externally'),
+                        ],
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'download',
+                      child: Row(
+                        children: [
+                          Icon(Icons.download, size: 16),
+                          SizedBox(width: 12),
+                          Text('Download'),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                tooltip: 'More options',
-                onSelected: (action) async {
-                  if (action == 'open') {
-                    await _openFile(file);
-                  } else if (action == 'download') {
-                    await _downloadFile(file);
-                  }
-                },
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
-                    value: 'open',
-                    child: Row(
-                      children: [
-                        Icon(Icons.open_in_new, size: 16),
-                        SizedBox(width: 12),
-                        Text('Open Externally'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'download',
-                    child: Row(
-                      children: [
-                        Icon(Icons.download, size: 16),
-                        SizedBox(width: 12),
-                        Text('Download'),
-                      ],
-                    ),
-                  ),
-                ],
               ),
           ],
         ),

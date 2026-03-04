@@ -164,7 +164,7 @@ class _HomeScreenState extends State<HomeScreen>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(4),
                   child: Image.asset('assets/alignsysnew.png',
-                      height: 55, fit: BoxFit.cover),
+                      height: 36, fit: BoxFit.cover),
                 ),
               );
             },
@@ -682,7 +682,16 @@ class _HomeScreenState extends State<HomeScreen>
           return const Center(child: CircularProgressIndicator());
         }
         if (objects.isEmpty) {
-          return _buildEmptyState(emptyIcon, emptyText, emptySubtext);
+          return RefreshIndicator(
+            onRefresh: () => onRefresh(service),
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              children: [
+                SizedBox(height: MediaQuery.of(context).size.height * 0.18),
+                _buildEmptyState(emptyIcon, emptyText, emptySubtext),
+              ],
+            ),
+          );
         }
         return RefreshIndicator(
           onRefresh: () => onRefresh(service),
@@ -694,6 +703,7 @@ class _HomeScreenState extends State<HomeScreen>
             radius: const Radius.circular(8),
             child: ListView.builder(
               controller: _objectsScroll,
+              physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(10),
               itemCount: objects.length,
               itemBuilder: (context, index) =>
@@ -716,7 +726,8 @@ class _HomeScreenState extends State<HomeScreen>
     final subtitle =
         type.isEmpty ? 'Modified: $modified' : '$type | $modified';
 
-    final bool canExpand = obj.id != 0 && obj.classId != 0;
+    final bool canExpand = obj.id != 0;
+    final bool hasMetadata = obj.classId != 0;
 
     final svc = context.watch<MFilesService>();
     final mappedIcon = _iconForObj(svc, obj);
@@ -989,7 +1000,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (_tabController.index != 1) _tabController.animateTo(1);
   }
 
-  // ─── CREATE BOTTOM SHEET (with search) ────────────────────────────────────
+  // ─── CREATE BOTTOM SHEET ──────────────────────────────────────────────────
 
   void _showCreateBottomSheet(BuildContext context) {
     final service = context.read<MFilesService>();
@@ -1006,7 +1017,9 @@ class _HomeScreenState extends State<HomeScreen>
           a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
 
     final searchController = TextEditingController();
+    final searchFocusNode = FocusNode();
     List filteredTypes = List.from(sortedTypes);
+    bool showSearch = false;
 
     showModalBottomSheet(
       context: context,
@@ -1057,63 +1070,98 @@ class _HomeScreenState extends State<HomeScreen>
                         style: TextStyle(
                             fontSize: 20, fontWeight: FontWeight.bold)),
                   ),
+                  // Search icon — toggles the field on/off
+                  IconButton(
+                    icon: Icon(
+                      Icons.search_rounded,
+                      color: showSearch
+                          ? const Color(0xFF072F5F)
+                          : Colors.grey.shade500,
+                    ),
+                    onPressed: () {
+                      setSheet(() {
+                        showSearch = !showSearch;
+                        if (!showSearch) {
+                          searchController.clear();
+                          filteredTypes = List.from(sortedTypes);
+                        } else {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            searchFocusNode.requestFocus();
+                          });
+                        }
+                      });
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ]),
-                const SizedBox(height: 16),
 
-                // Search field
-                TextField(
-                  controller: searchController,
-                  autofocus: false,
-                  decoration: InputDecoration(
-                    hintText: 'Search object types...',
-                    hintStyle: TextStyle(
-                        color: Colors.grey.shade400, fontSize: 14),
-                    prefixIcon: Icon(Icons.search,
-                        color: Colors.grey.shade400, size: 20),
-                    filled: true,
-                    fillColor: Colors.grey.shade50,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
-                    ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                          color: Color(0xFF072F5F), width: 2),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 12),
-                    isDense: true,
-                    suffixIcon: searchController.text.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(Icons.close,
-                                size: 16, color: Colors.grey.shade400),
-                            onPressed: () {
-                              searchController.clear();
-                              setSheet(() => filteredTypes =
-                                  List.from(sortedTypes));
+                // Search field — only shown when toggled on
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  child: showSearch
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: TextField(
+                            controller: searchController,
+                            focusNode: searchFocusNode,
+                            autofocus: false,
+                            decoration: InputDecoration(
+                              hintText: 'Search object types...',
+                              hintStyle: TextStyle(
+                                  color: Colors.grey.shade400, fontSize: 14),
+                              prefixIcon: Icon(Icons.search,
+                                  color: Colors.grey.shade400, size: 20),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade200),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade200),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: Color(0xFF072F5F), width: 2),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              isDense: true,
+                              suffixIcon: searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: Icon(Icons.close,
+                                          size: 16,
+                                          color: Colors.grey.shade400),
+                                      onPressed: () {
+                                        searchController.clear();
+                                        setSheet(() => filteredTypes =
+                                            List.from(sortedTypes));
+                                      },
+                                    )
+                                  : null,
+                            ),
+                            onChanged: (q) {
+                              setSheet(() {
+                                filteredTypes = sortedTypes
+                                    .where((t) => t.displayName
+                                        .toLowerCase()
+                                        .contains(q.toLowerCase()))
+                                    .toList();
+                              });
                             },
-                          )
-                        : null,
-                  ),
-                  onChanged: (q) {
-                    setSheet(() {
-                      filteredTypes = sortedTypes
-                          .where((t) => t.displayName
-                              .toLowerCase()
-                              .contains(q.toLowerCase()))
-                          .toList();
-                    });
-                  },
+                          ),
+                        )
+                      : const SizedBox.shrink(),
                 ),
+
                 const SizedBox(height: 8),
 
                 // Count

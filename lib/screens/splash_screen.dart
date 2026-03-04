@@ -140,7 +140,7 @@ class _SplashScreenState extends State<SplashScreen>
       borderRadius: BorderRadius.circular(8),
       child: Image.asset(
         widget.logoAssetPath ?? 'assets/alignsysnew.png',
-        height: 130,
+        height: 70,
         fit: BoxFit.contain,
       ),
     );

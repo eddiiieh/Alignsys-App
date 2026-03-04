@@ -64,20 +64,14 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
 
   String _friendlyLoginError(Object e) {
     final msg = e.toString().toLowerCase();
-
-    // If your service throws "Exception: login failed 401"
     if (msg.contains('401') || msg.contains('unauthorized')) {
       return 'Invalid username or password.';
     }
-
-    // Common network cases
     if (msg.contains('socketexception') ||
         msg.contains('failed host lookup') ||
         msg.contains('network')) {
       return 'Network error. Check your connection and try again.';
     }
-
-    // Fallback
     return 'Login failed. Please try again.';
   }
 
@@ -119,7 +113,6 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
         _vaults = vaults;
         _selectedVault = vaults.first;
       });
-      // Trigger the slide animation
       _animController.forward();
     } catch (e) {
       if (!mounted) return;
@@ -165,6 +158,16 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     }
   }
 
+  /// Shows the forgot-password bottom sheet modal.
+  void _showForgotPasswordSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _ForgotPasswordSheet(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -184,12 +187,12 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                     borderRadius: BorderRadius.circular(4),
                     child: Image.asset(
                       'assets/alignsysnew.png',
-                      height: 140,
+                      height: 85,
                       fit: BoxFit.cover,
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 22),
 
                 // Animated area: login form slides out, vault picker slides in
                 ClipRect(
@@ -237,7 +240,32 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                           () => _showPassword = !_showPassword),
                                     ),
                                   ),
-                                  const SizedBox(height: 20),
+                                  const SizedBox(height: 12),
+
+                                  // ── FORGOT PASSWORD LINK ──
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: _showForgotPasswordSheet,
+                                      style: TextButton.styleFrom(
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 4, horizontal: 0),
+                                        minimumSize: Size.zero,
+                                        tapTargetSize:
+                                            MaterialTapTargetSize.shrinkWrap,
+                                      ),                                     
+                                      child: Text(
+                                        'Forgot password?',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: _accentBlue.withOpacity(0.85),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 12),
                                   _loading
                                       ? const Center(
                                           child: CircularProgressIndicator(
@@ -300,7 +328,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                         Container(
                                           padding: const EdgeInsets.all(8),
                                           decoration: BoxDecoration(
-                                            color: _primaryBlue.withOpacity(0.1),
+                                            color:
+                                                _primaryBlue.withOpacity(0.1),
                                             borderRadius:
                                                 BorderRadius.circular(8),
                                           ),
@@ -407,7 +436,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                           size: 16, color: Colors.grey),
                                       label: const Text(
                                         'Back to login',
-                                        style: TextStyle(color: Colors.grey),
+                                        style:
+                                            TextStyle(color: Colors.grey),
                                       ),
                                     ),
                                   ],
@@ -476,6 +506,267 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
         filled: true,
         fillColor: Colors.grey.shade50,
         suffixIcon: suffixIcon,
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Forgot Password Bottom Sheet
+// ---------------------------------------------------------------------------
+
+/// Isolated widget so it carries its own state and doesn't rebuild the parent.
+class _ForgotPasswordSheet extends StatefulWidget {
+  const _ForgotPasswordSheet();
+
+  @override
+  State<_ForgotPasswordSheet> createState() => _ForgotPasswordSheetState();
+}
+
+enum _ResetState { idle, loading, success, error }
+
+class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
+  final _emailController = TextEditingController();
+  _ResetState _state = _ResetState.idle;
+  String? _emailError;
+  String _errorMessage = '';
+
+  static const _primaryBlue = Color(0xFF072F5F);
+  static const _accentBlue = Color.fromRGBO(25, 76, 129, 1);
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    super.dispose();
+  }
+
+  bool _isValidEmail(String email) {
+    return RegExp(r'^[\w\-.]+@([\w\-]+\.)+[\w\-]{2,}$').hasMatch(email);
+  }
+
+  Future<void> _submit() async {
+    final email = _emailController.text.trim();
+
+    setState(() {
+      _emailError = email.isEmpty
+          ? 'Please enter your email address.'
+          : !_isValidEmail(email)
+              ? 'Please enter a valid email address.'
+              : null;
+    });
+
+  if (_emailError != null) return;
+
+  setState(() => _state = _ResetState.loading);
+
+  try {
+    await context.read<MFilesService>().requestPasswordReset(email);
+    if (mounted) setState(() => _state = _ResetState.success);
+  } catch (e) {
+    if (mounted) {
+      setState(() {
+        _state = _ResetState.error;
+        _errorMessage = e.toString();
+        //_errorMessage = 'Something went wrong. Please try again or contact support.';
+
+      });
+    }
+  }
+}
+
+@override
+  Widget build(BuildContext context) {
+    // Pad up above the keyboard
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Handle bar
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          // Icon + title
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _primaryBlue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.lock_reset, color: _accentBlue, size: 22),
+              ),
+              const SizedBox(width: 12),
+              const Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Reset your password',
+                    style: TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: _primaryBlue,
+                    ),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    "We'll email you a reset link.",
+                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // ── SUCCESS STATE ──
+          if (_state == _ResetState.success) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_outline,
+                      color: Colors.green.shade600, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Check your inbox! If an account exists for ${_emailController.text.trim()}, you\'ll receive a reset link shortly.',
+                      style: TextStyle(
+                          color: Colors.green.shade800, fontSize: 14),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Done',
+                  style:
+                      TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+            ),
+          ]
+
+          // ── IDLE / LOADING / ERROR STATE ──
+          else ...[
+            TextField(
+              controller: _emailController,
+              keyboardType: TextInputType.emailAddress,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Email address',
+                prefixIcon:
+                    const Icon(Icons.email_outlined, color: _accentBlue),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide:
+                      const BorderSide(color: _accentBlue, width: 2),
+                ),
+                errorText: _emailError,
+                filled: true,
+                fillColor: Colors.grey.shade50,
+              ),
+            ),
+
+            // Inline error banner (API-level errors)
+            if (_state == _ResetState.error) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline,
+                        color: Colors.red.shade600, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _errorMessage,
+                        style: TextStyle(
+                            color: Colors.red.shade700, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed:
+                  _state == _ResetState.loading ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryBlue,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                disabledBackgroundColor: Colors.grey.shade300,
+                elevation: 2,
+              ),
+              child: _state == _ResetState.loading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(_accentBlue),
+                      ),
+                    )
+                  : const Text(
+                      'Send Reset Link',
+                      style: TextStyle(
+                          fontSize: 15, fontWeight: FontWeight.w600),
+                    ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel',
+                  style: TextStyle(color: Colors.grey)),
+            ),
+          ],
+        ],
       ),
     );
   }

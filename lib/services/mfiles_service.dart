@@ -30,6 +30,7 @@ class MFilesService extends ChangeNotifier {
   String? accessToken;
   String? refreshToken;
   String? username;
+  String? fullname;
   int? userId; // Auth system user ID
   int? mfilesUserId; // M-Files user ID (vault-scoped)
 
@@ -157,6 +158,7 @@ class MFilesService extends ChangeNotifier {
     String access,
     String refresh, {
     String? user,
+    String? fullNameValue,
     int? userIdValue,
   }) async {
     final prefs = await SharedPreferences.getInstance();
@@ -170,6 +172,10 @@ class MFilesService extends ChangeNotifier {
       await prefs.setString('username', user);
       username = user;
     }
+    if (fullNameValue != null) {          // ← ADD THIS BLOCK
+    await prefs.setString('full_name', fullNameValue);
+    fullname = fullNameValue;
+  }
     if (userIdValue != null) {
       await prefs.setInt('user_id', userIdValue);
       userId = userIdValue;
@@ -268,6 +274,7 @@ class MFilesService extends ChangeNotifier {
     accessToken = access;
     refreshToken = refresh;
     username = prefs.getString('username');
+    fullname = prefs.getString('full_name');
     userId = prefs.getInt('user_id') ?? _decodeJwtAndGetUserId(accessToken!);
 
     notifyListeners();
@@ -279,6 +286,7 @@ class MFilesService extends ChangeNotifier {
     accessToken = prefs.getString('access_token');
     refreshToken = prefs.getString('refresh_token');
     username = prefs.getString('username');
+    fullname = prefs.getString('full_name');
     userId = prefs.getInt('user_id');
     mfilesUserId = prefs.getInt('mfiles_user_id');
 
@@ -314,13 +322,15 @@ class MFilesService extends ChangeNotifier {
     await prefs.remove('refresh_token');
     await prefs.remove('user_id');
     await prefs.remove('mfiles_user_id');
-    await prefs.remove('username');          
+    await prefs.remove('username');  
+    await prefs.remove('full_name');        
     await prefs.remove('selectedVaultGuid'); 
     await prefs.remove('vaultGuid');         
 
     accessToken = null;
     refreshToken = null;
     userId = null;
+    fullname = null;
     mfilesUserId = null;
     selectedVault = null;
 
@@ -366,6 +376,8 @@ class MFilesService extends ChangeNotifier {
 
     final access = data['access'] as String?;
     final refresh = data['refresh'] as String?;
+    // Check what field your auth API returns for the user's name:
+    final name = (data['full_name'] ?? data['name'] ?? data['fullName'] ?? '').toString();
     
     if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
       throw Exception('Login failed: token missing in response');
@@ -386,12 +398,27 @@ class MFilesService extends ChangeNotifier {
       accessToken!,
       refreshToken!,
       user: email,
+      fullNameValue: name.isNotEmpty ? name : null,
       userIdValue: userId,
     );
 
     print('✅ Login successful, tokens saved');
     return true;
   }
+
+  Future<void> requestPasswordReset(String email) async {
+  final response = await http.post(
+    Uri.parse('https://auth.alignsys.tech/api/password_reset/'),
+    headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: 'email=${Uri.encodeComponent(email)}',
+  );
+
+  if (response.statusCode != 200 &&
+      response.statusCode != 201 &&
+      response.statusCode != 204) {
+    throw Exception('Password reset failed: ${response.statusCode} — ${response.body}');
+  }
+}
 
 
   Future<List<Vault>> getUserVaults() async {
@@ -878,15 +905,19 @@ class MFilesService extends ChangeNotifier {
 
     try {
       final url = Uri.parse('$baseUrl/api/Views/GetAssigned/$vaultGuidWithBraces/$mfilesUserId');
-      final response = await http.get(url, headers: _authHeadersNoJson);
+
+      final response = await _authenticatedRequest(
+        () => http.get(url, headers: _authHeadersNoJson),
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        assignedObjects = data.map((e) => ViewObject.fromJson(e)).toList();
-        
-        // ✅ Warm up extensions after fetching
-        warmExtensionsForObjects(assignedObjects);
+        assignedObjects = data
+            .whereType<Map<String, dynamic>>()
+            .map((e) => ViewObject.fromJson(e))
+            .toList();
 
+        warmExtensionsForObjects(assignedObjects);
         notifyListeners();
       } else {
         _setError('Failed to fetch assigned objects: ${response.statusCode}');
@@ -988,6 +1019,7 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
+  //(This prevents token-expiry edge cases + makes behavior consistent.)
   Future<List<ObjectFile>> fetchObjectFiles({
     required int objectId,
     required int classId,
@@ -1003,7 +1035,9 @@ class MFilesService extends ChangeNotifier {
 
     debugPrint('📦 GetObjectFiles args: objectId=$objectId classId=$classId vault=$vaultGuidWithBraces');
 
-    final resp = await http.get(url, headers: _authHeadersNoJson);
+    final resp = await _authenticatedRequest(
+      () => http.get(url, headers: _authHeadersNoJson),
+    );
 
     if (resp.statusCode == 404) return <ObjectFile>[];
 
@@ -1012,7 +1046,10 @@ class MFilesService extends ChangeNotifier {
     }
 
     final data = json.decode(resp.body) as List;
-    return data.map((e) => ObjectFile.fromJson(e as Map<String, dynamic>)).toList();
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map((e) => ObjectFile.fromJson(e))
+        .toList();
   }
 
   // ==================== FILE EXTENSION CACHE (for icons) ====================
@@ -1028,11 +1065,13 @@ class MFilesService extends ChangeNotifier {
     return e.startsWith('.') ? e.substring(1) : e;
   }
 
+  //    Key change: STOP requiring classId > 0.
+  //    Some vaults/views return classId=0 for document rows; your old guard blocks caching -> "?" icons forever.
   Future<void> ensureExtensionForObject({
     required int objectId,
     required int classId,
   }) async {
-    if (objectId <= 0 || classId <= 0) return;
+    if (objectId <= 0) return;
 
     if (_extByObjectId.containsKey(objectId)) return;
     if (_extInFlight.contains(objectId)) return;
@@ -1056,14 +1095,18 @@ class MFilesService extends ChangeNotifier {
   void warmExtensionsForItems(List<ViewContentItem> items) {
     for (final it in items) {
       if (!it.isObject) continue;
-      if (it.id <= 0 || it.classId <= 0) continue;
+      if (it.id <= 0) continue;
+
+      // allow classId = 0
       ensureExtensionForObject(objectId: it.id, classId: it.classId);
     }
   }
 
   void warmExtensionsForObjects(List<ViewObject> objects) {
     for (final o in objects) {
-      if (o.id <= 0 || o.classId <= 0) continue;
+      if (o.id <= 0) continue;
+
+      // allow classId = 0
       ensureExtensionForObject(objectId: o.id, classId: o.classId);
     }
   }
@@ -1551,8 +1594,18 @@ int extractPdfFileId(Map<String, dynamic> m) {
 
     final uri = Uri.parse('$baseUrl/api/Comments');
 
+    // Use fullName if available, fall back to username (email), then empty
+  final displayName = (fullname?.trim().isNotEmpty == true
+      ? fullname!
+      : username ?? '')
+      .trim();
+
+  final prefixedComment = displayName.isNotEmpty
+      ? '$displayName : $comment'
+      : comment;
+
     final payload = {
-      "comment": comment,
+      "comment": prefixedComment,
       "objectId": objectId,
       "vaultGuid": vaultGuid,
       "objectTypeId": objectTypeId,

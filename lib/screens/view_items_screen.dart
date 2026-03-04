@@ -1,3 +1,5 @@
+// ViewItemsScreen.dart (UPDATED - copy/paste whole file)
+
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
@@ -47,10 +49,34 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
 
+  // ✅ Unified icon-tap claim: timestamp-based, set synchronously.
+  bool _suppressRowTap = false;
+  DateTime? _lastIconTap;
+
+  bool _tryClaimIconTap() {
+    final now = DateTime.now();
+    if (_lastIconTap != null &&
+        now.difference(_lastIconTap!) < const Duration(milliseconds: 350)) {
+      return false;
+    }
+    _lastIconTap = now;
+    _suppressRowTap = true;
+    // Clear after the gesture arena has fully resolved.
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) _suppressRowTap = false;
+    });
+    return true;
+  }
+
   @override
   void initState() {
     super.initState();
     _items = widget.items;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<MFilesService>().warmExtensionsForItems(_items);
+    });
   }
 
   @override
@@ -139,29 +165,23 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     }
 
     segments.add(BreadcrumbSegment(label: widget.title));
-
     return BreadcrumbBar(segments: segments);
   }
-
-  // ─── ROW (Fix A: Material + clipBehavior) ─────────────────────────────────
 
   Widget _buildRow(ViewContentItem item, bool isLast) {
     final subtitle = _subtitleLabel(item);
     final svc = context.watch<MFilesService>();
 
     final bool isObject = item.isObject && item.id > 0;
-    final bool hasRelationships =
-        isObject && item.objectTypeId > 0 && item.classId > 0;
+    final bool hasRelationships = isObject && item.objectTypeId > 0 && item.classId > 0;
 
     final bool infoExpanded = _expandedInfoItemId == item.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
 
-    // Dim other rows when one is expanded
     final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
 
-    final BorderRadius radius = isLast
-        ? const BorderRadius.vertical(bottom: Radius.circular(12))
-        : BorderRadius.zero;
+    final BorderRadius radius =
+        isLast ? const BorderRadius.vertical(bottom: Radius.circular(12)) : BorderRadius.zero;
 
     final ViewObject asViewObj = ViewObject(
       id: item.id,
@@ -176,46 +196,56 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       lastModifiedUtc: item.lastModifiedUtc,
     );
 
+    // ✅ TapRegion removed — see ViewDetailsScreen for full explanation.
     return Column(
       children: [
         AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: isDimmed ? 0.45 : 1.0,
-          child: Material(
-            color: infoExpanded
-                ? const Color(0xFF072F5F).withOpacity(0.03)
-                : Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side: infoExpanded
-                  ? const BorderSide(color: Color(0xFF072F5F), width: 1.5)
-                  : BorderSide.none,
-            ),
-            clipBehavior: Clip.antiAlias, // <- stops the blue wash
-            elevation: 0,
-            child: InkWell(
-              borderRadius: radius,
-              onTap: () {
-                if (isDimmed) {
-                  setState(() => _expandedInfoItemId = null);
-                  return;
-                }
-                _handleTap(item);
-              },
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    child: Row(
-                      children: [
-                        // Relationships chevron
-                        if (hasRelationships) ...[
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () => _toggleRelationships(item.id),
-                              borderRadius: BorderRadius.circular(4),
+            duration: const Duration(milliseconds: 200),
+            opacity: isDimmed ? 0.45 : 1.0,
+            child: Material(
+              color: infoExpanded ? const Color(0xFF072F5F).withOpacity(0.03) : Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: radius,
+                side: infoExpanded
+                    ? const BorderSide(color: Color(0xFF072F5F), width: 1.5)
+                    : BorderSide.none,
+              ),
+              clipBehavior: Clip.antiAlias,
+              elevation: 0,
+              child: InkWell(
+                borderRadius: radius,
+                onTap: () {
+                  // ✅ Guard: reject if an icon tap was just claimed.
+                  final now = DateTime.now();
+                  if (_suppressRowTap) return;
+                  if (_lastIconTap != null &&
+                      now.difference(_lastIconTap!) < const Duration(milliseconds: 350)) return;
+
+                  if (isDimmed) {
+                    setState(() {
+                      _expandedInfoItemId = null;
+                      _expandedRelationshipsItemId = null;
+                    });
+                    return;
+                  }
+
+                  _handleTap(item);
+                },
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                      child: Row(
+                        children: [
+                          // ✅ Relationships chevron — GestureDetector with opaque hit-test
+                          // so the gesture is fully consumed here and never reaches the row.
+                          if (hasRelationships) ...[
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                if (!_tryClaimIconTap()) return;
+                                _toggleRelationships(item.id);
+                              },
                               child: Padding(
                                 padding: const EdgeInsets.all(4),
                                 child: Icon(
@@ -227,72 +257,64 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                        ] else
-                          const SizedBox(width: 4),
+                            const SizedBox(width: 6),
+                          ] else
+                            const SizedBox(width: 4),
 
-                        // Icon
-                        (item.isObject && svc.isDocumentContentItem(item))
-                            ? FileTypeBadge(
-                                extension:
-                                    svc.cachedExtensionForObject(item.id) ?? '',
-                                size: 28,
-                              )
-                            : const Icon(
-                                Icons.folder_rounded,
-                                color: Color(0xFF072F5F),
-                                size: 22,
-                              ),
-                        const SizedBox(width: 10),
-
-                        // Title & subtitle
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                item.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
+                          (item.isObject && svc.isDocumentContentItem(item))
+                              ? FileTypeBadge(
+                                  extension: svc.cachedExtensionForObject(item.id) ?? '',
+                                  size: 28,
+                                )
+                              : const Icon(
+                                  Icons.folder_rounded,
+                                  color: Color(0xFF072F5F),
+                                  size: 22,
                                 ),
-                              ),
-                              if (subtitle != null &&
-                                  subtitle.trim().isNotEmpty) ...[
-                                const SizedBox(height: 2),
+
+                          const SizedBox(width: 10),
+
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
                                 Text(
-                                  subtitle,
+                                  item.title,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
+                                  style: const TextStyle(
+                                      fontSize: 14, fontWeight: FontWeight.w600),
                                 ),
+                                if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    subtitle,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        fontSize: 12, color: Colors.grey.shade600),
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
-                        ),
 
-                        // Info icon — objects only
-                        if (isObject) ...[
-                          const SizedBox(width: 8),
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: () => _toggleInfo(item.id),
-                              borderRadius: BorderRadius.circular(20),
+                          // ✅ Info icon — GestureDetector with opaque hit-test
+                          // consumes the gesture before it can bubble to the row InkWell.
+                          if (isObject) ...[
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () {
+                                if (!_tryClaimIconTap()) return;
+                                _toggleInfo(item.id);
+                              },
                               child: Container(
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   color: infoExpanded
-                                      ? const Color(0xFF072F5F)
-                                          .withOpacity(0.15)
-                                      : const Color(0xFF072F5F)
-                                          .withOpacity(0.08),
+                                      ? const Color(0xFF072F5F).withOpacity(0.15)
+                                      : const Color(0xFF072F5F).withOpacity(0.08),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -304,37 +326,32 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                 ),
                               ),
                             ),
-                          ),
-                        ] else
-                          Icon(Icons.chevron_right,
-                              size: 18, color: Colors.grey.shade500),
-                      ],
+                          ] else
+                            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  // Info dropdown
-                  if (infoExpanded && isObject) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
-                    ObjectInfoDropdown(obj: asViewObj),
-                  ],
+                    if (infoExpanded && isObject) ...[
+                      Divider(height: 1, color: Colors.grey.shade200),
+                      ObjectInfoDropdown(obj: asViewObj),
+                    ],
 
-                  // Relationships dropdown
-                  if (relationshipsExpanded && hasRelationships) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      child: RelationshipsDropdown(obj: asViewObj),
-                    ),
+                    if (relationshipsExpanded && hasRelationships) ...[
+                      Divider(height: 1, color: Colors.grey.shade200),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                        child: RelationshipsDropdown(obj: asViewObj),
+                      ),
+                    ],
                   ],
-                ],
+                ),
               ),
             ),
           ),
-        ),
-        if (!isLast)
-          Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
-      ],
-    );
+          if (!isLast) Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
+        ],
+      );
   }
 
   Future<void> _handleTap(ViewContentItem item) async {
@@ -431,8 +448,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     );
   }
 
-  // ─── BUILD ────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final filtered = _applyFilter(_items);
@@ -464,7 +479,19 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           Expanded(
             child: filtered.isEmpty
                 ? const Center(child: Text('No items found'))
-                : Scrollbar(
+                // ✅ Dismiss expanded dropdowns when tapping empty list space.
+                : GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () {
+                      if (_expandedInfoItemId != null ||
+                          _expandedRelationshipsItemId != null) {
+                        setState(() {
+                          _expandedInfoItemId = null;
+                          _expandedRelationshipsItemId = null;
+                        });
+                      }
+                    },
+                    child: Scrollbar(
                     controller: _itemsScroll,
                     thumbVisibility: false,
                     interactive: true,
@@ -490,16 +517,14 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           child: Column(
                             children: List.generate(
                               filtered.length,
-                              (i) => _buildRow(
-                                filtered[i],
-                                i == filtered.length - 1,
-                              ),
+                              (i) => _buildRow(filtered[i], i == filtered.length - 1),
                             ),
                           ),
                         ),
                       ],
                     ),
-                  ),
+                    ), // Scrollbar
+                  ), // GestureDetector
           ),
         ],
       ),
@@ -531,8 +556,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
           suffixIcon: _filter.isEmpty
               ? null
               : IconButton(
