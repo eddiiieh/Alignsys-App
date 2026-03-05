@@ -444,6 +444,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   }
 
   // ---------- Searchable dropdown dialog ----------
+  // FIX 2: Named FocusNode so we can call requestFocus in a postFrameCallback,
+  // guaranteeing the keyboard + cursor are live the moment the dialog opens.
   Future<T?> _showSearchableDropdown<T>({
     required String title,
     required List<T> items,
@@ -451,11 +453,17 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     T? selected,
   }) async {
     final controller = TextEditingController();
+    final focusNode = FocusNode(); // ← FIX 2: named focus node
     List<T> filtered = List.from(items);
 
-    return showDialog<T>(
+    final result = await showDialog<T>(
       context: context,
       builder: (ctx) {
+        // ← FIX 2: request focus after the dialog frame is rendered
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          focusNode.requestFocus();
+        });
+
         return StatefulBuilder(
           builder: (ctx, setInner) {
             return Dialog(
@@ -468,163 +476,171 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   maxHeight: MediaQuery.of(context).size.height * 0.75,
                 ),
                 child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Header
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 12, 16),
-                    decoration: const BoxDecoration(
-                      color: _primaryBlue,
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 12, 16),
+                      decoration: const BoxDecoration(
+                        color: _primaryBlue,
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white, size: 20),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // Search field
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: TextField(
-                      controller: controller,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: 'Search...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                        prefixIcon: Icon(Icons.search, color: Colors.grey.shade400, size: 20),
-                        filled: true,
-                        fillColor: Colors.grey.shade50,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade200),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: Colors.grey.shade200),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: _primaryBlue, width: 2),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                        isDense: true,
-                        suffixIcon: controller.text.isNotEmpty
-                            ? IconButton(
-                                icon: Icon(Icons.close, size: 16, color: Colors.grey.shade400),
-                                onPressed: () {
-                                  controller.clear();
-                                  setInner(() => filtered = List.from(items));
-                                },
-                              )
-                            : null,
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                            onPressed: () => Navigator.pop(ctx),
+                          ),
+                        ],
                       ),
-                      onChanged: (q) {
-                        setInner(() {
-                          filtered = items
-                              .where((i) => labelOf(i).toLowerCase().contains(q.toLowerCase()))
-                              .toList();
-                        });
-                      },
                     ),
-                  ),
-                  // Count
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Row(
-                      children: [
-                        Text(
-                          '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                    // Search field — active immediately, no tap needed
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      child: TextField(
+                        controller: controller,
+                        focusNode: focusNode, // ← FIX 2: attach named focus node
+                        autofocus: true,
+                        decoration: InputDecoration(
+                          hintText: 'Search...',
+                          hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
+                          prefixIcon: Icon(Icons.search, color: Colors.grey.shade400, size: 20),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: const BorderSide(color: _primaryBlue, width: 2),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          isDense: true,
+                          suffixIcon: controller.text.isNotEmpty
+                              ? IconButton(
+                                  icon: Icon(Icons.close, size: 16, color: Colors.grey.shade400),
+                                  onPressed: () {
+                                    controller.clear();
+                                    setInner(() => filtered = List.from(items));
+                                  },
+                                )
+                              : null,
                         ),
-                      ],
+                        onChanged: (q) {
+                          setInner(() {
+                            filtered = items
+                                .where((i) => labelOf(i).toLowerCase().contains(q.toLowerCase()))
+                                .toList();
+                          });
+                        },
+                      ),
                     ),
-                  ),
-                  // List — Flexible so it never overflows the dialog
-                  Flexible(
-                    child: filtered.isEmpty
-                        ? Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.search_off, size: 36, color: Colors.grey.shade300),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'No matches found',
-                                  style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.separated(
-                            shrinkWrap: true,
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            itemCount: filtered.length,
-                            separatorBuilder: (_, __) =>
-                                Divider(height: 1, color: Colors.grey.shade100),
-                            itemBuilder: (_, index) {
-                              final item = filtered[index];
-                              final label = labelOf(item);
-                              final isSelected = selected != null && labelOf(selected) == label;
-                              return Material(
-                                color: isSelected
-                                    ? const Color(0xFFEFF6FF)
-                                    : Colors.transparent,
-                                child: InkWell(
-                                  onTap: () => Navigator.pop(ctx, item),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 20, vertical: 14),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            label,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight: isSelected
-                                                  ? FontWeight.w600
-                                                  : FontWeight.w500,
-                                              color: isSelected
-                                                  ? const Color(0xFF1E40AF)
-                                                  : const Color(0xFF1A1A1A),
+                    // Count
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                      child: Row(
+                        children: [
+                          Text(
+                            '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                          ),
+                        ],
+                      ),
+                    ),
+                    // List
+                    Flexible(
+                      child: filtered.isEmpty
+                          ? Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.search_off, size: 36, color: Colors.grey.shade300),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'No matches found',
+                                    style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) =>
+                                  Divider(height: 1, color: Colors.grey.shade100),
+                              itemBuilder: (_, index) {
+                                final item = filtered[index];
+                                final label = labelOf(item);
+                                final isSelected =
+                                    selected != null && labelOf(selected) == label;
+                                return Material(
+                                  color: isSelected
+                                      ? const Color(0xFFEFF6FF)
+                                      : Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () => Navigator.pop(ctx, item),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 20, vertical: 14),
+                                      child: Row(
+                                        children: [
+                                          Expanded(
+                                            child: Text(
+                                              label,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: isSelected
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w500,
+                                                color: isSelected
+                                                    ? const Color(0xFF1E40AF)
+                                                    : const Color(0xFF1A1A1A),
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        if (isSelected)
-                                          const Icon(Icons.check_rounded,
-                                              size: 18, color: Color(0xFF2563EB)),
-                                      ],
+                                          if (isSelected)
+                                            const Icon(Icons.check_rounded,
+                                                size: 18, color: Color(0xFF2563EB)),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
+                                );
+                              },
+                            ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
               ),
-              ), // ConstrainedBox
             );
           },
         );
       },
     );
+
+    // Do NOT dispose focusNode or controller here — the dialog route may still
+    // be animating out and LookupField's TextField can still reference them.
+    // Flutter disposes local FocusNodes that were never attached to a persistent
+    // widget tree automatically when the route is fully removed.
+    return result;
   }
 
   // ---------- Field builders ----------
@@ -669,8 +685,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: Text(
                     has ? _formatDateForUi(v) : 'Tap to select date',
                     style: _inputStyle.copyWith(
-                      color: has ? const Color(0xFF111827) : Colors.grey.shade600,
-                      fontWeight: has ? FontWeight.w600 : FontWeight.w400,
+                      color: has ? const Color(0xFF111827) : Colors.grey.shade500,
+                      fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -728,8 +744,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: Text(
                     has ? _formatTimeForUi(v) : 'Tap to select time',
                     style: _inputStyle.copyWith(
-                      color: has ? const Color(0xFF111827) : Colors.grey.shade600,
-                      fontWeight: has ? FontWeight.w600 : FontWeight.w400,
+                      color: has ? const Color(0xFF111827) : Colors.grey.shade500,
+                      fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
@@ -748,163 +764,168 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
   Widget _buildField(ClassProperty property) {
     switch (property.propertyType) {
-      case 'MFDatatypeLookup': {
-        final hasValue = _formValues[property.id] != null;
-        final selectedItems = _selectedLookupItems[property.id] ?? [];
-        final selectedText = selectedItems.isNotEmpty ? selectedItems.first.displayValue : '';
+      case 'MFDatatypeLookup':
+        {
+          final hasValue = _formValues[property.id] != null;
+          final selectedItems = _selectedLookupItems[property.id] ?? [];
 
-        return _lookupShell(
-          label: property.title,
-          required: property.isRequired,
-          hasValue: hasValue,
-          isSingleSelect: true,
-          field: LookupField(
-            title: property.title,
+          return _lookupShell(
+            label: property.title,
+            required: property.isRequired,
+            hasValue: hasValue,
+            isSingleSelect: true,
+            field: LookupField(
+              title: property.title,
+              propertyId: property.id,
+              isMultiSelect: false,
+              preSelectedIds: _formValues[property.id] == null
+                  ? const []
+                  : [(_formValues[property.id] as int)],
+              onSelected: (items) {
+                setState(() {
+                  if (items.isNotEmpty) {
+                    _formValues[property.id] = items.first.id;
+                    _selectedLookupItems[property.id] = items;
+                  } else {
+                    _formValues[property.id] = null;
+                    _selectedLookupItems.remove(property.id);
+                  }
+                });
+              },
+            ),
+          );
+        }
+
+      case 'MFDatatypeMultiSelectLookup':
+        {
+          final selectedItems = _selectedLookupItems[property.id] ?? [];
+          final selectedIds = (_formValues[property.id] is List)
+              ? (_formValues[property.id] as List).cast<int>()
+              : <int>[];
+
+          final selectedTexts =
+              selectedItems.map((e) => e.displayValue.toString()).toList();
+
+          return _lookupShell(
+            label: property.title,
+            required: property.isRequired,
+            hasValue: selectedIds.isNotEmpty,
+            selectedTexts: selectedTexts,
+            selectedItems: selectedItems,
             propertyId: property.id,
-            isMultiSelect: false,
-            preSelectedIds: _formValues[property.id] == null
-                ? const []
-                : [(_formValues[property.id] as int)],
-            onSelected: (items) {
-              setState(() {
-                if (items.isNotEmpty) {
-                  _formValues[property.id] = items.first.id;
+            field: LookupField(
+              key: ValueKey(
+                ((_formValues[property.id] is List)
+                        ? (_formValues[property.id] as List).cast<int>()
+                        : <int>[])
+                    .join(','),
+              ),
+              title: property.title,
+              propertyId: property.id,
+              isMultiSelect: true,
+              preSelectedIds: (_formValues[property.id] is List)
+                  ? (_formValues[property.id] as List).cast<int>()
+                  : const [],
+              onSelected: (items) {
+                setState(() {
+                  _formValues[property.id] = items.map((i) => i.id).toList();
                   _selectedLookupItems[property.id] = items;
-                } else {
-                  _formValues[property.id] = null;
-                  _selectedLookupItems.remove(property.id);
+                });
+              },
+            ),
+          );
+        }
+
+      case 'MFDatatypeText':
+        {
+          final isFilled = _fieldFilled[property.id] == true;
+          return _fieldShell(
+            label: property.title,
+            required: property.isRequired,
+            field: TextFormField(
+              decoration: _decoBox(
+                hint: 'Enter ${property.title.toLowerCase()}',
+                filled: isFilled,
+              ),
+              style: _inputStyle,
+              validator: (value) {
+                if (property.isRequired && (value == null || value.trim().isEmpty)) {
+                  return 'This field is required';
                 }
-              });
-            },
-          ),
-        );
-      }
-
-      case 'MFDatatypeMultiSelectLookup': {
-        final selectedItems = _selectedLookupItems[property.id] ?? [];
-        final selectedIds = (_formValues[property.id] is List)
-            ? (_formValues[property.id] as List).cast<int>()
-            : <int>[];
-
-        final selectedTexts = selectedItems.map((e) => e.displayValue.toString()).toList();
-
-        return _lookupShell(
-          label: property.title,
-          required: property.isRequired,
-          hasValue: selectedIds.isNotEmpty,
-          selectedTexts: selectedTexts,
-          selectedItems: selectedItems,
-          propertyId: property.id,
-          field: LookupField(
-            // Key changes whenever the selection changes, so LookupField's
-            // didUpdateWidget fires and re-syncs its internal state.
-            key: ValueKey(
-              ((_formValues[property.id] is List)
-                      ? (_formValues[property.id] as List).cast<int>()
-                      : <int>[])
-                  .join(','),
+                return null;
+              },
+              onChanged: (value) {
+                setState(() {
+                  _formValues[property.id] = value;
+                  _fieldFilled[property.id] = value.trim().isNotEmpty;
+                });
+              },
             ),
-            title: property.title,
-            propertyId: property.id,
-            isMultiSelect: true,
-            preSelectedIds: (_formValues[property.id] is List)
-                ? (_formValues[property.id] as List).cast<int>()
-                : const [],
-            onSelected: (items) {
-              setState(() {
-                _formValues[property.id] = items.map((i) => i.id).toList();
-                _selectedLookupItems[property.id] = items;
-              });
-            },
-          ),
-        );
-      }
+          );
+        }
 
-      case 'MFDatatypeText': {
-        final isFilled = _fieldFilled[property.id] == true;
-        return _fieldShell(
-          label: property.title,
-          required: property.isRequired,
-          field: TextFormField(
-            decoration: _decoBox(
-              hint: 'Enter ${property.title.toLowerCase()}',
-              filled: isFilled,
+      case 'MFDatatypeMultiLineText':
+        {
+          final isFilled = _fieldFilled[property.id] == true;
+          return _fieldShell(
+            label: property.title,
+            required: property.isRequired,
+            field: TextFormField(
+              decoration: _decoBox(
+                hint: 'Enter ${property.title.toLowerCase()}',
+                filled: isFilled,
+              ),
+              style: _inputStyle,
+              maxLines: 4,
+              validator: (value) {
+                if (property.isRequired && (value == null || value.trim().isEmpty)) {
+                  return 'This field is required';
+                }
+                return null;
+              },
+              onChanged: (value) {
+                setState(() {
+                  _formValues[property.id] = value;
+                  _fieldFilled[property.id] = value.trim().isNotEmpty;
+                });
+              },
             ),
-            style: _inputStyle,
-            validator: (value) {
-              if (property.isRequired && (value == null || value.trim().isEmpty)) {
-                return 'This field is required';
-              }
-              return null;
-            },
-            onChanged: (value) {
-              setState(() {
-                _formValues[property.id] = value;
-                _fieldFilled[property.id] = value.trim().isNotEmpty;
-              });
-            },
-          ),
-        );
-      }
+          );
+        }
 
-      case 'MFDatatypeMultiLineText': {
-        final isFilled = _fieldFilled[property.id] == true;
-        return _fieldShell(
-          label: property.title,
-          required: property.isRequired,
-          field: TextFormField(
-            decoration: _decoBox(
-              hint: 'Enter ${property.title.toLowerCase()}',
-              filled: isFilled,
+      case 'MFDatatypeInteger':
+        {
+          final isFilled = _fieldFilled[property.id] == true;
+          return _fieldShell(
+            label: property.title,
+            required: property.isRequired,
+            field: TextFormField(
+              decoration: _decoBox(
+                hint: 'Enter ${property.title.toLowerCase()}',
+                filled: isFilled,
+              ),
+              style: _inputStyle,
+              keyboardType: TextInputType.number,
+              validator: (value) {
+                if (property.isRequired && (value == null || value.trim().isEmpty)) {
+                  return 'This field is required';
+                }
+                if (value != null &&
+                    value.trim().isNotEmpty &&
+                    int.tryParse(value) == null) {
+                  return 'Enter a valid number';
+                }
+                return null;
+              },
+              onChanged: (value) {
+                setState(() {
+                  _formValues[property.id] = int.tryParse(value);
+                  _fieldFilled[property.id] = value.trim().isNotEmpty;
+                });
+              },
             ),
-            style: _inputStyle,
-            maxLines: 4,
-            validator: (value) {
-              if (property.isRequired && (value == null || value.trim().isEmpty)) {
-                return 'This field is required';
-              }
-              return null;
-            },
-            onChanged: (value) {
-              setState(() {
-                _formValues[property.id] = value;
-                _fieldFilled[property.id] = value.trim().isNotEmpty;
-              });
-            },
-          ),
-        );
-      }
-
-      case 'MFDatatypeInteger': {
-        final isFilled = _fieldFilled[property.id] == true;
-        return _fieldShell(
-          label: property.title,
-          required: property.isRequired,
-          field: TextFormField(
-            decoration: _decoBox(
-              hint: 'Enter ${property.title.toLowerCase()}',
-              filled: isFilled,
-            ),
-            style: _inputStyle,
-            keyboardType: TextInputType.number,
-            validator: (value) {
-              if (property.isRequired && (value == null || value.trim().isEmpty)) {
-                return 'This field is required';
-              }
-              if (value != null && value.trim().isNotEmpty && int.tryParse(value) == null) {
-                return 'Enter a valid number';
-              }
-              return null;
-            },
-            onChanged: (value) {
-              setState(() {
-                _formValues[property.id] = int.tryParse(value);
-                _fieldFilled[property.id] = value.trim().isNotEmpty;
-              });
-            },
-          ),
-        );
-      }
+          );
+        }
 
       case 'MFDatatypeDate':
         return _dateField(property);
@@ -912,89 +933,92 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       case 'MFDatatypeTime':
         return _timeField(property);
 
-      case 'MFDatatypeBoolean': {
-        final current = _formValues[property.id];
-        final bool? currentBool = current is bool ? current : null;
-        final isFilled = currentBool != null;
+      case 'MFDatatypeBoolean':
+        {
+          final current = _formValues[property.id];
+          final bool? currentBool = current is bool ? current : null;
+          final isFilled = currentBool != null;
 
-        return _fieldShell(
-          label: property.title,
-          required: property.isRequired,
-          field: GestureDetector(
-            onTap: () async {
-              final result = await _showSearchableDropdown<bool>(
-                title: property.title,
-                items: const [true, false],
-                labelOf: (v) => v ? 'Yes' : 'No',
-                selected: currentBool,
-              );
-              if (result != null) {
-                setState(() => _formValues[property.id] = result);
-              }
-            },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              decoration: BoxDecoration(
-                color: isFilled ? _filledFill : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isFilled ? _filledBorder : Colors.grey.shade200,
-                  width: isFilled ? 1.5 : 1,
+          return _fieldShell(
+            label: property.title,
+            required: property.isRequired,
+            field: GestureDetector(
+              onTap: () async {
+                final result = await _showSearchableDropdown<bool>(
+                  title: property.title,
+                  items: const [true, false],
+                  labelOf: (v) => v ? 'Yes' : 'No',
+                  selected: currentBool,
+                );
+                if (result != null) {
+                  setState(() => _formValues[property.id] = result);
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: isFilled ? _filledFill : Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: isFilled ? _filledBorder : Colors.grey.shade200,
+                    width: isFilled ? 1.5 : 1,
+                  ),
                 ),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      currentBool == null
-                          ? 'Select ${property.title.toLowerCase()}'
-                          : (currentBool ? 'Yes' : 'No'),
-                      style: _inputStyle.copyWith(
-                        color: currentBool == null
-                            ? Colors.grey.shade500
-                            : const Color(0xFF111827),
-                        fontWeight: currentBool == null ? FontWeight.w400 : FontWeight.w600,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        currentBool == null
+                            ? 'Select ${property.title.toLowerCase()}'
+                            : (currentBool ? 'Yes' : 'No'),
+                        style: _inputStyle.copyWith(
+                          color: currentBool == null
+                              ? Colors.grey.shade500
+                              : const Color(0xFF111827),
+                          fontWeight:
+                              currentBool == null ? FontWeight.w400 : FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
-                  if (isFilled)
-                    const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18)
-                  else
-                    Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600, size: 20),
-                ],
+                    if (isFilled)
+                      const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18)
+                    else
+                      Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade600, size: 20),
+                  ],
+                ),
               ),
             ),
-          ),
-        );
-      }
+          );
+        }
 
-      default: {
-        final isFilled = _fieldFilled[property.id] == true;
-        return _fieldShell(
-          label: property.title,
-          required: property.isRequired,
-          field: TextFormField(
-            decoration: _decoBox(
-              hint: 'Enter ${property.title.toLowerCase()}',
-              filled: isFilled,
+      default:
+        {
+          final isFilled = _fieldFilled[property.id] == true;
+          return _fieldShell(
+            label: property.title,
+            required: property.isRequired,
+            field: TextFormField(
+              decoration: _decoBox(
+                hint: 'Enter ${property.title.toLowerCase()}',
+                filled: isFilled,
+              ),
+              style: _inputStyle,
+              validator: (value) {
+                if (property.isRequired && (value == null || value.trim().isEmpty)) {
+                  return 'This field is required';
+                }
+                return null;
+              },
+              onChanged: (value) {
+                setState(() {
+                  _formValues[property.id] = value;
+                  _fieldFilled[property.id] = value.trim().isNotEmpty;
+                });
+              },
             ),
-            style: _inputStyle,
-            validator: (value) {
-              if (property.isRequired && (value == null || value.trim().isEmpty)) {
-                return 'This field is required';
-              }
-              return null;
-            },
-            onChanged: (value) {
-              setState(() {
-                _formValues[property.id] = value;
-                _fieldFilled[property.id] = value.trim().isNotEmpty;
-              });
-            },
-          ),
-        );
-      }
+          );
+        }
     }
   }
 
@@ -1111,7 +1135,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         _showSnackBar('Name or title is required', isError: true);
         return;
       }
-      properties.add(PropertyValueRequest(propId: 0, value: title, propertyType: 'MFDatatypeText'));
+      properties.add(
+          PropertyValueRequest(propId: 0, value: title, propertyType: 'MFDatatypeText'));
     }
 
     final request = ObjectCreationRequest(
@@ -1160,7 +1185,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 borderRadius: BorderRadius.circular(8),
                 child: Image.asset(
                   'assets/alignsysnew.png',
-                  height: 55,
+                  height: 36,
                   fit: BoxFit.cover,
                 ),
               ),
@@ -1203,13 +1228,15 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                 const SizedBox(height: 4),
                                 GestureDetector(
                                   onTap: () async {
-                                    final result = await _showSearchableDropdown<VaultObjectType>(
+                                    final result =
+                                        await _showSearchableDropdown<VaultObjectType>(
                                       title: 'Select Object Type',
                                       items: service.objectTypes,
                                       labelOf: (t) => t.displayName,
                                       selected: _currentObjectType,
                                     );
-                                    if (result != null && result.id != _currentObjectType.id) {
+                                    if (result != null &&
+                                        result.id != _currentObjectType.id) {
                                       await _onObjectTypeChanged(result);
                                     }
                                   },
@@ -1288,12 +1315,14 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                             const LinearProgressIndicator(
                               minHeight: 3,
                               backgroundColor: Color(0xFFE8EEF5),
-                              valueColor: AlwaysStoppedAnimation<Color>(_primaryBlue),
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(_primaryBlue),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               'Loading classes...',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade600),
                             ),
                           ],
                         )
@@ -1339,7 +1368,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                             ? const Color(0xFF111827)
                                             : Colors.grey.shade500,
                                         fontWeight: _selectedClass != null
-                                            ? FontWeight.w600
+                                            ? FontWeight.w500
                                             : FontWeight.w400,
                                       ),
                                     ),
@@ -1409,9 +1438,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                       style: _inputStyle.copyWith(
                                         color: _selectedFile != null
                                             ? const Color(0xFF111827)
-                                            : Colors.grey.shade600,
+                                            : Colors.grey.shade500,
                                         fontWeight: _selectedFile != null
-                                            ? FontWeight.w600
+                                            ? FontWeight.w500
                                             : FontWeight.w400,
                                       ),
                                     ),
@@ -1510,14 +1539,14 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                               ),
                             )
                           else
-                            // Fields with thin dividers between them
                             Column(
                               children: List.generate(
                                 visibleProperties.length * 2 - 1,
                                 (index) {
                                   if (index.isOdd) {
                                     return Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 12),
+                                      padding:
+                                          const EdgeInsets.symmetric(vertical: 12),
                                       child: Divider(
                                         height: 1,
                                         thickness: 1,

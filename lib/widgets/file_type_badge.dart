@@ -1,14 +1,15 @@
 import 'package:flutter/material.dart';
 
-/// Renders a Microsoft-style document icon with a colored letter badge,
-/// matching the visual style in the reference screenshot.
+/// Renders a Microsoft-style document icon with a colored letter badge.
+///
+/// Image file types (jpg, jpeg, png, gif, webp, bmp, svg) render as a
+/// flat image placeholder icon — light rounded square with two blue mountains
+/// and a circle sun, matching the standard image-file visual language.
 ///
 /// Usage:
 ///   FileTypeBadge(extension: 'pdf', size: 44)
-///   FileTypeBadge.fromObject(svc: svc, obj: obj, size: 44)
-///   FileTypeBadge.fromContentItem(svc: svc, item: item, size: 44)
 class FileTypeBadge extends StatelessWidget {
-  final String extension; // e.g. 'pdf', 'docx', 'xlsx' — or empty/null for unknown
+  final String extension;
   final double size;
 
   const FileTypeBadge({
@@ -17,34 +18,17 @@ class FileTypeBadge extends StatelessWidget {
     this.size = 44,
   });
 
-  // ─── Convenience constructors ──────────────────────────────────────────────
+  // ─── Image extension detector ─────────────────────────────────────────────
 
-  /// Build directly from a ViewObject (mirrors how you call iconForViewObject).
-  // Uncomment and import your types if you want to use these:
-  //
-  // factory FileTypeBadge.fromObject({
-  //   required MFilesService svc,
-  //   required ViewObject obj,
-  //   double size = 44,
-  // }) {
-  //   final ext = svc.cachedExtensionForObject(obj.id) ?? '';
-  //   return FileTypeBadge(extension: ext, size: size);
-  // }
-  //
-  // factory FileTypeBadge.fromContentItem({
-  //   required MFilesService svc,
-  //   required ViewContentItem item,
-  //   double size = 44,
-  // }) {
-  //   final ext = item.isObject ? (svc.cachedExtensionForObject(item.id) ?? '') : '';
-  //   return FileTypeBadge(extension: ext, size: size);
-  // }
+  static bool _isImage(String ext) {
+    const imageExts = {'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'svg'};
+    return imageExts.contains(ext.trim().toLowerCase());
+  }
 
   // ─── Style data ───────────────────────────────────────────────────────────
 
   static _BadgeStyle _styleFor(String ext) {
     switch (ext.trim().toLowerCase()) {
-      // PDF
       case 'pdf':
         return const _BadgeStyle(
           label: 'PDF',
@@ -55,7 +39,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w800,
         );
 
-      // Word
       case 'doc':
       case 'docx':
       case 'rtf':
@@ -69,7 +52,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w900,
         );
 
-      // Excel
       case 'xls':
       case 'xlsx':
       case 'csv':
@@ -83,7 +65,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w900,
         );
 
-      // PowerPoint
       case 'ppt':
       case 'pptx':
       case 'odp':
@@ -96,7 +77,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w900,
         );
 
-      // OneNote
       case 'one':
         return const _BadgeStyle(
           label: 'N',
@@ -107,7 +87,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w900,
         );
 
-      // Text / Markdown
       case 'txt':
       case 'md':
       case 'log':
@@ -120,24 +99,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w800,
         );
 
-      // Images
-      case 'jpg':
-      case 'jpeg':
-      case 'png':
-      case 'gif':
-      case 'webp':
-      case 'bmp':
-      case 'svg':
-        return const _BadgeStyle(
-          label: 'IMG',
-          topColor: Color(0xFF7B2FAE),
-          bottomColor: Color(0xFF5E2190),
-          labelColor: Colors.white,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-        );
-
-      // Archives
       case 'zip':
       case 'rar':
       case '7z':
@@ -152,7 +113,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w800,
         );
 
-      // Audio
       case 'mp3':
       case 'wav':
       case 'aac':
@@ -167,7 +127,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w400,
         );
 
-      // Video
       case 'mp4':
       case 'mkv':
       case 'mov':
@@ -182,7 +141,6 @@ class FileTypeBadge extends StatelessWidget {
           fontWeight: FontWeight.w400,
         );
 
-      // Unknown / folder-like
       default:
         return const _BadgeStyle(
           label: '?',
@@ -197,6 +155,18 @@ class FileTypeBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ── Image files: flat image placeholder icon ───────────────────────────────
+    if (_isImage(extension)) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _FlatImageIconPainter(),
+        ),
+      );
+    }
+
+    // ── All other file types: document-page badge ─────────────────────────────
     final style = _styleFor(extension);
     return SizedBox(
       width: size,
@@ -205,7 +175,6 @@ class FileTypeBadge extends StatelessWidget {
         painter: _DocumentPagePainter(style: style),
         child: Center(
           child: Padding(
-            // Slight downward nudge so label sits in the body (below the folded corner)
             padding: EdgeInsets.only(top: size * 0.18),
             child: Text(
               style.label,
@@ -224,7 +193,63 @@ class FileTypeBadge extends StatelessWidget {
   }
 }
 
-// ─── Painter ─────────────────────────────────────────────────────────────────
+// ─── Flat Image Icon Painter ──────────────────────────────────────────────────
+// Matches the reference: light blue-grey rounded square background,
+// two flat triangular mountains in blue, circle sun between the peaks.
+
+class _FlatImageIconPainter extends CustomPainter {
+  const _FlatImageIconPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final radius = w * 0.18;
+
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, w, h),
+      Radius.circular(radius),
+    );
+
+    // ── Background: light blue-grey ───────────────────────────────────────────
+    final bgPaint = Paint()..color = const Color(0xFFDFE9F7);
+    canvas.drawRRect(rrect, bgPaint);
+
+    // Clip to rounded square
+    canvas.clipRRect(rrect);
+
+    // ── Far mountain (right, smaller, darker blue) ────────────────────────────
+    final farMtnPaint = Paint()..color = const Color(0xFF5B8DEF);
+    final farMtnPath = Path()
+      ..moveTo(w * 0.40, h * 1.02)
+      ..lineTo(w * 0.70, h * 0.38)
+      ..lineTo(w * 1.02, h * 1.02)
+      ..close();
+    canvas.drawPath(farMtnPath, farMtnPaint);
+
+    // ── Near mountain (left, larger, lighter blue) ────────────────────────────
+    final nearMtnPaint = Paint()..color = const Color(0xFF7AAAF5);
+    final nearMtnPath = Path()
+      ..moveTo(-w * 0.02, h * 1.02)
+      ..lineTo(w * 0.37, h * 0.32)
+      ..lineTo(w * 0.76, h * 1.02)
+      ..close();
+    canvas.drawPath(nearMtnPath, nearMtnPaint);
+
+    // ── Sun circle ────────────────────────────────────────────────────────────
+    final sunPaint = Paint()..color = const Color(0xFF5B8DEF);
+    canvas.drawCircle(
+      Offset(w * 0.67, h * 0.28),
+      w * 0.13,
+      sunPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_FlatImageIconPainter old) => false;
+}
+
+// ─── Document Page Painter ────────────────────────────────────────────────────
 
 class _DocumentPagePainter extends CustomPainter {
   final _BadgeStyle style;
@@ -235,12 +260,10 @@ class _DocumentPagePainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
 
-    // The fold triangle sits in the top-right corner
-    const foldRatio = 0.28; // how big the fold corner is
+    const foldRatio = 0.28;
     final fold = w * foldRatio;
     final radius = w * 0.10;
 
-    // ── Body gradient (top to bottom) ────────────────────────────────────────
     final bodyPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
@@ -248,43 +271,35 @@ class _DocumentPagePainter extends CustomPainter {
         colors: [style.topColor, style.bottomColor],
       ).createShader(Rect.fromLTWH(0, 0, w, h));
 
-    // Page outline path (dog-ear top-right corner)
     final bodyPath = Path()
-      ..moveTo(radius, 0)                     // top-left start (after radius)
-      ..lineTo(w - fold, 0)                   // top edge → fold notch
-      ..lineTo(w, fold)                       // diagonal cut down
-      ..lineTo(w, h - radius)                 // right edge
-      ..quadraticBezierTo(w, h, w - radius, h) // bottom-right radius
-      ..lineTo(radius, h)                     // bottom edge
-      ..quadraticBezierTo(0, h, 0, h - radius) // bottom-left radius
-      ..lineTo(0, radius)                     // left edge
-      ..quadraticBezierTo(0, 0, radius, 0)   // top-left radius
+      ..moveTo(radius, 0)
+      ..lineTo(w - fold, 0)
+      ..lineTo(w, fold)
+      ..lineTo(w, h - radius)
+      ..quadraticBezierTo(w, h, w - radius, h)
+      ..lineTo(radius, h)
+      ..quadraticBezierTo(0, h, 0, h - radius)
+      ..lineTo(0, radius)
+      ..quadraticBezierTo(0, 0, radius, 0)
       ..close();
 
     canvas.drawPath(bodyPath, bodyPaint);
 
-    // ── Fold triangle (slightly lighter) ─────────────────────────────────────
-    final foldPaint = Paint()
-      ..color = Colors.white.withOpacity(0.18);
-
+    final foldPaint = Paint()..color = Colors.white.withOpacity(0.18);
     final foldPath = Path()
       ..moveTo(w - fold, 0)
       ..lineTo(w, fold)
       ..lineTo(w - fold, fold)
       ..close();
-
     canvas.drawPath(foldPath, foldPaint);
 
-    // ── Fold crease line ──────────────────────────────────────────────────────
     final creasePaint = Paint()
       ..color = Colors.white.withOpacity(0.30)
       ..strokeWidth = 0.8
       ..style = PaintingStyle.stroke;
-
     canvas.drawLine(Offset(w - fold, 0), Offset(w - fold, fold), creasePaint);
     canvas.drawLine(Offset(w - fold, fold), Offset(w, fold), creasePaint);
 
-    // ── Subtle inner shadow at top (depth effect) ─────────────────────────────
     final shadowPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
@@ -294,7 +309,6 @@ class _DocumentPagePainter extends CustomPainter {
           Colors.transparent,
         ],
       ).createShader(Rect.fromLTWH(0, 0, w, h * 0.35));
-
     canvas.drawPath(bodyPath, shadowPaint);
   }
 

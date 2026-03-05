@@ -11,8 +11,6 @@ import '../models/object_comment.dart';
 import '../widgets/lookup_field.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
-import '../utils/file_icon_resolver.dart';
-
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
   final String? parentViewName;
@@ -48,7 +46,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _saving = false;
   bool _downloading = false;
 
+  // Assignment completion
+  bool _completingAssignment = false;
+
   bool _headerDetailsExpanded = false;
+
+  bool _assignmentCompleted = false;
 
   String _title = '';
 
@@ -63,7 +66,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   late Future<List<ObjectComment>> _commentsFuture;
   final TextEditingController _commentCtrl = TextEditingController();
   bool _postingComment = false;
-  // ── CHANGE 3: track whether comment input is focused for YouTube-style expand
   final FocusNode _commentFocusNode = FocusNode();
   bool _commentInputFocused = false;
 
@@ -71,6 +73,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   static const _primaryBlue = Color(0xFF072F5F);
   static const _filledBorder = Color(0xFF2563EB);
   static const _filledFill = Color(0xFFF0F6FF);
+
+  // ── Returns true when this object is an Assignment ──
+  bool get _isAssignment =>
+      widget.obj.classId == -100 ||
+      widget.obj.classTypeName.trim().toLowerCase() == 'assignment';
 
   @override
   void initState() {
@@ -348,10 +355,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return info;
   }
 
-  // ── CHANGE 2: Improved workflow card with better text visibility ──
+  // ─────────────────────────────────────────────────────────────────────────
+  // WORKFLOW CARD
+  // ─────────────────────────────────────────────────────────────────────────
+
   Widget _workflowCard(WorkflowInfo info) {
     final canChange = info.nextStates.isNotEmpty && !_changingWorkflow && !_saving && !_downloading;
-    final hasDescription = info.assignmentDesc.trim().isNotEmpty;
+    final hasDesc = info.assignmentDesc.trim().isNotEmpty;
+    final isAssignedToMe = info.isAssignedToMe;
 
     return Container(
       decoration: BoxDecoration(
@@ -362,7 +373,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header bar with blue accent
+          // ── Card header ──
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
@@ -399,99 +410,59 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Workflow name row
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Workflow',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade500,
-                        letterSpacing: 0.4,
-                      ),
+                // ── Workflow name ──
+                _wfRow(
+                  label: 'Workflow',
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Text(
+                    info.workflowTitle,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E293B),
                     ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        info.workflowTitle,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E293B),
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
+                    softWrap: true,
+                  ),
                 ),
                 const SizedBox(height: 8),
 
-                // Current state with badge
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      'Current state',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.grey.shade500,
-                        letterSpacing: 0.4,
+                // ── Current state ──
+                _wfRow(
+                  label: 'Current state',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF072F5F).withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF072F5F).withOpacity(0.2)),
+                    ),
+                    child: Text(
+                      info.currentStateTitle,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF072F5F),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF072F5F).withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: const Color(0xFF072F5F).withOpacity(0.2),
-                        ),
-                      ),
-                      child: Text(
-                        info.currentStateTitle,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF072F5F),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
 
-                // Description block — prominent when present
-                if (hasDescription) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF8E1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+                // ── Assignment description ──
+                if (hasDesc) ...[
+                  const SizedBox(height: 16),
+                  Text(
+                    'Assignment description',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade500,
+                      letterSpacing: 0.4,
                     ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(Icons.info_outline, size: 15, color: Color(0xFF92700A)),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            info.assignmentDesc.trim(),
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF5C4A00),
-                              height: 1.45,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  _descriptionBox(
+                    desc: info.assignmentDesc.trim(),
+                    isAssignedToMe: isAssignedToMe,
                   ),
                 ],
 
@@ -499,7 +470,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 Divider(height: 1, color: Colors.grey.shade100),
                 const SizedBox(height: 12),
 
-                // Next state selector
+                // ── Advance to ──
                 if (info.nextStates.isEmpty)
                   Row(
                     children: [
@@ -605,6 +576,145 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       ),
     );
   }
+
+  /// Consistent label + content row used inside the workflow card,
+  /// matching the style of the "Workflow" / "Current state" rows.
+  ///
+  /// When [crossAxisAlignment] is [CrossAxisAlignment.start] (multi-line
+  /// content like the description box), a small top padding is applied to
+  /// the label so its baseline aligns with the first line of text inside
+  /// the box rather than the box's top border.
+  Widget _wfRow({
+    required String label,
+    required Widget child,
+    CrossAxisAlignment crossAxisAlignment = CrossAxisAlignment.center,
+    // 2.0 for plain wrapping text; 10.0 for boxed content (description box)
+    double labelTopPadding = 2.0,
+  }) {
+    final isTop = crossAxisAlignment == CrossAxisAlignment.start;
+    return Row(
+      crossAxisAlignment: crossAxisAlignment,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Padding(
+            padding: EdgeInsets.only(top: isTop ? labelTopPadding : 0.0),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade500,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        if (child is Expanded) child else Flexible(child: child),
+      ],
+    );
+  }
+
+  /// Assignment description box.
+  ///
+  /// • isAssignedToMe == true  → warm yellow (needs your action)
+  /// • isAssignedToMe == false → neutral blue-grey (informational, matches card UI)
+  Widget _descriptionBox({required String desc, required bool isAssignedToMe}) {
+    if (isAssignedToMe) {
+      // ── Yellow — this assignment belongs to the current user ──
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // "Assigned to you" badge
+          Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFCC02).withOpacity(0.25),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.7)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.person_pin_outlined, size: 11, color: Color(0xFF92700A)),
+                const SizedBox(width: 4),
+                const Text(
+                  'Assigned to you',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF92700A),
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Yellow description box
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.assignment_ind_outlined, size: 15, color: Color(0xFF92700A)),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    desc,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF5C4A00),
+                      height: 1.45,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // ── Neutral — assignment belongs to someone else, informational only ──
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF072F5F).withOpacity(0.04),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF072F5F).withOpacity(0.12)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.info_outline, size: 15, color: Colors.grey.shade500),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              desc,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey.shade600,
+                height: 1.45,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
 
   Future<List<WorkflowOption>> _loadWorkflowsForThisObject() async {
     final svc = context.read<MFilesService>();
@@ -858,6 +968,80 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
   }
 
+  Future<void> _markAssignmentComplete() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'Complete assignment?',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Text(
+          'Mark this assignment as complete?\nThis cannot be undone.',
+          style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF072F5F),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Complete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _completingAssignment = true);
+    try {
+      final svc = context.read<MFilesService>();
+      final ok = await svc.markAssignmentComplete(
+        objectId: widget.obj.id,
+        classId: widget.obj.classId,
+      );
+      if (!mounted) return;
+      if (ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('Assignment marked as complete'),
+            ]),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+        Navigator.pop(context, true);
+      } else {
+        if (ok) {
+          setState(() => _assignmentCompleted = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed: ${svc.error ?? 'Unknown error'}'),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _completingAssignment = false);
+    }
+  }
+
   String _fmt(DateTime? dt) {
     if (dt == null) return '-';
     final local = dt.toLocal();
@@ -959,7 +1143,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       physics: const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(8),
                       children: [
-                        // ── CHANGE 1: pass files future to header so it can pick icon ──
                         FutureBuilder<List<ObjectFile>>(
                           future: _filesFuture,
                           builder: (context, filesSnap) {
@@ -1005,7 +1188,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
-  // ── CHANGE 1: headerCard now accepts firstFile and shows FileTypeBadge ──
   Widget _headerCard(ViewObject obj, {ObjectFile? firstFile}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
@@ -1015,7 +1197,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Show FileTypeBadge if we have a file, otherwise fallback icon
               firstFile != null
                   ? FileTypeBadge(extension: firstFile.extension, size: 36)
                   : Container(
@@ -1136,6 +1317,60 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 },
               ),
             ),
+
+          if (_isAssignment) ...[
+            const SizedBox(height: 16),
+            Divider(height: 1, color: Colors.grey.shade100),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: (_assignmentCompleted || _completingAssignment || _saving || _downloading)
+                    ? null
+                    : _markAssignmentComplete,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _assignmentCompleted
+                      ? const Color(0xFFE8F5E9)
+                      : const Color(0xFF072F5F),
+                  foregroundColor: _assignmentCompleted
+                      ? const Color(0xFF2E7D32)
+                      : Colors.white,
+                  disabledBackgroundColor: _assignmentCompleted
+                      ? const Color(0xFFE8F5E9)
+                      : Colors.grey.shade200,
+                  disabledForegroundColor: _assignmentCompleted
+                      ? const Color(0xFF2E7D32)
+                      : Colors.grey.shade400,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+                icon: _completingAssignment
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Icon(
+                        _assignmentCompleted
+                            ? Icons.check_circle
+                            : Icons.check_circle_outline,
+                        size: 18,
+                      ),
+                label: Text(
+                  _completingAssignment
+                      ? 'Completing...'
+                      : _assignmentCompleted
+                          ? 'Marked as Complete'
+                          : 'Mark as Complete',
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -1612,7 +1847,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return '${local.month}/${local.day}/${local.year}';
   }
 
-  // ── CHANGE 3: YouTube-style comments — no fixed-height box ──
   Widget _commentsCard() {
     final disabled = _saving || _downloading || _changingWorkflow || _assigningWorkflow;
     return Container(
@@ -1621,7 +1855,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row
           FutureBuilder<List<ObjectComment>>(
             future: _commentsFuture,
             builder: (context, snap) {
@@ -1645,11 +1878,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           ),
           const SizedBox(height: 12),
 
-          // ── Comment input row (always visible at top, YouTube-style) ──
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Avatar circle
               Container(
                 width: 32,
                 height: 32,
@@ -1688,7 +1919,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       ),
                       style: const TextStyle(fontSize: 13.5),
                     ),
-                    // Action buttons appear only when focused (YouTube pattern)
                     if (_commentInputFocused) ...[
                       const SizedBox(height: 8),
                       Row(
@@ -1741,7 +1971,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           const SizedBox(height: 14),
           Divider(height: 1, color: Colors.grey.shade100),
 
-          // ── Comments list — no fixed height, flows naturally ──
           FutureBuilder<List<ObjectComment>>(
             future: _commentsFuture,
             builder: (context, snap) {
@@ -1787,7 +2016,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   final authorName = c.author.trim();
                   final hasAuthor = authorName.isNotEmpty;
 
-                  // Initials avatar when author is known, generic icon otherwise
                   Widget avatarWidget;
                   if (hasAuthor) {
                     final parts = authorName.split(' ').where((s) => s.isNotEmpty).toList();

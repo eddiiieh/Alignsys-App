@@ -80,6 +80,9 @@ class _HomeScreenState extends State<HomeScreen>
       await service.fetchObjectTypes();
       await service.fetchAllViews();
       await service.fetchRecentObjects();
+      await service.fetchAssignedObjects();
+      await service.fetchDeletedObjects();  
+      await service.fetchReportObjects(); 
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -310,9 +313,9 @@ class _HomeScreenState extends State<HomeScreen>
         tabs: [
           _buildTab(Icons.home_rounded, 'Home'),
           _buildTab(Icons.history_rounded, 'Recent'),
-          _buildTab(Icons.assignment_rounded, 'Assigned'),
-          _buildTab(Icons.delete_outline_rounded, 'Deleted'),
-          _buildTab(Icons.analytics_outlined, 'Reports'),
+          _buildAssignedTab2(),
+          _buildBadgeTab(Icons.delete_outline_rounded, 'Deleted', (s) => s.deletedObjects.length),
+          _buildBadgeTab(Icons.analytics_outlined, 'Reports', (s) => s.reportObjects.length),
         ],
         onTap: _onTabChanged,
       ),
@@ -333,6 +336,117 @@ class _HomeScreenState extends State<HomeScreen>
           ],
         ),
       ),
+    );
+  }
+
+  /// Assigned tab with a red notification badge showing the count.
+  Widget _buildAssignedTab2() {
+    return Consumer<MFilesService>(
+      builder: (context, service, _) {
+        final count = service.assignedObjects.length;
+        return Tab(
+          height: 36,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.assignment_rounded, size: 16),
+                    if (count > 0)
+                      Positioned(
+                        top: -6,
+                        right: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          constraints: const BoxConstraints(minWidth: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                                Border.all(color: Colors.white, width: 1.2),
+                          ),
+                          child: Text(
+                            count > 99 ? '99+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 6),
+                const Text('Assigned'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Generic badge tab builder for Deleted and Reports tabs.
+  Widget _buildBadgeTab(
+    IconData icon,
+    String label,
+    int Function(MFilesService) countSelector,
+  ) {
+    return Consumer<MFilesService>(
+      builder: (context, service, _) {
+        final count = countSelector(service);
+        return Tab(
+          height: 36,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(icon, size: 16),
+                    if (count > 0)
+                      Positioned(
+                        top: -6,
+                        right: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          constraints: const BoxConstraints(minWidth: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Colors.white, width: 1.2),
+                          ),
+                          child: Text(
+                            count > 99 ? '99+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 6),
+                Text(label),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1070,13 +1184,12 @@ class _HomeScreenState extends State<HomeScreen>
                         style: TextStyle(
                             fontSize: 20, fontWeight: FontWeight.bold)),
                   ),
-                  // Search icon — toggles the field on/off
                   IconButton(
                     icon: Icon(
                       Icons.search_rounded,
                       color: showSearch
                           ? const Color(0xFF072F5F)
-                          : Colors.grey.shade500,
+                          : Colors.grey.shade700,
                     ),
                     onPressed: () {
                       setSheet(() {
@@ -1098,7 +1211,6 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ]),
 
-                // Search field — only shown when toggled on
                 AnimatedSize(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeInOut,
@@ -1164,7 +1276,6 @@ class _HomeScreenState extends State<HomeScreen>
 
                 const SizedBox(height: 8),
 
-                // Count
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Padding(
@@ -1177,7 +1288,6 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
 
-                // List
                 Flexible(
                   child: filteredTypes.isEmpty
                       ? Padding(
@@ -1314,7 +1424,7 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 20),
               Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Current Vault',
+                child: Text('Current Repository',
                     style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -1332,7 +1442,7 @@ class _HomeScreenState extends State<HomeScreen>
                   }
                   if (snapshot.hasError) {
                     return Text(
-                        'Error loading vaults: ${snapshot.error}',
+                        'Error loading repositories: ${snapshot.error}',
                         style: TextStyle(
                             color: Colors.red.shade700, fontSize: 13));
                   }

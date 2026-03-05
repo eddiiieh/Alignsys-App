@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
 import '../models/vault.dart';
@@ -106,6 +107,9 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
       final success = await mFilesService.login(username, password);
       if (!success) throw Exception('Login failed. Check credentials.');
 
+      // Tell the OS to save these credentials to Google Password Manager / Keychain
+      TextInput.finishAutofillContext(shouldSave: true);
+
       final vaults = await mFilesService.getUserVaults();
       if (vaults.isEmpty) throw Exception('No vaults available for this user.');
 
@@ -115,6 +119,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
       });
       _animController.forward();
     } catch (e) {
+      // Don't save credentials if login failed
+      TextInput.finishAutofillContext(shouldSave: false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -213,89 +219,96 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                             ),
                             const SizedBox(height: 12),
                             _buildCard(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _buildTextField(
-                                    controller: _usernameController,
-                                    label: 'Email / Username',
-                                    icon: Icons.person_outline,
-                                    keyboardType: TextInputType.emailAddress,
-                                    errorText: _usernameError,
-                                  ),
-                                  const SizedBox(height: 16),
-                                  _buildTextField(
-                                    controller: _passwordController,
-                                    label: 'Password',
-                                    icon: Icons.lock_outline,
-                                    obscureText: !_showPassword,
-                                    suffixIcon: IconButton(
-                                      icon: Icon(
-                                        _showPassword
-                                            ? Icons.visibility
-                                            : Icons.visibility_off,
-                                        color: Colors.grey.shade600,
-                                      ),
-                                      onPressed: () => setState(
-                                          () => _showPassword = !_showPassword),
+                              child: AutofillGroup(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    _buildTextField(
+                                      controller: _usernameController,
+                                      label: 'Email / Username',
+                                      icon: Icons.person_outline,
+                                      keyboardType: TextInputType.emailAddress,
+                                      errorText: _usernameError,
+                                      autofillHints: const [
+                                        AutofillHints.username,
+                                        AutofillHints.email,
+                                      ],
                                     ),
-                                  ),
-                                  const SizedBox(height: 12),
+                                    const SizedBox(height: 16),
+                                    _buildTextField(
+                                      controller: _passwordController,
+                                      label: 'Password',
+                                      icon: Icons.lock_outline,
+                                      obscureText: !_showPassword,
+                                      autofillHints: const [AutofillHints.password],
+                                      suffixIcon: IconButton(
+                                        icon: Icon(
+                                          _showPassword
+                                              ? Icons.visibility
+                                              : Icons.visibility_off,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                        onPressed: () => setState(
+                                            () => _showPassword = !_showPassword),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 12),
 
-                                  // ── FORGOT PASSWORD LINK ──
-                                  Align(
-                                    alignment: Alignment.centerRight,
-                                    child: TextButton(
-                                      onPressed: _showForgotPasswordSheet,
-                                      style: TextButton.styleFrom(
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 4, horizontal: 0),
-                                        minimumSize: Size.zero,
-                                        tapTargetSize:
-                                            MaterialTapTargetSize.shrinkWrap,
-                                      ),                                     
-                                      child: Text(
-                                        'Forgot password?',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: _accentBlue.withOpacity(0.85),
-                                          fontWeight: FontWeight.w500,
+                                    // ── FORGOT PASSWORD LINK ──
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton(
+                                        onPressed: _showForgotPasswordSheet,
+                                        style: TextButton.styleFrom(
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 4, horizontal: 0),
+                                          minimumSize: Size.zero,
+                                          tapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                        ),
+                                        child: Text(
+                                          'Forgot password?',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: _accentBlue.withOpacity(0.85),
+                                            fontWeight: FontWeight.w500,
+                                          ),
                                         ),
                                       ),
                                     ),
-                                  ),
 
-                                  const SizedBox(height: 12),
-                                  _loading
-                                      ? const Center(
-                                          child: CircularProgressIndicator(
-                                            valueColor:
-                                                AlwaysStoppedAnimation<Color>(
-                                                    _accentBlue),
-                                          ),
-                                        )
-                                      : ElevatedButton(
-                                          onPressed: _login,
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: _primaryBlue,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                                vertical: 16),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
+                                    const SizedBox(height: 12),
+                                    _loading
+                                        ? const Center(
+                                            child: CircularProgressIndicator(
+                                              valueColor:
+                                                  AlwaysStoppedAnimation<Color>(
+                                                      _accentBlue),
                                             ),
-                                            elevation: 2,
-                                          ),
-                                          child: const Text(
-                                            'Login',
-                                            style: TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w600,
+                                          )
+                                        : ElevatedButton(
+                                            onPressed: _login,
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: _primaryBlue,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(
+                                                  vertical: 16),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
+                                              ),
+                                              elevation: 2,
+                                            ),
+                                            child: const Text(
+                                              'Login',
+                                              style: TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.w600,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ],
@@ -310,7 +323,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                           child: Column(
                             children: [
                               const Text(
-                                'Choose your vault',
+                                'Choose your repository',
                                 style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold,
@@ -320,16 +333,14 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                               const SizedBox(height: 12),
                               _buildCard(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
                                     Row(
                                       children: [
                                         Container(
                                           padding: const EdgeInsets.all(8),
                                           decoration: BoxDecoration(
-                                            color:
-                                                _primaryBlue.withOpacity(0.1),
+                                            color: _primaryBlue.withOpacity(0.1),
                                             borderRadius:
                                                 BorderRadius.circular(8),
                                           ),
@@ -338,7 +349,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                         ),
                                         const SizedBox(width: 12),
                                         const Text(
-                                          'Select Vault',
+                                          'Select Repository',
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
@@ -422,7 +433,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                               ),
                                             )
                                           : const Text(
-                                              'Proceed to Vault',
+                                              'Proceed to repository',
                                               style: TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.w600,
@@ -436,8 +447,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                           size: 16, color: Colors.grey),
                                       label: const Text(
                                         'Back to login',
-                                        style:
-                                            TextStyle(color: Colors.grey),
+                                        style: TextStyle(color: Colors.grey),
                                       ),
                                     ),
                                   ],
@@ -484,11 +494,13 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     bool obscureText = false,
     String? errorText,
     Widget? suffixIcon,
+    List<String>? autofillHints,
   }) {
     return TextField(
       controller: controller,
       keyboardType: keyboardType,
       obscureText: obscureText,
+      autofillHints: autofillHints,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, color: const Color.fromRGBO(25, 76, 129, 1)),
@@ -555,28 +567,25 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
               : null;
     });
 
-  if (_emailError != null) return;
+    if (_emailError != null) return;
 
-  setState(() => _state = _ResetState.loading);
+    setState(() => _state = _ResetState.loading);
 
-  try {
-    await context.read<MFilesService>().requestPasswordReset(email);
-    if (mounted) setState(() => _state = _ResetState.success);
-  } catch (e) {
-    if (mounted) {
-      setState(() {
-        _state = _ResetState.error;
-        _errorMessage = e.toString();
-        //_errorMessage = 'Something went wrong. Please try again or contact support.';
-
-      });
+    try {
+      await context.read<MFilesService>().requestPasswordReset(email);
+      if (mounted) setState(() => _state = _ResetState.success);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _state = _ResetState.error;
+          _errorMessage = e.toString();
+        });
+      }
     }
   }
-}
 
-@override
+  @override
   Widget build(BuildContext context) {
-    // Pad up above the keyboard
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
@@ -671,8 +680,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                     borderRadius: BorderRadius.circular(12)),
               ),
               child: const Text('Done',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
             ),
           ]
 
@@ -694,8 +702,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: _accentBlue, width: 2),
+                  borderSide: const BorderSide(color: _accentBlue, width: 2),
                 ),
                 errorText: _emailError,
                 filled: true,
@@ -732,8 +739,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
 
             const SizedBox(height: 20),
             ElevatedButton(
-              onPressed:
-                  _state == _ResetState.loading ? null : _submit,
+              onPressed: _state == _ResetState.loading ? null : _submit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: _primaryBlue,
                 foregroundColor: Colors.white,

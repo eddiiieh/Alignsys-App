@@ -420,17 +420,25 @@ class MFilesService extends ChangeNotifier {
   }
 }
 
-
   Future<List<Vault>> getUserVaults() async {
     if (accessToken == null) throw Exception("User not logged in");
 
-    final response = await http.get(
-      Uri.parse('https://auth.alignsys.tech/api/user/vaults/'),
-      headers: {
-        'Authorization': 'Bearer $accessToken',
-        'Content-Type': 'application/json',
-      },
-    );
+    // Wrap in _authenticatedRequest so an expired token is silently
+    // refreshed instead of immediately throwing a 401.
+    late http.Response response;
+    try {
+      response = await _authenticatedRequest(
+        () => http.get(
+          Uri.parse('https://auth.alignsys.tech/api/user/vaults/'),
+          headers: {
+            'Authorization': 'Bearer $accessToken',
+            'Content-Type': 'application/json',
+          },
+        ),
+      );
+    } catch (e) {
+      throw Exception('Failed to fetch vaults: $e');
+    }
 
     if (response.statusCode == 200) {
       final data = json.decode(response.body) as List;
@@ -1972,15 +1980,21 @@ int extractPdfFileId(Map<String, dynamic> m) {
   Future<void> saveSelectedVault(Vault v) async {
     selectedVault = v;
     final prefs = await SharedPreferences.getInstance();
-    
-    // ✅ Save all vault fields consistently
+
+    // Save all vault fields consistently
     await prefs.setString('selectedVaultGuid', v.guid);
     await prefs.setString('selectedVaultName', v.name);
     await prefs.setString('selectedVaultId', v.vaultId);
 
-    // ✅ Clear cache when switching vaults since properties may differ
+    // Clear mfilesUserId so fetchMFilesUserId() resolves fresh for the
+    // new vault instead of returning early with the old vault's user ID.
+    mfilesUserId = null;
+    await prefs.remove('mfiles_user_id');
+
+    // Clear all vault-scoped caches
     clearClassPropertiesCache();
-    
+    clearExtensionCache();
+
     notifyListeners();
   }
 
@@ -2005,6 +2019,56 @@ int extractPdfFileId(Map<String, dynamic> m) {
       notifyListeners();
     } else {
       print('   ⚠️ No vault found in SharedPreferences');
+    }
+  }
+
+
+  // ==================== ASSIGNMENTS ====================
+
+  /// Marks an assignment as complete.
+  ///
+  /// ⚠️  URL PLACEHOLDER — swap '$baseUrl/api/Assignment/CompleteAssignment'
+  ///     with the real endpoint once confirmed with your backend team.
+  ///
+  /// On success, the item is removed from [assignedObjects] immediately
+  /// (optimistic update) so the UI updates without a full refresh.
+  Future<bool> markAssignmentComplete({
+    required int objectId,
+    required int classId,
+  }) async {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
+      return false;
+    }
+
+    try {
+      // ── TODO: replace URL with real endpoint once confirmed ──────────────
+      final url = Uri.parse('$baseUrl/api/Assignment/CompleteAssignment');
+
+      final body = {
+        "vaultGuid": vaultGuidWithBraces,
+        "objectId": objectId,
+        "classId": classId,
+        "userID": mfilesUserId,
+      };
+
+      final resp = await _authenticatedRequest(
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
+      );
+
+      if (resp.statusCode == 200 ||
+          resp.statusCode == 201 ||
+          resp.statusCode == 204) {
+        // Optimistic removal — no full re-fetch needed
+        assignedObjects.removeWhere((o) => o.id == objectId);
+        notifyListeners();
+        return true;
+      }
+
+      _setError('Complete assignment failed: ${resp.statusCode} ${resp.body}');
+      return false;
+    } catch (e) {
+      _setError('Error completing assignment: $e');
+      return false;
     }
   }
 }
@@ -2032,6 +2096,7 @@ class WorkflowInfo {
   final String currentStateTitle;
   final String assignmentDesc;
   final List<WorkflowStateOption> nextStates;
+  final bool isAssignedToMe;
 
   WorkflowInfo({
     required this.workflowTitle,
@@ -2040,6 +2105,7 @@ class WorkflowInfo {
     required this.currentStateTitle,
     required this.assignmentDesc,
     required this.nextStates,
+    this.isAssignedToMe = false,
   });
 
   factory WorkflowInfo.fromJson(Map<String, dynamic> m) {
@@ -2059,6 +2125,10 @@ class WorkflowInfo {
       currentStateTitle: (m['currentStateTitle'] as String?) ?? '',
       assignmentDesc: (m['assignmentdesc'] as String?) ?? '',
       nextStates: next,
+      isAssignedToMe: (m['isAssignedToMe'] as bool?) ??
+          (m['assignedToCurrentUser'] as bool?) ??
+          (m['isAssignedToCurrentUser'] as bool?) ??
+          false,
     );
   }
 }

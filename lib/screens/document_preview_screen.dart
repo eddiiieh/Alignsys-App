@@ -184,7 +184,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
 
     // Not previewable -> push user to open externally
     return _buildUnsupportedPreview(
-      'Preview not available for .$ext files.\n\nUse "Open Externally" to view this file.',
+      'Click on "Open Externally" to view this file.',
       file: file,
     );
   }
