@@ -11,7 +11,15 @@ import '../models/view_object.dart';
 
 /// Whether an object row should show the long-press option.
 /// Only requires a valid object id — classId may be 0 for documents.
-bool canLongPress(ViewObject obj) => obj.id > 0;
+bool canLongPress(ViewObject obj, BuildContext context, String currentTab) {
+  if (obj.id <= 0) return false;
+  // Deleted tab → restore → admin only
+  if (currentTab == 'Deleted') {
+    return context.read<MFilesService>().isAdmin;
+  }
+  // All other tabs → delete → requires deletePermission
+  return obj.userPermission?.deletePermission ?? false;
+}
 
 /// Long-press → delete confirmation dialog.
 Future<void> showLongPressDeleteSheet(
@@ -37,6 +45,10 @@ Future<void> showLongPressRestoreSheet(
   required ViewObject obj,
   required VoidCallback onRestored,
 }) async {
+
+  final isAdmin = context.read<MFilesService>().isAdmin;
+  if (!isAdmin) return;
+  
   HapticFeedback.mediumImpact();
   await showDialog(
     context: context,

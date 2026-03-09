@@ -10,6 +10,7 @@ import '../models/object_file.dart';
 import '../models/object_comment.dart';
 import '../widgets/lookup_field.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
+import 'package:mfiles_app/widgets/network_banner.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
@@ -60,6 +61,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   static const Set<int> _excludeMetaPropIds = {100}; // Class
   final Map<int, _PropVm> _dirty = {};
 
+  // FIX: Store display labels for multi-select lookups so pills can show text
+  final Map<int, List<String>> _dirtyLookupLabels = {};
+
   final ScrollController _pageScroll = ScrollController();
 
   // Comments
@@ -68,6 +72,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _postingComment = false;
   final FocusNode _commentFocusNode = FocusNode();
   bool _commentInputFocused = false;
+  bool _commentsExpanded = true;
 
   // ── Design constants (matching DynamicFormScreen) ──
   static const _primaryBlue = Color(0xFF072F5F);
@@ -185,8 +190,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   List<String> _selectedLabelsForLookup(_PropVm p) {
+    // FIX: If we have stored dirty labels for this property, return those
+    if (_dirtyLookupLabels.containsKey(p.id)) {
+      return _dirtyLookupLabels[p.id]!;
+    }
+
     final source = _dirty[p.id]?.editedValue ?? p.value;
 
+    // If source is plain ints (no labels available yet), return empty — pills won't show
     if (source is int || source is List<int>) return const <String>[];
 
     final out = <String>[];
@@ -416,30 +427,32 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   child: Text(
                     info.workflowTitle,
+                    // FIX: darker, larger, heavier text for better legibility
                     style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF1E293B),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
                     ),
                     softWrap: true,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 10),
 
                 // ── Current state ──
                 _wfRow(
                   label: 'Current state',
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF072F5F).withOpacity(0.08),
+                      color: const Color(0xFF072F5F).withOpacity(0.10),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFF072F5F).withOpacity(0.2)),
+                      border: Border.all(color: const Color(0xFF072F5F).withOpacity(0.25)),
                     ),
-                    child: Text(
-                      info.currentStateTitle,
-                      style: const TextStyle(
-                        fontSize: 12,
+                    child: const Text(
+                      // FIX: use info.currentStateTitle at call site — kept as-is
+                      '',
+                      style: TextStyle(
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: Color(0xFF072F5F),
                       ),
@@ -450,25 +463,26 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 // ── Assignment description ──
                 if (hasDesc) ...[
                   const SizedBox(height: 16),
-                  Text(
+                  // FIX: larger, darker section label
+                  const Text(
                     'Assignment description',
                     style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade500,
-                      letterSpacing: 0.4,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF334155),
+                      letterSpacing: 0.2,
                     ),
                   ),
-                  const SizedBox(height: 6),
+                  const SizedBox(height: 8),
                   _descriptionBox(
                     desc: info.assignmentDesc.trim(),
                     isAssignedToMe: isAssignedToMe,
                   ),
                 ],
 
-                const SizedBox(height: 12),
-                Divider(height: 1, color: Colors.grey.shade100),
-                const SizedBox(height: 12),
+                const SizedBox(height: 14),
+                Divider(height: 1, color: Colors.grey.shade200),
+                const SizedBox(height: 14),
 
                 // ── Advance to ──
                 if (info.nextStates.isEmpty)
@@ -478,7 +492,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       const SizedBox(width: 6),
                       Text(
                         'No next steps available.',
-                        style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                        // FIX: slightly darker
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                       ),
                     ],
                   )
@@ -486,24 +501,35 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
+                      // FIX: 'ADVANCE TO' label — darker and slightly larger
+                      const Text(
                         'ADVANCE TO',
                         style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade400,
-                          letterSpacing: 0.8,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF475569),
+                          letterSpacing: 1.0,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Row(
                         children: [
                           Expanded(
                             child: DropdownButtonFormField<int>(
                               value: _selectedNextStateId,
                               isExpanded: true,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF1E293B),
+                              ),
                               decoration: InputDecoration(
                                 labelText: 'Next state',
+                                labelStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF475569),
+                                ),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(10),
                                 ),
@@ -512,7 +538,15 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               items: info.nextStates
                                   .map((s) => DropdownMenuItem<int>(
                                         value: s.id,
-                                        child: Text(s.title, overflow: TextOverflow.ellipsis),
+                                        child: Text(
+                                          s.title,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF1E293B),
+                                          ),
+                                        ),
                                       ))
                                   .toList(),
                               onChanged: canChange
@@ -563,7 +597,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               elevation: 0,
                               overlayColor: Colors.white.withOpacity(0.1),
                             ),
-                            child: const Text('Apply'),
+                            child: const Text(
+                              'Apply',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                            ),
                           ),
                         ],
                       ),
@@ -577,18 +614,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
-  /// Consistent label + content row used inside the workflow card,
-  /// matching the style of the "Workflow" / "Current state" rows.
-  ///
-  /// When [crossAxisAlignment] is [CrossAxisAlignment.start] (multi-line
-  /// content like the description box), a small top padding is applied to
-  /// the label so its baseline aligns with the first line of text inside
-  /// the box rather than the box's top border.
   Widget _wfRow({
     required String label,
     required Widget child,
     CrossAxisAlignment crossAxisAlignment = CrossAxisAlignment.center,
-    // 2.0 for plain wrapping text; 10.0 for boxed content (description box)
     double labelTopPadding = 2.0,
   }) {
     final isTop = crossAxisAlignment == CrossAxisAlignment.start;
@@ -601,11 +630,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             padding: EdgeInsets.only(top: isTop ? labelTopPadding : 0.0),
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade500,
-                letterSpacing: 0.4,
+              // FIX: darker label colour and slightly larger size for legibility
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF64748B),
+                letterSpacing: 0.2,
               ),
             ),
           ),
@@ -616,17 +646,31 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
-  /// Assignment description box.
-  ///
-  /// • isAssignedToMe == true  → warm yellow (needs your action)
-  /// • isAssignedToMe == false → neutral blue-grey (informational, matches card UI)
+  /// Rebuild _workflowCard's current state badge inline to use the real title
+  Widget _currentStateBadge(String title) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF072F5F).withOpacity(0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFF072F5F).withOpacity(0.25)),
+      ),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: Color(0xFF072F5F),
+        ),
+      ),
+    );
+  }
+
   Widget _descriptionBox({required String desc, required bool isAssignedToMe}) {
     if (isAssignedToMe) {
-      // ── Yellow — this assignment belongs to the current user ──
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // "Assigned to you" badge
           Container(
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -652,7 +696,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               ],
             ),
           ),
-          // Yellow description box
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(10),
@@ -669,11 +712,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 Expanded(
                   child: Text(
                     desc,
+                    // FIX: slightly larger and heavier for legibility
                     style: const TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
                       color: Color(0xFF5C4A00),
-                      height: 1.45,
+                      height: 1.5,
                     ),
                   ),
                 ),
@@ -684,7 +728,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
     }
 
-    // ── Neutral — assignment belongs to someone else, informational only ──
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(10),
@@ -696,16 +739,17 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, size: 15, color: Colors.grey.shade500),
+          Icon(Icons.info_outline, size: 15, color: Colors.grey.shade600),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               desc,
-              style: TextStyle(
-                fontSize: 12.5,
+              // FIX: darker and larger for legibility
+              style: const TextStyle(
+                fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: Colors.grey.shade600,
-                height: 1.45,
+                color: Color(0xFF334155),
+                height: 1.5,
               ),
             ),
           ),
@@ -772,11 +816,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.info_outline, size: 14, color: Colors.grey.shade400),
+                    Icon(Icons.info_outline, size: 14, color: Colors.grey.shade500),
                     const SizedBox(width: 6),
                     Text(
                       'No workflow is assigned to this object.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
                     ),
                   ],
                 ),
@@ -800,7 +844,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     if (workflows.isEmpty) {
                       return Text(
                         'No workflows available for this object type/class.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
                       );
                     }
                     _selectedWorkflowId ??= workflows.first.id;
@@ -810,15 +854,33 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           child: DropdownButtonFormField<int>(
                             value: _selectedWorkflowId,
                             isExpanded: true,
+                            style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: Color(0xFF1E293B),
+                            ),
                             decoration: InputDecoration(
                               labelText: 'Workflow',
+                              labelStyle: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF475569),
+                              ),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                               isDense: true,
                             ),
                             items: workflows
                                 .map((w) => DropdownMenuItem<int>(
                                       value: w.id,
-                                      child: Text(w.title, overflow: TextOverflow.ellipsis),
+                                      child: Text(
+                                        w.title,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFF1E293B),
+                                        ),
+                                      ),
                                     ))
                                 .toList(),
                             onChanged:
@@ -866,7 +928,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             elevation: 0,
                             overlayColor: Colors.white.withOpacity(0.1),
                           ),
-                          child: const Text('Assign'),
+                          child: const Text(
+                            'Assign',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                          ),
                         ),
                       ],
                     );
@@ -921,6 +986,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       }
 
       _dirty.clear();
+      _dirtyLookupLabels.clear();
       if (!mounted) return;
       setState(() {
         _editMode = false;
@@ -1071,7 +1137,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 : () {
                     setState(() {
                       _editMode = !_editMode;
-                      if (!_editMode) _dirty.clear();
+                      if (!_editMode) {
+                        _dirty.clear();
+                        _dirtyLookupLabels.clear();
+                      }
                     });
                   },
             icon: Icon(_editMode ? Icons.close : Icons.edit),
@@ -1097,6 +1166,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 );
               },
             ),
+          if (widget.obj.userPermission?.deletePermission ?? false)
           IconButton(
             onPressed: (_saving || _downloading || _changingWorkflow) ? null : _confirmAndDelete,
             icon: const Icon(Icons.delete_outline),
@@ -1104,10 +1174,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: Column(
-        children: [
-          _buildBreadcrumbs(),
-          Expanded(
+      body: NetworkBanner(
+        child: Column(
+          children: [
+            _buildBreadcrumbs(),
+            Expanded(
             child: FutureBuilder<List<_PropVm>>(
               future: _future,
               builder: (context, snap) {
@@ -1128,6 +1199,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       _workflowFuture = _loadWorkflow();
                       _commentsFuture = _loadComments();
                       _dirty.clear();
+                      _dirtyLookupLabels.clear();
                       _editMode = false;
                     });
                     await _future;
@@ -1141,7 +1213,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     child: ListView(
                       controller: _pageScroll,
                       physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
                       children: [
                         FutureBuilder<List<ObjectFile>>(
                           future: _filesFuture,
@@ -1166,7 +1238,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 if (info == null)
                                   _assignWorkflowCard()
                                 else
-                                  _workflowCard(info),
+                                  _buildWorkflowCardWithState(info),
                               ],
                             );
                           },
@@ -1175,12 +1247,221 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         _previewCard(obj),
                         const SizedBox(height: 12),
                         _commentsCard(),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 32),
                       ],
                     ),
                   ),
                 );
               },
+            ),
+          ),
+        ],
+      ),
+    ),
+    );
+  }
+
+  // FIX: wrapper that passes currentStateTitle correctly to the badge
+  Widget _buildWorkflowCardWithState(WorkflowInfo info) {
+    final canChange = info.nextStates.isNotEmpty && !_changingWorkflow && !_saving && !_downloading;
+    final hasDesc = info.assignmentDesc.trim().isNotEmpty;
+    final isAssignedToMe = info.isAssignedToMe;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFF072F5F).withOpacity(0.04),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.account_tree_outlined, size: 16, color: Color(0xFF072F5F)),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Workflow',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF072F5F),
+                    ),
+                  ),
+                ),
+                if (_changingWorkflow)
+                  const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _wfRow(
+                  label: 'Workflow',
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Text(
+                    info.workflowTitle,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
+                    ),
+                    softWrap: true,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _wfRow(
+                  label: 'Current state',
+                  child: _currentStateBadge(info.currentStateTitle),
+                ),
+                if (hasDesc) ...[
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Assignment description',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF334155),
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _descriptionBox(desc: info.assignmentDesc.trim(), isAssignedToMe: isAssignedToMe),
+                ],
+                const SizedBox(height: 14),
+                Divider(height: 1, color: Colors.grey.shade200),
+                const SizedBox(height: 14),
+                if (info.nextStates.isEmpty)
+                  Row(
+                    children: [
+                      Icon(Icons.block, size: 14, color: Colors.grey.shade400),
+                      const SizedBox(width: 6),
+                      Text(
+                        'No next steps available.',
+                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                      ),
+                    ],
+                  )
+                else
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'ADVANCE TO',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF475569),
+                          letterSpacing: 1.0,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<int>(
+                              value: _selectedNextStateId,
+                              isExpanded: true,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF1E293B),
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Next state',
+                                labelStyle: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF475569),
+                                ),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                isDense: true,
+                              ),
+                              items: info.nextStates
+                                  .map((s) => DropdownMenuItem<int>(
+                                        value: s.id,
+                                        child: Text(
+                                          s.title,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF1E293B),
+                                          ),
+                                        ),
+                                      ))
+                                  .toList(),
+                              onChanged: canChange
+                                  ? (v) => setState(() => _selectedNextStateId = v)
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            onPressed: (!canChange || _selectedNextStateId == null)
+                                ? null
+                                : () async {
+                                    setState(() => _changingWorkflow = true);
+                                    try {
+                                      final svc = context.read<MFilesService>();
+                                      final ok = await svc.setObjectWorkflowState(
+                                        objectTypeId: widget.obj.objectTypeId,
+                                        objectId: widget.obj.id,
+                                        workflowId: info.workflowId,
+                                        stateId: _selectedNextStateId!,
+                                      );
+                                      if (!ok) {
+                                        if (!mounted) return;
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('Workflow update failed: ${svc.error ?? 'Unknown'}'),
+                                            backgroundColor: Colors.red.shade600,
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      if (!mounted) return;
+                                      setState(() {
+                                        _workflowFuture = _loadWorkflow();
+                                        _future = _loadProps();
+                                      });
+                                    } finally {
+                                      if (mounted) setState(() => _changingWorkflow = false);
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF072F5F),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                            ),
+                            child: const Text(
+                              'Apply',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+              ],
             ),
           ),
         ],
@@ -1191,7 +1472,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget _headerCard(ViewObject obj, {ObjectFile? firstFile}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Column(
         children: [
           Row(
@@ -1281,7 +1566,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget _metadataCard(List<_PropVm> props) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1304,12 +1593,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 props.length * 2 - 1,
                 (index) {
                   if (index.isOdd) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 10),
+                    return const Padding(
+                      // FIX: thicker, more visible divider (matches DynamicFormScreen fix)
+                      padding: EdgeInsets.symmetric(vertical: 10),
                       child: Divider(
                         height: 1,
-                        thickness: 1,
-                        color: Colors.grey.shade100,
+                        thickness: 1.5,
+                        color: Color(0xFFCBD5E1), // slate-300
                       ),
                     );
                   }
@@ -1385,6 +1675,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       final hasValue = displayText.trim().isNotEmpty;
 
       if (_editMode) {
+        // FIX: check if we have dirty-stored labels for pills display
+        final dirtyLabels = _dirtyLookupLabels[p.id];
+        final hasDirtySelection = _dirty.containsKey(p.id);
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -1399,66 +1693,149 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 ),
               ),
             ),
+            // FIX: wrap in AnimatedContainer with blue border when a value is selected,
+            // matching the DynamicFormScreen filled-field visual feedback
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               decoration: BoxDecoration(
-                color: Colors.grey.shade50,
+                color: hasDirtySelection ? _filledFill : Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade300),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: LookupField(
-                  title: label,
-                  propertyId: p.id,
-                  isMultiSelect: isMulti,
-                  preSelectedIds: _selectedIdsForLookup(p, isMulti: isMulti),
-                  preSelectedLabels: _selectedLabelsForLookup(p),
-                  onSelected: (items) {
-                    setState(() {
-                      if (isMulti) {
-                        final ids = items.map((x) => x.id).toList();
-                        if (ids.isEmpty) {
-                          _dirty.remove(p.id);
-                        } else {
-                          _dirty[p.id] = p.copyWith(editedValue: ids);
-                        }
-                      } else {
-                        final id = items.isNotEmpty ? items.first.id : null;
-                        if (id == null) {
-                          _dirty.remove(p.id);
-                        } else {
-                          _dirty[p.id] = p.copyWith(editedValue: id);
-                        }
-                      }
-                    });
-                  },
+                border: Border.all(
+                  color: hasDirtySelection ? _filledBorder : Colors.grey.shade300,
+                  width: hasDirtySelection ? 1.5 : 1,
                 ),
               ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: LookupField(
+                        title: label,
+                        propertyId: p.id,
+                        isMultiSelect: isMulti,
+                        preSelectedIds: _selectedIdsForLookup(p, isMulti: isMulti),
+                        preSelectedLabels: _selectedLabelsForLookup(p),
+                        onSelected: (items) {
+                          setState(() {
+                            if (isMulti) {
+                              final ids = items.map((x) => x.id).toList();
+                              // FIX: also store the display labels so pills can render text
+                              final labels = items.map((x) => x.displayValue.toString()).toList();
+                              if (ids.isEmpty) {
+                                _dirty.remove(p.id);
+                                _dirtyLookupLabels.remove(p.id);
+                              } else {
+                                _dirty[p.id] = p.copyWith(editedValue: ids);
+                                _dirtyLookupLabels[p.id] = labels;
+                              }
+                            } else {
+                              final id = items.isNotEmpty ? items.first.id : null;
+                              if (id == null) {
+                                _dirty.remove(p.id);
+                                _dirtyLookupLabels.remove(p.id);
+                              } else {
+                                _dirty[p.id] = p.copyWith(editedValue: id);
+                              }
+                            }
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  if (hasDirtySelection)
+                    const Padding(
+                      padding: EdgeInsets.only(right: 12),
+                      child: Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18),
+                    ),
+                ],
+              ),
             ),
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: hasValue
-                  ? Row(
+
+            // FIX: show blue pills for multi-select with actual text labels
+            if (isMulti && dirtyLabels != null && dirtyLabels.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: List.generate(dirtyLabels.length, (index) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.check_circle_outline,
-                            size: 13, color: Colors.green.shade600),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            'Current: $displayText',
-                            style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        Text(
+                          dirtyLabels[index],
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1E40AF),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () {
+                            setState(() {
+                              final currentIds = (_dirty[p.id]?.editedValue is List)
+                                  ? List<int>.from(_dirty[p.id]!.editedValue as List)
+                                  : <int>[];
+                              final newIds = List<int>.from(currentIds)..removeAt(index);
+                              final newLabels = List<String>.from(dirtyLabels)..removeAt(index);
+                              if (newIds.isEmpty) {
+                                _dirty.remove(p.id);
+                                _dirtyLookupLabels.remove(p.id);
+                              } else {
+                                _dirty[p.id] = p.copyWith(editedValue: newIds);
+                                _dirtyLookupLabels[p.id] = newLabels;
+                              }
+                            });
+                          },
+                          child: Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF3B82F6).withOpacity(0.2),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.close, size: 10, color: Color(0xFF1E40AF)),
                           ),
                         ),
                       ],
-                    )
-                  : Text(
-                      'No value — tap above to select',
-                      style: TextStyle(fontSize: 11.5, color: Colors.grey.shade400),
                     ),
-            ),
+                  );
+                }),
+              ),
+            ] else if (!isMulti || (dirtyLabels == null || dirtyLabels.isEmpty)) ...[
+              // Show current value hint for single-select or before any dirty selection
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: hasValue
+                    ? Row(
+                        children: [
+                          Icon(Icons.check_circle_outline,
+                              size: 13, color: Colors.green.shade600),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              'Current: $displayText',
+                              style: TextStyle(fontSize: 11.5, color: Colors.grey.shade600),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        'No value — tap above to select',
+                        style: TextStyle(fontSize: 11.5, color: Colors.grey.shade400),
+                      ),
+              ),
+            ],
           ],
         );
       }
@@ -1499,6 +1876,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
                 isDense: true,
                 filled: true,
+                // FIX: blue fill when field has been edited (isDirty), matching DynamicFormScreen
                 fillColor: isDirty ? _filledFill : Colors.grey.shade50,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
@@ -1516,9 +1894,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(color: _primaryBlue, width: 2),
                 ),
+                // FIX: show blue checkmark when dirty, matching DynamicFormScreen
                 suffixIcon: isDirty
-                    ? const Icon(Icons.check_circle_rounded,
-                        color: _filledBorder, size: 18)
+                    ? const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18)
                     : null,
               ),
               onChanged: (v) {
@@ -1582,7 +1960,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget _previewCard(ViewObject obj) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1617,16 +1999,24 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               }
               final files = snap.data ?? [];
               if (files.isEmpty) {
-                return Column(
-                  children: [
-                    Icon(Icons.insert_drive_file_outlined, color: Colors.grey.shade400),
-                    const SizedBox(height: 4),
-                    Text(
-                      'There are no files attached to this item yet.',
-                      style: TextStyle(color: Colors.grey.shade600),
-                      textAlign: TextAlign.center,
+                // FIX: centered icon and text when no files attached
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.insert_drive_file_outlined,
+                            color: Colors.grey.shade400, size: 36),
+                        const SizedBox(height: 8),
+                        Text(
+                          'There are no files attached to this item yet.',
+                          style: TextStyle(color: Colors.grey.shade600),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 );
               }
               return Column(
@@ -1715,38 +2105,42 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 if (mounted) setState(() => _downloading = false);
                               }
                             },
-                            itemBuilder: (_) => const [
-                              PopupMenuItem(
-                                value: 'preview',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.visibility, size: 18),
-                                    SizedBox(width: 12),
-                                    Text('Preview'),
-                                  ],
+                            itemBuilder: (_) {
+                              final canDownload = widget.obj.userPermission?.readPermission ?? false;
+                              return [
+                                const PopupMenuItem(
+                                  value: 'preview',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.visibility, size: 18),
+                                      SizedBox(width: 12),
+                                      Text('Preview'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              PopupMenuItem(
-                                value: 'open',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.open_in_new, size: 18),
-                                    SizedBox(width: 12),
-                                    Text('Open Externally'),
-                                  ],
+                                const PopupMenuItem(
+                                  value: 'open',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.open_in_new, size: 18),
+                                      SizedBox(width: 12),
+                                      Text('Open Externally'),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              PopupMenuItem(
-                                value: 'download',
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.download, size: 18),
-                                    SizedBox(width: 12),
-                                    Text('Download'),
-                                  ],
-                                ),
-                              ),
-                            ],
+                                if (canDownload)
+                                  const PopupMenuItem(
+                                    value: 'download',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.download, size: 18),
+                                        SizedBox(width: 12),
+                                        Text('Download'),
+                                      ],
+                                    ),
+                                  ),
+                              ];
+                            },
                             child: const Icon(Icons.more_vert, size: 18),
                           ),
                         ),
@@ -1784,6 +2178,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           fileTitle: f.fileTitle,
           extension: f.extension,
           reportGuid: f.reportGuid,
+          canDownload: widget.obj.userPermission?.readPermission ?? false,
         ),
       ),
     );
@@ -1847,274 +2242,381 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return '${local.month}/${local.day}/${local.year}';
   }
 
-  Widget _commentsCard() {
-    final disabled = _saving || _downloading || _changingWorkflow || _assigningWorkflow;
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FutureBuilder<List<ObjectComment>>(
-            future: _commentsFuture,
-            builder: (context, snap) {
-              final count = snap.data?.length ?? 0;
-              return Row(
-                children: [
-                  Text(
-                    count > 0 ? 'Comments ($count)' : 'Comments',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
-                  ),
-                  const Spacer(),
-                  if (_postingComment)
-                    const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 12),
+  // Builds a single comment row — reused in both collapsed preview and expanded list
+  Widget _commentRow(ObjectComment c) {
+    final dateText = _fmtCommentDate(c.modifiedDate);
+    final authorName = c.author.trim();
+    final hasAuthor = authorName.isNotEmpty;
 
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+    Widget avatarWidget;
+    if (hasAuthor) {
+      final parts = authorName.split(' ').where((s) => s.isNotEmpty).toList();
+      final initials = parts.length >= 2
+          ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
+          : authorName.substring(0, authorName.length.clamp(0, 2)).toUpperCase();
+      avatarWidget = Container(
+        width: 28,
+        height: 28,
+        decoration: const BoxDecoration(color: Color(0xFF072F5F), shape: BoxShape.circle),
+        child: Center(
+          child: Text(initials,
+              style: const TextStyle(
+                  fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+        ),
+      );
+    } else {
+      avatarWidget = Container(
+        width: 28,
+        height: 28,
+        decoration: BoxDecoration(
+            color: const Color(0xFF072F5F).withOpacity(0.08), shape: BoxShape.circle),
+        child: const Center(
+            child: Icon(Icons.person_outline, size: 15, color: Color(0xFF072F5F))),
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        avatarWidget,
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF072F5F).withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Center(
-                  child: Icon(Icons.person_outline, size: 18, color: Color(0xFF072F5F)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    TextField(
-                      controller: _commentCtrl,
-                      focusNode: _commentFocusNode,
-                      enabled: !disabled && !_postingComment,
-                      minLines: 1,
-                      maxLines: _commentInputFocused ? 4 : 1,
-                      decoration: InputDecoration(
-                        hintText: 'Add a comment…',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-                        filled: false,
-                        border: InputBorder.none,
-                        enabledBorder: UnderlineInputBorder(
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        focusedBorder: const UnderlineInputBorder(
-                          borderSide: BorderSide(color: Color(0xFF072F5F), width: 1.5),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 8),
-                        isDense: true,
-                      ),
-                      style: const TextStyle(fontSize: 13.5),
-                    ),
-                    if (_commentInputFocused) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          TextButton(
-                            onPressed: () {
-                              _commentCtrl.clear();
-                              _commentFocusNode.unfocus();
-                            },
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.grey.shade600,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                            ),
-                            child: const Text('Cancel', style: TextStyle(fontSize: 12)),
-                          ),
-                          const SizedBox(width: 6),
-                          ElevatedButton(
-                            onPressed: (disabled || _postingComment) ? null : _submitComment,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF072F5F),
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: Colors.grey.shade200,
-                              disabledForegroundColor: Colors.grey.shade400,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
-                              elevation: 0,
-                              textStyle: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            child: const Text('Comment'),
-                          ),
-                        ],
-                      ),
-                    ],
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  if (hasAuthor) ...[
+                    Text(authorName,
+                        style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF1E293B))),
+                    const SizedBox(width: 6),
                   ],
-                ),
+                  if (dateText.isNotEmpty)
+                    Text(dateText,
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w400)),
+                ],
               ),
+              const SizedBox(height: 3),
+              Text(c.text,
+                  style: const TextStyle(
+                      fontSize: 13, height: 1.4, color: Color(0xFF1E293B))),
             ],
           ),
-
-          const SizedBox(height: 14),
-          Divider(height: 1, color: Colors.grey.shade100),
-
-          FutureBuilder<List<ObjectComment>>(
-            future: _commentsFuture,
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                );
-              }
-              if (snap.hasError) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Text(
-                    'Failed to load comments: ${snap.error}',
-                    style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                    textAlign: TextAlign.center,
-                  ),
-                );
-              }
-              final items = snap.data ?? [];
-              if (items.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: Center(
-                    child: Column(
-                      children: [
-                        Icon(Icons.chat_bubble_outline,
-                            size: 32, color: Colors.grey.shade300),
-                        const SizedBox(height: 6),
-                        Text(
-                          'No comments yet. Be the first!',
-                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-              return Column(
-                children: List.generate(items.length, (index) {
-                  final c = items[index];
-                  final dateText = _fmtCommentDate(c.modifiedDate);
-                  final authorName = c.author.trim();
-                  final hasAuthor = authorName.isNotEmpty;
-
-                  Widget avatarWidget;
-                  if (hasAuthor) {
-                    final parts = authorName.split(' ').where((s) => s.isNotEmpty).toList();
-                    final initials = parts.length >= 2
-                        ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
-                        : authorName.substring(0, authorName.length.clamp(0, 2)).toUpperCase();
-                    avatarWidget = Container(
-                      width: 32,
-                      height: 32,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFF072F5F),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Center(
-                        child: Text(
-                          initials,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    );
-                  } else {
-                    avatarWidget = Container(
-                      width: 32,
-                      height: 32,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF072F5F).withOpacity(0.08),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.person_outline, size: 17, color: Color(0xFF072F5F)),
-                      ),
-                    );
-                  }
-
-                  return Padding(
-                    padding: const EdgeInsets.only(top: 14),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        avatarWidget,
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.baseline,
-                                textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  if (hasAuthor) ...[
-                                    Text(
-                                      authorName,
-                                      style: const TextStyle(
-                                        fontSize: 12.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: Color(0xFF1E293B),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 6),
-                                  ],
-                                  if (dateText.isNotEmpty)
-                                    Text(
-                                      dateText,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade500,
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                c.text,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  height: 1.45,
-                                  color: Color(0xFF1E293B),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              );
-            },
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
+        ),
+      ],
     );
   }
+
+  Widget _commentsCard() {
+    final disabled = _saving || _downloading || _changingWorkflow || _assigningWorkflow;
+    return FutureBuilder<List<ObjectComment>>(
+      future: _commentsFuture,
+      builder: (context, snap) {
+        final isLoading = snap.connectionState == ConnectionState.waiting;
+        final comments = snap.data ?? [];
+        final count = comments.length;
+        final latestComment = comments.isNotEmpty ? comments.last : null;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header — always tappable ──
+              Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(12),
+                    topRight: const Radius.circular(12),
+                    bottomLeft: Radius.circular(_commentsExpanded ? 0 : 12),
+                    bottomRight: Radius.circular(_commentsExpanded ? 0 : 12),
+                  ),
+                  onTap: () => setState(() {
+                    _commentsExpanded = !_commentsExpanded;
+                    if (!_commentsExpanded) _commentFocusNode.unfocus();
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.chat_bubble_outline,
+                            size: 16, color: Color(0xFF072F5F)),
+                        const SizedBox(width: 6),
+                        Text(
+                          count > 0 ? 'Comments ($count)' : 'Comments',
+                          style: const TextStyle(
+                              fontSize: 14, fontWeight: FontWeight.w700),
+                        ),
+                        const Spacer(),
+                        if (_postingComment)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: SizedBox(
+                                height: 14,
+                                width: 14,
+                                child: CircularProgressIndicator(strokeWidth: 2)),
+                          ),
+                        AnimatedRotation(
+                          turns: _commentsExpanded ? 0.5 : 0.0,
+                          duration: const Duration(milliseconds: 200),
+                          child: Icon(Icons.keyboard_arrow_down,
+                              size: 20, color: Colors.grey.shade600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Collapsed preview — most recent comment ──
+              if (!_commentsExpanded) ...[
+                Divider(height: 1, color: Colors.grey.shade200),
+                if (isLoading)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+                    child: LinearProgressIndicator(
+                      minHeight: 2,
+                      backgroundColor: Colors.grey.shade100,
+                      valueColor:
+                          const AlwaysStoppedAnimation<Color>(Color(0xFF072F5F)),
+                    ),
+                  )
+                else if (latestComment == null)
+                  // No comments yet — tappable nudge
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(12)),
+                      onTap: () => setState(() => _commentsExpanded = true),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 14),
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_outlined,
+                                size: 14, color: Colors.grey.shade400),
+                            const SizedBox(width: 8),
+                            Text(
+                              'No comments yet — tap to add one',
+                              style: TextStyle(
+                                  fontSize: 12.5, color: Colors.grey.shade500),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  // Latest comment preview — tappable to expand
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(12)),
+                      onTap: () => setState(() => _commentsExpanded = true),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _commentRow(latestComment),
+                            if (count > 1) ...[
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  const SizedBox(width: 38), // align under text
+                                  Text(
+                                    'View all $count comments',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF2563EB),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(Icons.arrow_forward_rounded,
+                                      size: 13, color: Color(0xFF2563EB)),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+
+              // ── Expanded — compose + full list ──
+              if (_commentsExpanded) ...[
+                Divider(height: 1, color: Colors.grey.shade200),
+
+                // Compose row
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF072F5F).withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Center(
+                          child: Icon(Icons.person_outline,
+                              size: 18, color: Color(0xFF072F5F)),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            TextField(
+                              controller: _commentCtrl,
+                              focusNode: _commentFocusNode,
+                              enabled: !disabled && !_postingComment,
+                              minLines: 1,
+                              maxLines: _commentInputFocused ? 4 : 1,
+                              decoration: InputDecoration(
+                                hintText: 'Add a comment…',
+                                hintStyle: TextStyle(
+                                    color: Colors.grey.shade400, fontSize: 13),
+                                filled: false,
+                                border: InputBorder.none,
+                                enabledBorder: UnderlineInputBorder(
+                                    borderSide:
+                                        BorderSide(color: Colors.grey.shade300)),
+                                focusedBorder: const UnderlineInputBorder(
+                                    borderSide: BorderSide(
+                                        color: Color(0xFF072F5F), width: 1.5)),
+                                contentPadding:
+                                    const EdgeInsets.symmetric(vertical: 8),
+                                isDense: true,
+                              ),
+                              style: const TextStyle(fontSize: 13.5),
+                            ),
+                            if (_commentInputFocused) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  TextButton(
+                                    onPressed: () {
+                                      _commentCtrl.clear();
+                                      _commentFocusNode.unfocus();
+                                    },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: Colors.grey.shade600,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(20)),
+                                    ),
+                                    child: const Text('Cancel',
+                                        style: TextStyle(fontSize: 12)),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  ElevatedButton(
+                                    onPressed: (disabled || _postingComment)
+                                        ? null
+                                        : _submitComment,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: const Color(0xFF072F5F),
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor: Colors.grey.shade200,
+                                      disabledForegroundColor: Colors.grey.shade400,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(20)),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 7),
+                                      elevation: 0,
+                                      textStyle: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    child: const Text('Comment'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Full comment list
+                if (isLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                else if (snap.hasError)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                    child: Text('Failed to load comments: ${snap.error}',
+                        style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                        textAlign: TextAlign.center),
+                  )
+                else if (comments.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.chat_bubble_outline,
+                              size: 32, color: Colors.grey.shade300),
+                          const SizedBox(height: 6),
+                          Text('No comments yet. Be the first!',
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                    child: Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Divider(height: 1, color: Colors.grey.shade100),
+                        ),
+                        ...comments.map((c) => Padding(
+                              padding: const EdgeInsets.only(bottom: 14),
+                              child: _commentRow(c),
+                            )),
+                      ],
+                    ),
+                  ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
 
   Widget _kv(String k, String v) {
     return Padding(

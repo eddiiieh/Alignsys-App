@@ -3,6 +3,7 @@ import 'package:mfiles_app/models/view_object.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/widgets/relationships_dropdown.dart';
 import 'package:mfiles_app/models/linked_object_item.dart';
+import 'package:mfiles_app/widgets/network_banner.dart';
 
 class LinkedObjectsListScreen extends StatefulWidget {
   final String title;
@@ -46,7 +47,8 @@ class _LinkedObjectsListScreenState extends State<LinkedObjectsListScreen> {
         foregroundColor: Colors.white,
         title: Text(widget.title),
         ),
-      body: Scrollbar(
+      body: NetworkBanner(
+        child: Scrollbar(
         controller: _sc,
         thumbVisibility: false,
         interactive: true,
@@ -116,6 +118,7 @@ class _LinkedObjectsListScreenState extends State<LinkedObjectsListScreen> {
           );
         },
       ),
+      )
       ),
     );
   }

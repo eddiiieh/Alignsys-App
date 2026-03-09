@@ -5,7 +5,9 @@ import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:photo_view/photo_view.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
+import '../widgets/network_banner.dart';
 import '../services/mfiles_service.dart';
+
 
 class DocumentPreviewScreen extends StatefulWidget {
   final int displayObjectId;
@@ -15,6 +17,8 @@ class DocumentPreviewScreen extends StatefulWidget {
   final String extension;
   final String reportGuid;
 
+  final bool canDownload;
+
   const DocumentPreviewScreen({
     super.key,
     required this.displayObjectId,
@@ -23,6 +27,7 @@ class DocumentPreviewScreen extends StatefulWidget {
     required this.fileTitle,
     required this.extension,
     required this.reportGuid,
+    this.canDownload = false,
   });
 
   @override
@@ -234,20 +239,21 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          IconButton(
-            onPressed: _downloading ? null : _downloadToDevice,
-            icon: _downloading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                    ),
-                  )
-                : const Icon(Icons.download),
-            tooltip: 'Download',
-          ),
+          if (widget.canDownload)
+            IconButton(
+              onPressed: _downloading ? null : _downloadToDevice,
+              icon: _downloading
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : const Icon(Icons.download),
+              tooltip: 'Download',
+            ),
           FutureBuilder<File>(
             future: _fileFuture,
             builder: (context, snap) {
@@ -261,7 +267,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
+      body: NetworkBanner(
+      child: Column(
         children: [
           Container(
             width: double.infinity,
@@ -334,6 +341,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
           ),
         ],
       ),
+      )
     );
   }
 }

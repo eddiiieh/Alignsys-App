@@ -18,6 +18,8 @@ import '../models/view_item.dart';
 import '../models/view_object.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
+import 'package:mfiles_app/widgets/network_banner.dart';
+
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({
     super.key,
@@ -523,7 +525,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: Column(
+      body: NetworkBanner(
+      child: Column(
         children: [
           _buildBreadcrumbs(),
           if (_showSearch) _buildInViewSearchBar(),
@@ -610,6 +613,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

@@ -8,7 +8,7 @@ class SplashScreen extends StatefulWidget {
 
   const SplashScreen({
     Key? key,
-    this.minDuration = const Duration(seconds: 3), // ✅ Reduced from 5 to 3 seconds
+    this.minDuration = const Duration(seconds: 3),
     this.logoAssetPath,
   }) : super(key: key);
 
@@ -41,13 +41,10 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    // Ensure minimum splash duration
     Future.wait([
       Future.delayed(widget.minDuration),
       _checkAutoLogin(),
-    ]).then((_) {
-      // Navigation handled in _checkAutoLogin
-    });
+    ]).then((_) {});
   }
 
   Future<void> _checkAutoLogin() async {
@@ -55,8 +52,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     try {
       print('🚀 Starting auto-login check...');
-      
-      // 1. Load tokens first
+
       final hasTokens = await mFilesService.loadTokens();
       print('   Tokens loaded: $hasTokens');
       print('   AccessToken: ${mFilesService.accessToken != null ? "present" : "null"}');
@@ -69,11 +65,9 @@ class _SplashScreenState extends State<SplashScreen>
         return;
       }
 
-      // 2. Restore the selected vault from SharedPreferences
       await mFilesService.restoreSelectedVault();
       print('   Vault restored: ${mFilesService.selectedVault?.guid}');
 
-      // 3. If no vault in SharedPreferences, fetch vaults and select first one
       if (mFilesService.selectedVault == null) {
         print('   No saved vault, fetching available vaults...');
         final vaults = await mFilesService.getUserVaults();
@@ -86,17 +80,14 @@ class _SplashScreenState extends State<SplashScreen>
           return;
         }
 
-        // Select the first vault
         await mFilesService.saveSelectedVault(vaults.first);
         print('   Selected first vault: ${vaults.first.name}');
       }
 
-      // 4. Fetch M-Files user ID
       print('   Fetching M-Files user ID...');
       await mFilesService.fetchMFilesUserId();
       print('   M-Files user ID: ${mFilesService.mfilesUserId}');
 
-      // 5. Verify mfilesUserId was set
       if (mFilesService.mfilesUserId == null) {
         print('❌ Failed to resolve M-Files user ID');
         if (!mounted) return;
@@ -104,26 +95,23 @@ class _SplashScreenState extends State<SplashScreen>
         return;
       }
 
-      // 6. Load initial data
       print('   Loading object types...');
       await mFilesService.fetchObjectTypes();
-      
+
       print('   Loading views...');
       await mFilesService.fetchAllViews();
-      
+
       print('   Loading recent objects...');
       await mFilesService.fetchRecentObjects();
 
       print('✅ Auto-login successful - navigating to home');
 
-      // 7. Navigate to home
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/home');
-
     } catch (e) {
       print('❌ Auto-login failed: $e');
       print('   Stack trace: ${StackTrace.current}');
-      
+
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/login');
     }
@@ -166,20 +154,128 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
                 child: _buildLogo(),
               ),
-              const SizedBox(height: 32),
-              const SizedBox(
-                width: 40,
-                height: 40,
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  strokeWidth: 3.0,
-                  strokeCap: StrokeCap.round,
-                ),
-              ),
+              const SizedBox(height: 40),
+              const _FlashingDots(),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+// ── Flashing dots indicator ───────────────────────────────────────────────
+
+class _FlashingDots extends StatefulWidget {
+  const _FlashingDots();
+
+  @override
+  State<_FlashingDots> createState() => _FlashingDotsState();
+}
+
+class _FlashingDotsState extends State<_FlashingDots>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  // Each dot pulses with a staggered delay via interval curves
+  late final List<Animation<double>> _dotOpacities;
+  late final List<Animation<double>> _dotScales;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat();
+
+    // Stagger: dot 0 starts at 0%, dot 1 at 20%, dot 2 at 40%
+    // Each dot is "on" for ~40% of the cycle then fades
+    _dotOpacities = List.generate(3, (i) {
+      final start = i * 0.2;
+      final peak = start + 0.2;
+      final end = peak + 0.2;
+      return TweenSequence<double>([
+        TweenSequenceItem(
+          tween: Tween(begin: 0.25, end: 1.0)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 30,
+        ),
+        TweenSequenceItem(
+          tween: Tween(begin: 1.0, end: 0.25)
+              .chain(CurveTween(curve: Curves.easeIn)),
+          weight: 30,
+        ),
+        TweenSequenceItem(
+          tween: ConstantTween(0.25),
+          weight: 40,
+        ),
+      ]).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: Interval(start.clamp(0.0, 1.0), end.clamp(0.0, 1.0)),
+        ),
+      );
+    });
+
+    _dotScales = List.generate(3, (i) {
+      final start = i * 0.2;
+      final end = (start + 0.4).clamp(0.0, 1.0);
+      return TweenSequence<double>([
+        TweenSequenceItem(
+          tween: Tween(begin: 0.7, end: 1.0)
+              .chain(CurveTween(curve: Curves.easeOut)),
+          weight: 50,
+        ),
+        TweenSequenceItem(
+          tween: Tween(begin: 1.0, end: 0.7)
+              .chain(CurveTween(curve: Curves.easeIn)),
+          weight: 50,
+        ),
+      ]).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: Interval(start, end),
+        ),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(3, (i) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              child: Transform.scale(
+                scale: _dotScales[i].value,
+                child: Opacity(
+                  opacity: _dotOpacities[i].value,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        );
+      },
     );
   }
 }

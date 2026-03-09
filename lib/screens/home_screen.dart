@@ -1,10 +1,9 @@
-// ignore_for_file: use_build_context_synchronously, deprecated_member_use
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
+import 'package:mfiles_app/widgets/network_banner.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
@@ -194,27 +193,29 @@ class _HomeScreenState extends State<HomeScreen>
             const SizedBox(width: 8),
           ],
         ),
-        body: Column(
-          children: [
-            _buildSearchBar(),
-            const SizedBox(height: _sectionSpacing),
-            _buildTabBar(),
-            const SizedBox(height: _sectionSpacing),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildHomeTab(),
-                  _buildRecentTab(),
-                  _buildAssignedTab(),
-                  _buildDeletedTab(),
-                  _buildReportsTab(),
-                ],
+        body: NetworkBanner(
+          child: Column(
+            children: [
+              _buildSearchBar(),
+              const SizedBox(height: _sectionSpacing),
+              _buildTabBar(),
+              const SizedBox(height: _sectionSpacing),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildHomeTab(),
+                    _buildRecentTab(),
+                    _buildAssignedTab(),
+                    _buildDeletedTab(),
+                    _buildReportsTab(),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
+)
     );
   }
 
@@ -740,8 +741,8 @@ class _HomeScreenState extends State<HomeScreen>
     return _buildObjectList(
       selector: (s) => s.assignedObjects,
       emptyIcon: Icons.assignment_rounded,
-      emptyText: 'No assigned documents',
-      emptySubtext: 'Documents assigned to you will appear here',
+      emptyText: 'No assigned items',
+      emptySubtext: 'Items assigned to you will appear here',
       onRefresh: (s) => s.fetchAssignedObjects(),
       onLongPress: (obj) => showLongPressDeleteSheet(
         context,
@@ -899,7 +900,9 @@ class _HomeScreenState extends State<HomeScreen>
                     await context.read<MFilesService>().fetchRecentObjects();
                   }
                 },
-                onLongPress: canLongPress(obj) ? () => onLongPress(obj) : null,
+                onLongPress: canLongPress(obj, context, tabs[_tabController.index])
+                  ? () => onLongPress(obj)
+                  : null,
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

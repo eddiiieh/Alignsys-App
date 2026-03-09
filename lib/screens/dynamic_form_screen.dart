@@ -1,5 +1,3 @@
-// ignore_for_file: deprecated_member_use
-
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -12,6 +10,8 @@ import '../models/class_property.dart';
 import '../models/object_class.dart';
 import '../models/object_creation_request.dart';
 import '../models/vault_object_type.dart';
+
+import '../widgets/network_banner.dart';
 import '../services/mfiles_service.dart';
 
 class DynamicFormScreen extends StatefulWidget {
@@ -444,8 +444,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   }
 
   // ---------- Searchable dropdown dialog ----------
-  // FIX 2: Named FocusNode so we can call requestFocus in a postFrameCallback,
-  // guaranteeing the keyboard + cursor are live the moment the dialog opens.
   Future<T?> _showSearchableDropdown<T>({
     required String title,
     required List<T> items,
@@ -453,13 +451,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     T? selected,
   }) async {
     final controller = TextEditingController();
-    final focusNode = FocusNode(); // ← FIX 2: named focus node
+    final focusNode = FocusNode();
     List<T> filtered = List.from(items);
 
     final result = await showDialog<T>(
       context: context,
       builder: (ctx) {
-        // ← FIX 2: request focus after the dialog frame is rendered
         WidgetsBinding.instance.addPostFrameCallback((_) {
           focusNode.requestFocus();
         });
@@ -504,12 +501,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                         ],
                       ),
                     ),
-                    // Search field — active immediately, no tap needed
+                    // Search field
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: TextField(
                         controller: controller,
-                        focusNode: focusNode, // ← FIX 2: attach named focus node
+                        focusNode: focusNode,
                         autofocus: true,
                         decoration: InputDecoration(
                           hintText: 'Search...',
@@ -636,10 +633,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       },
     );
 
-    // Do NOT dispose focusNode or controller here — the dialog route may still
-    // be animating out and LookupField's TextField can still reference them.
-    // Flutter disposes local FocusNodes that were never attached to a persistent
-    // widget tree automatically when the route is fully removed.
     return result;
   }
 
@@ -1192,7 +1185,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             ),
           ),
         ),
-        body: Consumer<MFilesService>(
+        body: NetworkBanner(
+        child: Consumer<MFilesService>(
           builder: (context, service, _) {
             final objectClasses = service.objectClasses
                 .where((cls) => cls.objectTypeId == _currentObjectType.id)
@@ -1544,13 +1538,13 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                 visibleProperties.length * 2 - 1,
                                 (index) {
                                   if (index.isOdd) {
-                                    return Padding(
-                                      padding:
-                                          const EdgeInsets.symmetric(vertical: 12),
+                                    return const Padding(
+                                      // FIX: increased vertical padding and divider thickness for better visibility
+                                      padding: EdgeInsets.symmetric(vertical: 12),
                                       child: Divider(
                                         height: 1,
-                                        thickness: 1,
-                                        color: Colors.grey.shade100,
+                                        thickness: 1.5,
+                                        color: Color(0xFFCBD5E1), // slate-300 — much more visible
                                       ),
                                     );
                                   }
@@ -1609,6 +1603,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           },
         ),
       ),
+      )
     );
   }
 }

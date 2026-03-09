@@ -84,6 +84,9 @@ import 'user_permissions.dart';
       displayId: (json['displayID']?.toString()) ?? (json['displayId']?.toString()) ?? '',
       createdUtc: _dt(json['createdUtc']),
       lastModifiedUtc: _dt(json['lastModifiedUtc']),
+      userPermission: json['userPermission'] is Map<String, dynamic>   // ← ADD THIS
+      ? UserPermission.fromJson(json['userPermission'] as Map<String, dynamic>)
+      : null,
     );
   }
 }

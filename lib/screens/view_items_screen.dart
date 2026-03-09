@@ -15,6 +15,8 @@ import 'view_details_screen.dart';
 import '../widgets/relationships_dropdown.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
+import 'package:mfiles_app/widgets/network_banner.dart';
+
 class ViewItemsScreen extends StatefulWidget {
   final String title;
   final int parentViewId;
@@ -472,7 +474,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           const SizedBox(width: 4),
         ],
       ),
-      body: Column(
+      body: NetworkBanner(
+      child: Column(
         children: [
           _buildBreadcrumbs(),
           if (_showSearch) _buildSearchBar(),
@@ -527,6 +530,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   ), // GestureDetector
           ),
         ],
+      ),
       ),
     );
   }

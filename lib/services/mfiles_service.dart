@@ -1,5 +1,3 @@
-// ignore_for_file: unused_element
-
 import 'dart:convert';
 import 'dart:io';
 
@@ -69,6 +67,8 @@ class MFilesService extends ChangeNotifier {
   // Loading/Error
   bool isLoading = false;
   String? error;
+
+  bool isAdmin = false;
 
   static const String baseUrl = 'https://api.alignsys.tech';
 
@@ -349,6 +349,8 @@ class MFilesService extends ChangeNotifier {
 
     clearExtensionCache();
     clearClassPropertiesCache();
+    
+    isAdmin = false; 
 
     notifyListeners();
   }
@@ -489,6 +491,7 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
         mfilesUserId = (data['id'] as num?)?.toInt();
+        isAdmin = data['isAdmin'] as bool? ?? false;
 
         print('✅ mfilesUserId set to: $mfilesUserId');
 

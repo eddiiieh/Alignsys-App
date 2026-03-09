@@ -4,6 +4,7 @@ import '../services/mfiles_service.dart';
 import '../models/vault_object_type.dart';
 import '../models/object_class.dart';
 import 'dynamic_form_screen.dart';
+import 'package:mfiles_app/widgets/network_banner.dart';
 
 class ObjectClassesScreen extends StatefulWidget {
   final VaultObjectType objectType;
@@ -52,7 +53,8 @@ class _ObjectClassesScreenState extends State<ObjectClassesScreen> {
         title: Text('Object Classes - ${widget.objectType.displayName}'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: Consumer<MFilesService>(
+      body: NetworkBanner(
+        child: Consumer<MFilesService>(
         builder: (context, service, child) {
           if (service.isLoading && service.objectClasses.isEmpty) {
             return const Center(child: CircularProgressIndicator());
@@ -145,6 +147,7 @@ class _ObjectClassesScreenState extends State<ObjectClassesScreen> {
             ),
           );
         },
+      ),
       ),
     );
   }

@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
+import '../widgets/network_banner.dart';
 import '../services/mfiles_service.dart';
+
 import '../models/vault.dart';
 
 class LoginVaultScreen extends StatefulWidget {
@@ -178,9 +181,10 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _primaryBlue,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+      body: NetworkBanner(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
           child: Container(
             constraints: const BoxConstraints(maxWidth: 440),
             child: Column(
@@ -465,6 +469,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
           ),
         ),
       ),
+    )
     );
   }
 
