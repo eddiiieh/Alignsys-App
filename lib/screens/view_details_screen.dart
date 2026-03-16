@@ -230,8 +230,21 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             displayId: item.displayId ?? '',
             createdUtc: item.createdUtc,
             lastModifiedUtc: item.lastModifiedUtc,
+            isSingleFile: item.isSingleFile,
           )
         : null;
+
+        if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              svc.ensureRelationshipsPresenceForObject(
+                objectId: item.id,
+                objectTypeId: item.objectTypeId,
+                classId: item.classId,
+              );
+            }
+          });
+        }
 
     final BorderRadius radius =
         isLast ? const BorderRadius.vertical(bottom: Radius.circular(12)) : BorderRadius.zero;
@@ -289,7 +302,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                         children: [
                           // ✅ Relationships chevron — GestureDetector with opaque hit-test
                           // so the gesture is fully consumed here and never reaches the row.
-                          if (hasRelationships) ...[
+                          // NEW
+                          if (hasRelationships && svc.cachedHasRelationships(item.id) == true) ...[
                             GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () {
@@ -299,9 +313,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                               child: Padding(
                                 padding: const EdgeInsets.all(4),
                                 child: Icon(
-                                  relationshipsExpanded
-                                      ? Icons.expand_more
-                                      : Icons.chevron_right,
+                                  relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
                                   size: 18,
                                   color: const Color(0xFF072F5F),
                                 ),
@@ -487,6 +499,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       displayId: item.displayId ?? '',
       createdUtc: item.createdUtc,
       lastModifiedUtc: item.lastModifiedUtc,
+      isSingleFile: item.isSingleFile,
     );
 
     final deleted = await Navigator.push<bool>(
@@ -576,7 +589,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   },
                   child: Scrollbar(
                     controller: _viewScroll,
-                    thumbVisibility: false,
                     interactive: true,
                     thickness: 6,
                     radius: const Radius.circular(8),

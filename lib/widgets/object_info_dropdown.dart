@@ -388,7 +388,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               const SizedBox(height: 8),
               _buildInfoRow('Title', widget.obj.title),
               _buildInfoRow('Class', widget.obj.classTypeName),
-              _buildInfoRow('Modified', _formatDate(widget.obj.lastModifiedUtc)),
+              _buildInfoRow('Created', _formatDate(widget.obj.createdUtc)),
 
               const SizedBox(height: 12),
               Divider(height: 1, color: Colors.grey.shade300),

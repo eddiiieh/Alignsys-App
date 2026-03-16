@@ -65,15 +65,23 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
 
     // Root: show a small header row + collapsible content
     if (widget.isRoot) {
-      return _RootRelationshipsSection(
-        titleLeftPadding: left,
-        initiallyExpanded: widget.initiallyExpanded,
-        child: _GroupsBody(
-          depth: widget.depth,
-          future: _future,
-          loaded: _loaded,
-          onLoad: () => setState(_loadOnce),
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(left, 8, 12, 4),
+            child: Text(
+              'Relationships',
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+          _GroupsBody(
+            depth: widget.depth,
+            future: _future,
+            loaded: _loaded,
+            onLoad: () => setState(_loadOnce),
+          ),
+        ],
       );
     }
 
@@ -237,6 +245,7 @@ ViewObject _toViewObjectFromLinked(LinkedObjectItem it) {
     displayId: it.displayID,
     createdUtc: null,
     lastModifiedUtc: null,
+    isSingleFile: true,
   );
 }
 

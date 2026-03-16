@@ -31,8 +31,13 @@ Widget build(BuildContext context) {
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,
-        scrollbarTheme: const ScrollbarThemeData(
-          thumbVisibility: WidgetStatePropertyAll(false),
+        scrollbarTheme: ScrollbarThemeData(
+          thumbVisibility: WidgetStatePropertyAll(true),
+          thickness: WidgetStatePropertyAll(6),
+          radius: const Radius.circular(8),
+          thumbColor: WidgetStatePropertyAll(
+            Color(0xFF072F5F).withOpacity(0.35),
+          ),
           interactive: true,
         ),
       ),

@@ -177,6 +177,18 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     final bool isObject = item.isObject && item.id > 0;
     final bool hasRelationships = isObject && item.objectTypeId > 0 && item.classId > 0;
 
+    if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          svc.ensureRelationshipsPresenceForObject(
+            objectId: item.id,
+            objectTypeId: item.objectTypeId,
+            classId: item.classId,
+          );
+        }
+      });
+    }
+
     final bool infoExpanded = _expandedInfoItemId == item.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
 
@@ -196,6 +208,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       displayId: item.displayId ?? '',
       createdUtc: item.createdUtc,
       lastModifiedUtc: item.lastModifiedUtc,
+      isSingleFile: item.isSingleFile,
     );
 
     // ✅ TapRegion removed — see ViewDetailsScreen for full explanation.
@@ -241,7 +254,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                         children: [
                           // ✅ Relationships chevron — GestureDetector with opaque hit-test
                           // so the gesture is fully consumed here and never reaches the row.
-                          if (hasRelationships) ...[
+                          // NEW
+                          if (hasRelationships && svc.cachedHasRelationships(item.id) == true) ...[
                             GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () {
@@ -251,9 +265,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                               child: Padding(
                                 padding: const EdgeInsets.all(4),
                                 child: Icon(
-                                  relationshipsExpanded
-                                      ? Icons.expand_more
-                                      : Icons.chevron_right,
+                                  relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
                                   size: 18,
                                   color: const Color(0xFF072F5F),
                                 ),
@@ -369,6 +381,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         displayId: item.displayId ?? '',
         createdUtc: item.createdUtc,
         lastModifiedUtc: item.lastModifiedUtc,
+        isSingleFile: item.isSingleFile,
       );
 
       await Navigator.push(
@@ -496,7 +509,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     },
                     child: Scrollbar(
                     controller: _itemsScroll,
-                    thumbVisibility: false,
                     interactive: true,
                     thickness: 6,
                     radius: const Radius.circular(8),

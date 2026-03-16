@@ -1,7 +1,7 @@
+import 'package:flutter/foundation.dart';
+
 class ViewContentItem {
   final String type;
-
-  // object fields
   final int id;
   final String title;
   final int objectTypeId;
@@ -12,11 +12,10 @@ class ViewContentItem {
   final String? displayId;
   final DateTime? createdUtc;
   final DateTime? lastModifiedUtc;
-
-  // grouping fields
   final int viewId;
-  final String? propId;          // was int?
+  final String? propId;
   final String? propDatatype;
+  final bool isSingleFile;          // ← ADD
 
   ViewContentItem({
     required this.type,
@@ -33,12 +32,13 @@ class ViewContentItem {
     required this.viewId,
     required this.propId,
     required this.propDatatype,
+    required this.isSingleFile,     // ← ADD
   });
 
   bool get isObject => type == 'MFFolderContentItemTypeObjectVersion' && id > 0;
   bool get isGroupFolder => type == 'MFFolderContentItemTypePropertyFolder';
   bool get isViewFolder => type == 'MFFolderContentItemTypeViewFolder' && id > 0;
-
+  bool get isMultiFile => objectTypeId == 0 && !isSingleFile;   // ← ADD convenience getter
 
   static DateTime? _dt(dynamic v) {
     if (v == null) return null;
@@ -62,8 +62,9 @@ class ViewContentItem {
       createdUtc: _dt(m['createdUtc']),
       lastModifiedUtc: _dt(m['lastModifiedUtc']),
       viewId: (m['viewId'] as num?)?.toInt() ?? -1,
-      propId: rawPropId?.toString(),           // keep "05"
+      propId: rawPropId?.toString(),
       propDatatype: m['propDatatype']?.toString(),
+      isSingleFile: (m['isSingleFile'] as bool?) ?? true,       // ← ADD
     );
   }
 }

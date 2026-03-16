@@ -1,3 +1,5 @@
+// ignore_for_file: deprecated_member_use
+
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -278,7 +280,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           Wrap(
             spacing: 6,
             runSpacing: 6,
-            children: List.generate(selectedTexts!.length, (index) {
+            children: List.generate(selectedTexts.length, (index) {
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 child: Container(
@@ -760,7 +762,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       case 'MFDatatypeLookup':
         {
           final hasValue = _formValues[property.id] != null;
-          final selectedItems = _selectedLookupItems[property.id] ?? [];
 
           return _lookupShell(
             label: property.title,

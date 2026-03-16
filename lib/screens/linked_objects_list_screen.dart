@@ -35,6 +35,7 @@ class _LinkedObjectsListScreenState extends State<LinkedObjectsListScreen> {
       displayId: it.displayID,
       createdUtc: null,
       lastModifiedUtc: null,
+      isSingleFile: true,
     );
   }
 
@@ -50,7 +51,6 @@ class _LinkedObjectsListScreenState extends State<LinkedObjectsListScreen> {
       body: NetworkBanner(
         child: Scrollbar(
         controller: _sc,
-        thumbVisibility: false,
         interactive: true,
         thickness: 4,
         radius: const Radius.circular(8),

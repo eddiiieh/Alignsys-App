@@ -91,7 +91,6 @@ class _ObjectClassesScreenState extends State<ObjectClassesScreen> {
 
           return Scrollbar(
             controller: _classesScroll,
-            thumbVisibility: false,
             interactive: true,
             thickness: 4,
             radius: const Radius.circular(8),

@@ -1,3 +1,5 @@
+// ignore_for_file: curly_braces_in_flow_control_structures, avoid_print, unused_element
+
 import 'dart:convert';
 import 'dart:io';
 
@@ -29,8 +31,8 @@ class MFilesService extends ChangeNotifier {
   String? refreshToken;
   String? username;
   String? fullname;
-  int? userId; // Auth system user ID
-  int? mfilesUserId; // M-Files user ID (vault-scoped)
+  int? userId;
+  int? mfilesUserId;
 
   // Vault
   Vault? selectedVault;
@@ -43,8 +45,6 @@ class MFilesService extends ChangeNotifier {
 
   // Class properties
   List<ClassProperty> classProperties = [];
-
-  // ✅ Cache for class properties to avoid repeated API calls
   final Map<String, List<ClassProperty>> _classPropsCache = {};
 
   // Deleted objects
@@ -60,7 +60,7 @@ class MFilesService extends ChangeNotifier {
 
   List<ViewObject> recentObjects = [];
   List<ViewObject> assignedObjects = [];
-  List<ViewObject> searchResults = []; // search no longer overwrites recen
+  List<ViewObject> searchResults = [];
 
   String currentTab = 'Home';
 
@@ -117,42 +117,41 @@ class MFilesService extends ChangeNotifier {
   }
 
   int? _decodeJwtAndGetUserId(String token) {
-  try {
-    final parts = token.split('.');
-    if (parts.length != 3) {
-      print('❌ JWT has ${parts.length} parts, expected 3');
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) {
+        print('❌ JWT has ${parts.length} parts, expected 3');
+        return null;
+      }
+
+      final payload = parts[1];
+      print('🔐 JWT payload (raw): ${payload.substring(0, 20)}...');
+
+      final normalized = base64Url.normalize(payload);
+      final decoded = utf8.decode(base64Url.decode(normalized));
+
+      print('🔐 JWT decoded: $decoded');
+
+      final payloadMap = json.decode(decoded) as Map<String, dynamic>;
+
+      final userId = payloadMap['user_id'] ??
+          payloadMap['userId'] ??
+          payloadMap['sub'] ??
+          payloadMap['id'];
+
+      print('🔐 Extracted userId: $userId (type: ${userId.runtimeType})');
+
+      if (userId is int) return userId;
+      if (userId is String) return int.tryParse(userId);
+      if (userId is num) return userId.toInt();
+
+      return null;
+    } catch (e, stackTrace) {
+      print('❌ JWT decode error: $e');
+      print('   Stack: $stackTrace');
       return null;
     }
-    
-    final payload = parts[1];
-    print('🔐 JWT payload (raw): ${payload.substring(0, 20)}...');
-    
-    final normalized = base64Url.normalize(payload);
-    final decoded = utf8.decode(base64Url.decode(normalized));
-    
-    print('🔐 JWT decoded: $decoded');
-    
-    final payloadMap = json.decode(decoded) as Map<String, dynamic>;
-    
-    // Try multiple possible keys
-    final userId = payloadMap['user_id'] ?? 
-                   payloadMap['userId'] ?? 
-                   payloadMap['sub'] ?? 
-                   payloadMap['id'];
-    
-    print('🔐 Extracted userId: $userId (type: ${userId.runtimeType})');
-    
-    if (userId is int) return userId;
-    if (userId is String) return int.tryParse(userId);
-    if (userId is num) return userId.toInt();
-    
-    return null;
-  } catch (e, stackTrace) {
-    print('❌ JWT decode error: $e');
-    print('   Stack: $stackTrace');
-    return null;
   }
-}
 
   Future<void> saveTokens(
     String access,
@@ -172,10 +171,10 @@ class MFilesService extends ChangeNotifier {
       await prefs.setString('username', user);
       username = user;
     }
-    if (fullNameValue != null) {          // ← ADD THIS BLOCK
-    await prefs.setString('full_name', fullNameValue);
-    fullname = fullNameValue;
-  }
+    if (fullNameValue != null) {
+      await prefs.setString('full_name', fullNameValue);
+      fullname = fullNameValue;
+    }
     if (userIdValue != null) {
       await prefs.setInt('user_id', userIdValue);
       userId = userIdValue;
@@ -192,7 +191,7 @@ class MFilesService extends ChangeNotifier {
 
     try {
       print('🔄 Refreshing access token...');
-      
+
       final response = await http.post(
         Uri.parse('https://auth.alignsys.tech/api/token/refresh/'),
         headers: const {'Content-Type': 'application/json'},
@@ -207,12 +206,10 @@ class MFilesService extends ChangeNotifier {
 
         if (newAccess != null && newAccess.isNotEmpty) {
           accessToken = newAccess;
-          
-          // Save the new access token
+
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('access_token', newAccess);
-          
-          // Optionally decode userId again if needed
+
           if (userId == null) {
             userId = _decodeJwtAndGetUserId(newAccess);
             if (userId != null) {
@@ -241,21 +238,17 @@ class MFilesService extends ChangeNotifier {
     Future<http.Response> Function() request, {
     bool retryOnAuthFailure = true,
   }) async {
-    // First attempt
     http.Response response = await request();
 
-    // If we get a 401 (unauthorized) and we have a refresh token, try to refresh
     if (response.statusCode == 401 && retryOnAuthFailure && refreshToken != null) {
       print('🔄 Got 401, attempting to refresh token...');
-      
+
       final refreshed = await refreshAccessToken();
-      
+
       if (refreshed) {
-        // Retry the original request with the new token
         print('♻️ Retrying original request with new token...');
         response = await request();
       } else {
-        // Refresh failed - user needs to log in again
         print('❌ Token refresh failed - logging out');
         await logout();
       }
@@ -297,7 +290,6 @@ class MFilesService extends ChangeNotifier {
     print('   userId (from prefs): $userId');
     print('   mfilesUserId (from prefs): $mfilesUserId');
 
-    // If userId is not in SharedPreferences, try to decode from token
     if (userId == null && accessToken != null) {
       print('   Attempting to decode userId from JWT...');
       userId = _decodeJwtAndGetUserId(accessToken!);
@@ -311,21 +303,24 @@ class MFilesService extends ChangeNotifier {
 
     final hasTokens = accessToken != null && refreshToken != null;
     print('   Result: hasTokens = $hasTokens, userId = $userId');
-    
+
+    // ✅ Restore persisted relationship dots so they appear instantly on next launch
+    _loadRelationshipsCacheFromPrefs(); // fire-and-forget
+
     return hasTokens;
   }
+
   Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Auth
     await prefs.remove('access_token');
     await prefs.remove('refresh_token');
     await prefs.remove('user_id');
     await prefs.remove('mfiles_user_id');
-    await prefs.remove('username');  
-    await prefs.remove('full_name');        
-    await prefs.remove('selectedVaultGuid'); 
-    await prefs.remove('vaultGuid');         
+    await prefs.remove('username');
+    await prefs.remove('full_name');
+    await prefs.remove('selectedVaultGuid');
+    await prefs.remove('vaultGuid');
 
     accessToken = null;
     refreshToken = null;
@@ -349,12 +344,12 @@ class MFilesService extends ChangeNotifier {
 
     clearExtensionCache();
     clearClassPropertiesCache();
-    
-    isAdmin = false; 
+    clearRelationshipsCache();
+
+    isAdmin = false;
 
     notifyListeners();
   }
-
 
   Future<bool> login(String email, String password) async {
     final body = {'username': email, 'password': password, 'auth_type': 'email'};
@@ -378,9 +373,8 @@ class MFilesService extends ChangeNotifier {
 
     final access = data['access'] as String?;
     final refresh = data['refresh'] as String?;
-    // Check what field your auth API returns for the user's name:
     final name = (data['full_name'] ?? data['name'] ?? data['fullName'] ?? '').toString();
-    
+
     if (access == null || access.isEmpty || refresh == null || refresh.isEmpty) {
       throw Exception('Login failed: token missing in response');
     }
@@ -388,7 +382,6 @@ class MFilesService extends ChangeNotifier {
     accessToken = access;
     refreshToken = refresh;
 
-    // Decode userId from JWT
     userId = _decodeJwtAndGetUserId(accessToken!);
     print('🔐 Decoded userId from login token: $userId');
 
@@ -409,24 +402,22 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> requestPasswordReset(String email) async {
-  final response = await http.post(
-    Uri.parse('https://auth.alignsys.tech/api/password_reset/'),
-    headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: 'email=${Uri.encodeComponent(email)}',
-  );
+    final response = await http.post(
+      Uri.parse('https://auth.alignsys.tech/api/password_reset/'),
+      headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: 'email=${Uri.encodeComponent(email)}',
+    );
 
-  if (response.statusCode != 200 &&
-      response.statusCode != 201 &&
-      response.statusCode != 204) {
-    throw Exception('Password reset failed: ${response.statusCode} — ${response.body}');
+    if (response.statusCode != 200 &&
+        response.statusCode != 201 &&
+        response.statusCode != 204) {
+      throw Exception('Password reset failed: ${response.statusCode} — ${response.body}');
+    }
   }
-}
 
   Future<List<Vault>> getUserVaults() async {
     if (accessToken == null) throw Exception("User not logged in");
 
-    // Wrap in _authenticatedRequest so an expired token is silently
-    // refreshed instead of immediately throwing a 401.
     late http.Response response;
     try {
       response = await _authenticatedRequest(
@@ -458,18 +449,18 @@ class MFilesService extends ChangeNotifier {
     print('   accessToken: ${accessToken != null ? "present" : "null"}');
     print('   userId: $userId');
     print('   mfilesUserId (cached): $mfilesUserId');
-    
+
     if (mfilesUserId != null) {
       print('   ✅ Using cached mfilesUserId: $mfilesUserId');
       return;
     }
-    
+
     if (selectedVault == null) {
       print('❌ No vault selected');
       _setError('No vault selected');
       return;
     }
-    
+
     if (accessToken == null) {
       print('❌ No access token');
       _setError('Not authenticated');
@@ -479,8 +470,7 @@ class MFilesService extends ChangeNotifier {
     try {
       final url = '$baseUrl/api/user/mfiles-profile/$vaultGuidNoBraces';
       print('🌐 Fetching: $url');
-      
-      // ✅ Use the helper instead of http.get directly
+
       final response = await _authenticatedRequest(
         () => http.get(Uri.parse(url), headers: _authHeadersNoJson),
       );
@@ -490,8 +480,10 @@ class MFilesService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        debugPrint('🔐 mfiles-profile response: $data');
         mfilesUserId = (data['id'] as num?)?.toInt();
         isAdmin = data['isAdmin'] as bool? ?? false;
+        debugPrint('✅ isAdmin set to: $isAdmin');
 
         print('✅ mfilesUserId set to: $mfilesUserId');
 
@@ -509,7 +501,7 @@ class MFilesService extends ChangeNotifier {
       } else {
         print('⚠️ Non-200 status (${response.statusCode}), using fallback mapping');
       }
-      
+
       await _useFallbackMapping();
     } catch (e, stackTrace) {
       print('❌ Exception in fetchMFilesUserId: $e');
@@ -521,30 +513,30 @@ class MFilesService extends ChangeNotifier {
   Future<void> _useFallbackMapping() async {
     print('🔄 Using fallback mapping');
     print('   userId before: $userId');
-    
+
     if (userId == null) {
-      // Last resort: try to decode from token again
       if (accessToken != null) {
         print('   Attempting emergency JWT decode...');
         userId = _decodeJwtAndGetUserId(accessToken!);
         print('   Emergency decode result: $userId');
-        
+
         if (userId != null) {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setInt('user_id', userId!);
         }
       }
     }
-    
+
     if (userId == null) {
       print('❌ userId is still null, cannot use fallback');
       _setError('M-Files user not resolved');
       return;
     }
 
-    // Apply your custom mapping logic
     mfilesUserId = (userId == 37) ? 20 : userId;
     print('✅ mfilesUserId set to (fallback): $mfilesUserId');
+    isAdmin = false;
+    debugPrint('⚠️ Fallback used — isAdmin defaulting to false');
 
     final prefs = await SharedPreferences.getInstance();
     if (mfilesUserId != null) {
@@ -614,10 +606,8 @@ class MFilesService extends ChangeNotifier {
   Future<void> fetchClassProperties(int objectTypeId, int classId) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
 
-    // ✅ Create a cache key
     final cacheKey = '$objectTypeId-$classId';
-    
-    // ✅ Return cached data if available (no loading state, no notifyListeners)
+
     if (_classPropsCache.containsKey(cacheKey)) {
       classProperties = _classPropsCache[cacheKey]!;
       if (kDebugMode) {
@@ -626,7 +616,6 @@ class MFilesService extends ChangeNotifier {
       return;
     }
 
-    // ✅ Only show loading state if we're actually making an API call
     _setLoading(true);
     _setError(null);
 
@@ -640,11 +629,10 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
         final props = data.map((e) => ClassProperty.fromJson(e)).toList();
-        
-        // ✅ Update both the current list and the cache
+
         classProperties = props;
         _classPropsCache[cacheKey] = props;
-        
+
         if (kDebugMode) {
           debugPrint('✅ Fetched and cached class properties for $cacheKey (${props.length} props)');
         }
@@ -658,7 +646,6 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  /// Clears the class properties cache
   void clearClassPropertiesCache() {
     _classPropsCache.clear();
     if (kDebugMode) {
@@ -696,8 +683,8 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
         searchResults = data.map((e) => ViewObject.fromJson(e)).toList();
-        // ✅ Warm up extensions for search results
         warmExtensionsForObjects(searchResults);
+        warmRelationshipsForObjects(searchResults);
         notifyListeners();
       } else {
         _setError('Search failed: ${response.statusCode}');
@@ -832,8 +819,7 @@ class MFilesService extends ChangeNotifier {
 
     try {
       final url = Uri.parse('$baseUrl/api/Views/GetViews/$vaultGuidWithBraces/$mfilesUserId');
-      
-      // ✅ Use the helper
+
       final response = await _authenticatedRequest(
         () => http.get(url, headers: _authHeadersNoJson),
       );
@@ -848,10 +834,10 @@ class MFilesService extends ChangeNotifier {
 
         if (decoded is Map<String, dynamic>) {
           final common = (decoded['commonViews'] ?? decoded['CommonViews'] ?? decoded['common_views']) as List? ?? [];
-          final other  = (decoded['otherViews']  ?? decoded['OtherViews']  ?? decoded['other_views'])  as List? ?? [];
+          final other = (decoded['otherViews'] ?? decoded['OtherViews'] ?? decoded['other_views']) as List? ?? [];
 
           commonViews = common.map((e) => ViewItem.fromJson(e)).toList();
-          otherViews  = other.map((e) => ViewItem.fromJson(e)).toList();
+          otherViews = other.map((e) => ViewItem.fromJson(e)).toList();
           allViews = [...commonViews, ...otherViews];
           notifyListeners();
         } else {
@@ -867,7 +853,6 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-
   Future<void> fetchRecentObjects() async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
 
@@ -876,8 +861,7 @@ class MFilesService extends ChangeNotifier {
 
     try {
       final url = Uri.parse('$baseUrl/api/Views/GetRecent/$vaultGuidWithBraces/$mfilesUserId');
-      
-      // ✅ Use the helper
+
       final response = await _authenticatedRequest(
         () => http.get(url, headers: _authHeadersNoJson),
       );
@@ -893,11 +877,9 @@ class MFilesService extends ChangeNotifier {
         });
 
         recentObjects = fetched;
-
-        // ✅ Warm up extensions after fetching
         warmExtensionsForObjects(recentObjects);
+        warmRelationshipsForObjects(recentObjects);
         notifyListeners();
-
       } else {
         _setError('Failed to fetch recent objects: ${response.statusCode}');
       }
@@ -929,6 +911,7 @@ class MFilesService extends ChangeNotifier {
             .toList();
 
         warmExtensionsForObjects(assignedObjects);
+        warmRelationshipsForObjects(assignedObjects);
         notifyListeners();
       } else {
         _setError('Failed to fetch assigned objects: ${response.statusCode}');
@@ -1030,7 +1013,6 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  //(This prevents token-expiry edge cases + makes behavior consistent.)
   Future<List<ObjectFile>> fetchObjectFiles({
     required int objectId,
     required int classId,
@@ -1065,8 +1047,8 @@ class MFilesService extends ChangeNotifier {
 
   // ==================== FILE EXTENSION CACHE (for icons) ====================
 
-  final Map<int, String> _extByObjectId = {}; // objectId -> "pdf"
-  final Set<int> _extInFlight = {}; // prevent duplicate calls
+  final Map<int, String> _extByObjectId = {};
+  final Set<int> _extInFlight = {};
 
   String? cachedExtensionForObject(int objectId) => _extByObjectId[objectId];
 
@@ -1076,8 +1058,6 @@ class MFilesService extends ChangeNotifier {
     return e.startsWith('.') ? e.substring(1) : e;
   }
 
-  //    Key change: STOP requiring classId > 0.
-  //    Some vaults/views return classId=0 for document rows; your old guard blocks caching -> "?" icons forever.
   Future<void> ensureExtensionForObject({
     required int objectId,
     required int classId,
@@ -1091,8 +1071,6 @@ class MFilesService extends ChangeNotifier {
     try {
       final files = await fetchObjectFiles(objectId: objectId, classId: classId);
       final ext = files.isNotEmpty ? _normalizeExt(files.first.extension) : '';
-
-      // cache even empty to avoid refetch loops
       _extByObjectId[objectId] = ext;
       notifyListeners();
     } catch (_) {
@@ -1104,20 +1082,19 @@ class MFilesService extends ChangeNotifier {
   }
 
   void warmExtensionsForItems(List<ViewContentItem> items) {
-    for (final it in items) {
-      if (!it.isObject) continue;
-      if (it.id <= 0) continue;
-
-      // allow classId = 0
-      ensureExtensionForObject(objectId: it.id, classId: it.classId);
-    }
+  for (final it in items) {
+    if (!it.isObject) continue;
+    if (it.id <= 0) continue;
+    if (isMultiFile(objectTypeId: it.objectTypeId, isSingleFile: it.isSingleFile)) continue;
+    ensureExtensionForObject(objectId: it.id, classId: it.classId);
   }
+}
 
   void warmExtensionsForObjects(List<ViewObject> objects) {
     for (final o in objects) {
       if (o.id <= 0) continue;
-
-      // allow classId = 0
+      // Multifiles don't resolve to a single extension
+      if (isMultiFile(objectTypeId: o.objectTypeId, isSingleFile: o.isSingleFile)) continue;
       ensureExtensionForObject(objectId: o.id, classId: o.classId);
     }
   }
@@ -1125,6 +1102,184 @@ class MFilesService extends ChangeNotifier {
   void clearExtensionCache() {
     _extByObjectId.clear();
     _extInFlight.clear();
+  }
+
+  // ==================== RELATIONSHIPS PRESENCE CACHE ====================
+
+  // objectId -> true (has relationships) / false (none confirmed)
+  final Map<int, bool> _hasRelationshipsCache = {};
+  final Set<int> _relInFlight = {};
+
+  // Max concurrent LinkedObjects requests per batch chunk
+  static const int _relConcurrency = 4;
+
+  /// Returns cached relationships presence:
+  /// - `true`  → confirmed has at least one relationship → show blue dot
+  /// - `false` → confirmed empty → no dot
+  /// - `null`  → not yet checked → no dot yet
+  bool? cachedHasRelationships(int objectId) => _hasRelationshipsCache[objectId];
+
+  // ── Persistence: store/restore dots across app launches ──────────────────
+
+  Future<void> _loadRelationshipsCacheFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys().where((k) => k.startsWith('rel_')).toList();
+      for (final key in keys) {
+        final id = int.tryParse(key.substring(4));
+        if (id != null) {
+          _hasRelationshipsCache[id] = prefs.getBool(key) ?? false;
+        }
+      }
+      if (_hasRelationshipsCache.isNotEmpty) {
+        notifyListeners(); // dots appear immediately on launch
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('⚠️ Failed to load relationships cache from prefs: $e');
+    }
+  }
+
+  void _saveRelationshipToPrefs(int objectId, bool hasRel) {
+    // Fire-and-forget — never blocks the UI
+    SharedPreferences.getInstance().then((prefs) {
+      prefs.setBool('rel_$objectId', hasRel);
+    }).catchError((_) {});
+  }
+
+  Future<void> _clearRelationshipsCacheFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys().where((k) => k.startsWith('rel_')).toList();
+      for (final key in keys) {
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('⚠️ Failed to clear relationships cache from prefs: $e');
+    }
+  }
+
+  // ── Single-object fetch (called when user taps chevron manually) ──────────
+
+  Future<void> ensureRelationshipsPresenceForObject({
+    required int objectId,
+    required int objectTypeId,
+    required int classId,
+  }) async {
+    if (objectId <= 0 || objectTypeId <= 0 || classId <= 0) return;
+    if (_hasRelationshipsCache.containsKey(objectId)) return;
+    if (_relInFlight.contains(objectId)) return;
+
+    _relInFlight.add(objectId);
+    try {
+      final groups = await fetchLinkedObjects(
+        vaultGuid: vaultGuidWithBraces,
+        objectTypeId: objectTypeId,
+        objectId: objectId,
+        classId: classId,
+        userId: currentUserId,
+      );
+      final hasRel = groups.any((g) => g.items.isNotEmpty);
+      _hasRelationshipsCache[objectId] = hasRel;
+      _saveRelationshipToPrefs(objectId, hasRel);
+      notifyListeners();
+    } catch (_) {
+      // Don't cache errors — allow a retry on next interaction
+    } finally {
+      _relInFlight.remove(objectId);
+    }
+  }
+
+  // ── Batch warm: fires _relConcurrency requests simultaneously, ────────────
+  // ── notifies once per chunk so dots appear progressively ─────────────────
+
+  Future<void> _warmRelationshipsBatch(
+    List<({int objectId, int objectTypeId, int classId})> items,
+  ) async {
+    // Only process items not already cached or in-flight
+    final todo = items.where((it) =>
+      it.objectId > 0 &&
+      it.objectTypeId > 0 &&
+      it.classId > 0 &&
+      !_hasRelationshipsCache.containsKey(it.objectId) &&
+      !_relInFlight.contains(it.objectId),
+    ).toList();
+
+    if (todo.isEmpty) return;
+
+    // Mark all in-flight immediately to block duplicate calls from other paths
+    for (final it in todo) _relInFlight.add(it.objectId);
+
+    for (int i = 0; i < todo.length; i += _relConcurrency) {
+      final chunk = todo.skip(i).take(_relConcurrency).toList();
+
+      // Fire chunk concurrently, collect results
+      final results = await Future.wait(
+        chunk.map((it) async {
+          try {
+            final groups = await fetchLinkedObjects(
+              vaultGuid: vaultGuidWithBraces,
+              objectTypeId: it.objectTypeId,
+              objectId: it.objectId,
+              classId: it.classId,
+              userId: currentUserId,
+            );
+            return (id: it.objectId, hasRel: groups.any((g) => g.items.isNotEmpty));
+          } catch (_) {
+            return (id: it.objectId, hasRel: false);
+          }
+        }),
+      );
+
+      // Write results and persist
+      for (final r in results) {
+        _hasRelationshipsCache[r.id] = r.hasRel;
+        _relInFlight.remove(r.id);
+        _saveRelationshipToPrefs(r.id, r.hasRel);
+      }
+
+      // Single notify per chunk — dots appear progressively every 4 objects
+      notifyListeners();
+    }
+  }
+
+  void warmRelationshipsForObjects(List<ViewObject> objects) {
+    final items = objects
+        .where((o) =>
+            o.id > 0 &&
+            o.objectTypeId > 0 &&
+            o.classId > 0 &&
+            !isDocumentViewObject(o))
+        .map((o) => (
+              objectId: o.id,
+              objectTypeId: o.objectTypeId,
+              classId: o.classId,
+            ))
+        .toList();
+    _warmRelationshipsBatch(items); // intentionally not awaited
+  }
+
+  void warmRelationshipsForItems(List<ViewContentItem> items) {
+    final batch = items
+        .where((it) =>
+            it.isObject &&
+            it.id > 0 &&
+            it.objectTypeId > 0 &&
+            it.classId > 0 &&
+            !isDocumentContentItem(it))
+        .map((it) => (
+              objectId: it.id,
+              objectTypeId: it.objectTypeId,
+              classId: it.classId,
+            ))
+        .toList();
+    _warmRelationshipsBatch(batch); // intentionally not awaited
+  }
+
+  void clearRelationshipsCache() {
+    _hasRelationshipsCache.clear();
+    _relInFlight.clear();
+    _clearRelationshipsCacheFromPrefs(); // fire-and-forget
+    if (kDebugMode) debugPrint('🧹 Cleared relationships presence cache');
   }
 
   // ==================== DOWNLOAD / BASE64 FLEX ====================
@@ -1152,14 +1307,12 @@ class MFilesService extends ChangeNotifier {
       final looks = s.length > 100 && RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(s);
       return looks ? s : null;
     }
-
     if (node is List) {
       for (final x in node) {
         final found = _deepFindBase64(x);
         if (found != null) return found;
       }
     }
-
     if (node is Map) {
       for (final e in node.entries) {
         if (e.key is String && (e.key as String).trim().toLowerCase() == 'base64') {
@@ -1172,7 +1325,6 @@ class MFilesService extends ChangeNotifier {
         if (found != null) return found;
       }
     }
-
     return null;
   }
 
@@ -1184,11 +1336,11 @@ class MFilesService extends ChangeNotifier {
         i++;
         continue;
       }
-      return b == 0x7B /* { */ || b == 0x5B /* [ */;
+      return b == 0x7B || b == 0x5B;
     }
     return false;
   }
-  
+
   Future<({List<int> bytes, String? contentType})> downloadFileBytesWithFallback({
     required int displayObjectId,
     required int classId,
@@ -1200,7 +1352,6 @@ class MFilesService extends ChangeNotifier {
       throw Exception('Session not ready');
     }
 
-    // ✅ Query parameters - works for all file types
     final url = Uri.parse('$baseUrl/api/objectinstance/DownloadOtherFiles').replace(
       queryParameters: {
         'ObjectId': displayObjectId.toString(),
@@ -1225,14 +1376,13 @@ class MFilesService extends ChangeNotifier {
 
         String headAscii(List<int> b) {
           final take = b.length > 32 ? b.sublist(0, 32) : b;
-          return String.fromCharCodes(take.map((x) => (x >= 32 && x <= 126) ? x : 46)); // printable else '.'
+          return String.fromCharCodes(take.map((x) => (x >= 32 && x <= 126) ? x : 46));
         }
 
         bool looksPdf(List<int> b) =>
-            b.length >= 4 && b[0] == 0x25 && b[1] == 0x50 && b[2] == 0x44 && b[3] == 0x46; // %PDF
+            b.length >= 4 && b[0] == 0x25 && b[1] == 0x50 && b[2] == 0x44 && b[3] == 0x46;
 
-        bool looksZip(List<int> b) =>
-            b.length >= 2 && b[0] == 0x50 && b[1] == 0x4B; // PK (docx/xlsx)
+        bool looksZip(List<int> b) => b.length >= 2 && b[0] == 0x50 && b[1] == 0x4B;
 
         debugPrint('🔎 HEAD(ASCII): ${headAscii(bytes)}');
 
@@ -1240,8 +1390,11 @@ class MFilesService extends ChangeNotifier {
           int i = 0;
           while (i < b.length) {
             final x = b[i];
-            if (x == 0x20 || x == 0x0A || x == 0x0D || x == 0x09) { i++; continue; }
-            return x == 0x7B /*{*/ || x == 0x5B /*[*/;
+            if (x == 0x20 || x == 0x0A || x == 0x0D || x == 0x09) {
+              i++;
+              continue;
+            }
+            return x == 0x7B || x == 0x5B;
           }
           return false;
         }
@@ -1263,7 +1416,6 @@ class MFilesService extends ChangeNotifier {
 
         final exp = expectedExtension.trim().toLowerCase().replaceFirst('.', '');
 
-        // Check for M-Files error messages returned as text
         if (contentType?.contains('text') == true) {
           final body = utf8.decode(bytes);
           if (body.contains('not been committed')) {
@@ -1278,14 +1430,13 @@ class MFilesService extends ChangeNotifier {
         if (exp == 'pdf' && !looksPdf(bytes)) {
           throw Exception('Expected PDF but downloaded content is not PDF. HEAD=${headAscii(bytes)}');
         }
-        if (['docx','xlsx','pptx'].contains(exp) && !looksZip(bytes)) {
+        if (['docx', 'xlsx', 'pptx'].contains(exp) && !looksZip(bytes)) {
           throw Exception('Expected Office zip ($exp) but downloaded content is not ZIP. HEAD=${headAscii(bytes)}');
         }
 
         debugPrint('🔎 looksPdf=${looksPdf(bytes)} looksZip=${looksZip(bytes)} bytes=${bytes.length}');
-        
         debugPrint('✅ Downloaded ${bytes.length} bytes');
-        
+
         return (bytes: bytes, contentType: contentType);
       }
 
@@ -1299,12 +1450,9 @@ class MFilesService extends ChangeNotifier {
   String _safeFilename(String title, String extension, int fileId) {
     final ext = extension.trim().toLowerCase().replaceFirst('.', '');
     var base = title.trim().isEmpty ? 'file_$fileId' : title.trim();
-
     base = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-
     if (ext.isEmpty) return base;
     if (base.toLowerCase().endsWith('.$ext')) return base;
-
     return '$base.$ext';
   }
 
@@ -1327,7 +1475,7 @@ class MFilesService extends ChangeNotifier {
     final filename = _safeFilename(fileTitle, extension, fileId);
     final dir = await getTemporaryDirectory();
     final filePath = '${dir.path}/$filename';
-    
+
     final file = File(filePath);
     await file.writeAsBytes(result.bytes, flush: true);
 
@@ -1358,7 +1506,7 @@ class MFilesService extends ChangeNotifier {
     final filename = _safeFilename(fileTitle, extension, fileId);
     final dir = await getApplicationDocumentsDirectory();
     final path = '${dir.path}/$filename';
-    
+
     final out = File(path);
     await out.writeAsBytes(result.bytes, flush: true);
 
@@ -1366,71 +1514,68 @@ class MFilesService extends ChangeNotifier {
   }
 
   // ==================== CONVERT TO PDF ====================
-Future<Map<String, dynamic>> convertToPdf({
-  required int objectId,
-  required int classId,
-  required int fileId,
-  bool overWriteOriginal = false,
-  bool separateFile = true,
-}) async {
-  if (selectedVault == null || accessToken == null || mfilesUserId == null) {
-    throw Exception('Session not ready');
+
+  Future<Map<String, dynamic>> convertToPdf({
+    required int objectId,
+    required int classId,
+    required int fileId,
+    bool overWriteOriginal = false,
+    bool separateFile = true,
+  }) async {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
+      throw Exception('Session not ready');
+    }
+
+    final url = Uri.parse('$baseUrl/api/objectinstance/ConvertToPdf');
+
+    final body = {
+      "vaultGuid": vaultGuidWithBraces,
+      "objectId": objectId,
+      "classId": classId,
+      "fileID": fileId,
+      "overWriteOriginal": overWriteOriginal,
+      "separateFile": separateFile,
+      "userID": mfilesUserId,
+    };
+
+    final resp = await http.post(url, headers: _authHeaders, body: jsonEncode(body));
+
+    if (resp.statusCode != 200 && resp.statusCode != 201) {
+      throw Exception('ConvertToPdf failed: ${resp.statusCode} ${resp.body}');
+    }
+
+    final decoded = jsonDecode(resp.body);
+    if (decoded is Map<String, dynamic>) return decoded;
+
+    throw Exception('ConvertToPdf unexpected response: ${resp.body}');
   }
 
-  final url = Uri.parse('$baseUrl/api/objectinstance/ConvertToPdf');
+  int extractPdfFileId(Map<String, dynamic> m) {
+    int? asInt(dynamic v) {
+      if (v is int) return v;
+      if (v is num) return v.toInt();
+      return int.tryParse('${v ?? ''}');
+    }
 
-  final body = {
-    "vaultGuid": vaultGuidWithBraces,
-    "objectId": objectId,
-    "classId": classId,
-    "fileID": fileId,
-    "overWriteOriginal": overWriteOriginal,
-    "separateFile": separateFile,
-    "userID": mfilesUserId,
-  };
+    final candidates = [
+      m['pdfFileId'],
+      m['PdfFileId'],
+      m['newFileId'],
+      m['fileId'],
+      m['fileID'],
+      m['convertedFileId'],
+      m['ConvertedFileId'],
+      (m['data'] is Map ? (m['data'] as Map)['fileId'] : null),
+      (m['result'] is Map ? (m['result'] as Map)['fileId'] : null),
+    ];
 
-  final resp = await http.post(url, headers: _authHeaders, body: jsonEncode(body));
+    for (final c in candidates) {
+      final id = asInt(c);
+      if (id != null && id > 0) return id;
+    }
 
-  if (resp.statusCode != 200 && resp.statusCode != 201) {
-    throw Exception('ConvertToPdf failed: ${resp.statusCode} ${resp.body}');
+    throw Exception('Could not find pdf fileId in ConvertToPdf response. Keys=${m.keys.toList()}');
   }
-
-  final decoded = jsonDecode(resp.body);
-  if (decoded is Map<String, dynamic>) return decoded;
-
-  // some APIs return a list or string; keep it explicit
-  throw Exception('ConvertToPdf unexpected response: ${resp.body}');
-}
-
-/// Extract the new PDF fileId from the ConvertToPdf response.
-/// Adjust keys here once you see the real response.
-int extractPdfFileId(Map<String, dynamic> m) {
-  int? asInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    return int.tryParse('${v ?? ''}');
-  }
-
-  // Common possibilities
-  final candidates = [
-    m['pdfFileId'],
-    m['PdfFileId'],
-    m['newFileId'],
-    m['fileId'],
-    m['fileID'],
-    m['convertedFileId'],
-    m['ConvertedFileId'],
-    (m['data'] is Map ? (m['data'] as Map)['fileId'] : null),
-    (m['result'] is Map ? (m['result'] as Map)['fileId'] : null),
-  ];
-
-  for (final c in candidates) {
-    final id = asInt(c);
-    if (id != null && id > 0) return id;
-  }
-
-  throw Exception('Could not find pdf fileId in ConvertToPdf response. Keys=${m.keys.toList()}');
-}
 
   // -------------------- Deleted / Reports --------------------
 
@@ -1454,9 +1599,8 @@ int extractPdfFileId(Map<String, dynamic> m) {
             .map((e) => ViewObject.fromJson(e))
             .toList();
 
-          // ✅ Warm up extensions
-          warmExtensionsForObjects(deletedObjects);
-
+        warmExtensionsForObjects(deletedObjects);
+        warmRelationshipsForObjects(deletedObjects);
         notifyListeners();
         return;
       }
@@ -1471,52 +1615,50 @@ int extractPdfFileId(Map<String, dynamic> m) {
 
   Future<void> fetchReportObjects() async {
     reportObjects = [];
-    // ✅ Warm up extensions
-      warmExtensionsForObjects(reportObjects);
-
+    warmExtensionsForObjects(reportObjects);
     notifyListeners();
   }
 
   // -------------------- View details --------------------
 
   Future<List<ViewContentItem>> fetchObjectsInViewRaw(int viewId) async {
-  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-    throw Exception('Session not ready');
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      throw Exception('Session not ready');
+    }
+
+    final url = Uri.parse('$baseUrl/api/Views/GetObjectsInView').replace(
+      queryParameters: {
+        'vaultGuid': vaultGuidWithBraces,
+        'viewId': viewId.toString(),
+        'userID': mfilesUserId.toString(),
+      },
+    );
+
+    debugPrint("VIEW FETCH URL: $url");
+
+    final resp = await http.get(url, headers: _authHeadersNoJson);
+
+    if (resp.statusCode != 200) {
+      throw Exception('GetObjectsInView failed: ${resp.statusCode} ${resp.body}');
+    }
+
+    final decoded = json.decode(resp.body);
+
+    final List list = decoded is List
+        ? decoded
+        : (decoded is Map && decoded['items'] is List)
+            ? decoded['items'] as List
+            : (decoded is Map && decoded['data'] is List)
+                ? decoded['data'] as List
+                : <dynamic>[];
+
+    final items = list.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
+
+    warmExtensionsForItems(items);
+    warmRelationshipsForItems(items);
+
+    return items;
   }
-
-  final url = Uri.parse('$baseUrl/api/Views/GetObjectsInView').replace(
-    queryParameters: {
-      'vaultGuid': vaultGuidWithBraces,
-      'viewId': viewId.toString(),
-      'userID': mfilesUserId.toString(),
-    },
-  );
-
-  debugPrint("VIEW FETCH URL: $url");
-
-  final resp = await http.get(url, headers: _authHeadersNoJson);
-
-  if (resp.statusCode != 200) {
-    throw Exception('GetObjectsInView failed: ${resp.statusCode} ${resp.body}');
-  }
-
-  final decoded = json.decode(resp.body);
-
-  final List list = decoded is List
-      ? decoded
-      : (decoded is Map && decoded['items'] is List)
-          ? decoded['items'] as List
-          : (decoded is Map && decoded['data'] is List)
-              ? decoded['data'] as List
-              : <dynamic>[];
-
-  final items = list.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
-  
-  // ✅ Warm up extensions after parsing items
-  warmExtensionsForItems(items);
-  
-  return items;
-}
 
   Future<List<ViewContentItem>> fetchViewPropItems({
     required int viewId,
@@ -1558,7 +1700,9 @@ int extractPdfFileId(Map<String, dynamic> m) {
     final decoded = json.decode(resp.body);
     if (decoded is! List) return <ViewContentItem>[];
 
-    return decoded.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
+    final items = decoded.whereType<Map<String, dynamic>>().map(ViewContentItem.fromJson).toList();
+    warmRelationshipsForItems(items);
+    return items;
   }
 
   // -------------------- Comments --------------------
@@ -1605,15 +1749,8 @@ int extractPdfFileId(Map<String, dynamic> m) {
 
     final uri = Uri.parse('$baseUrl/api/Comments');
 
-    // Use fullName if available, fall back to username (email), then empty
-  final displayName = (fullname?.trim().isNotEmpty == true
-      ? fullname!
-      : username ?? '')
-      .trim();
-
-  final prefixedComment = displayName.isNotEmpty
-      ? '$displayName : $comment'
-      : comment;
+    final displayName = (fullname?.trim().isNotEmpty == true ? fullname! : username ?? '').trim();
+    final prefixedComment = displayName.isNotEmpty ? '$displayName : $comment' : comment;
 
     final payload = {
       "comment": prefixedComment,
@@ -1709,9 +1846,7 @@ int extractPdfFileId(Map<String, dynamic> m) {
         body: jsonEncode(body),
       );
 
-      if (resp.statusCode == 200 ||
-          resp.statusCode == 201 ||
-          resp.statusCode == 204) return true;
+      if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) return true;
 
       _setError('Server returned ${resp.statusCode}: ${resp.body}');
       return false;
@@ -1940,9 +2075,13 @@ int extractPdfFileId(Map<String, dynamic> m) {
         .toList();
   }
 
+  bool isMultiFile({required int objectTypeId, required bool isSingleFile}) {
+    return objectTypeId == 0 && !isSingleFile;
+  }
+
   // ==================== ICON RESOLUTION ====================
-    bool isDocumentObjectType(int objectTypeId) {
-    // objectTypes must already be loaded
+
+  bool isDocumentObjectType(int objectTypeId) {
     final t = objectTypes.firstWhere(
       (x) => x.id == objectTypeId,
       orElse: () => VaultObjectType(id: 0, displayName: '', isDocument: false, name: ''),
@@ -1950,13 +2089,22 @@ int extractPdfFileId(Map<String, dynamic> m) {
     return t.isDocument;
   }
 
-  bool isDocumentViewObject(ViewObject obj) => isDocumentObjectType(obj.objectTypeId);
+  bool isDocumentViewObject(ViewObject obj) {
+    if (isMultiFile(objectTypeId: obj.objectTypeId, isSingleFile: obj.isSingleFile)) {
+      return false;
+    }
+    return isDocumentObjectType(obj.objectTypeId);
+  }
 
-  bool isDocumentContentItem(ViewContentItem item) =>
-      item.isObject && isDocumentObjectType(item.objectTypeId);
+  bool isDocumentContentItem(ViewContentItem item) {
+    if (!item.isObject) return false;
+    if (isMultiFile(objectTypeId: item.objectTypeId, isSingleFile: item.isSingleFile)) {
+      return false;
+    }
+    return isDocumentObjectType(item.objectTypeId);
+  }
 
   IconData iconForViewObject(ViewObject obj) {
-    // Non-document objects should never use extension icons
     if (!isDocumentViewObject(obj)) return FileIconResolver.nonDocumentIcon;
 
     final ext = cachedExtensionForObject(obj.id);
@@ -1968,8 +2116,6 @@ int extractPdfFileId(Map<String, dynamic> m) {
 
   IconData iconForContentItem(ViewContentItem item) {
     if (!item.isObject) return FileIconResolver.nonDocumentIcon;
-
-    // If it’s an object but not a document, use non-doc icon
     if (!isDocumentContentItem(item)) return FileIconResolver.nonDocumentIcon;
 
     final ext = cachedExtensionForObject(item.id);
@@ -1980,30 +2126,28 @@ int extractPdfFileId(Map<String, dynamic> m) {
   }
 
   // ==================== VAULT SELECTION PERSISTENCE ====================
+
   Future<void> saveSelectedVault(Vault v) async {
     selectedVault = v;
     final prefs = await SharedPreferences.getInstance();
 
-    // Save all vault fields consistently
     await prefs.setString('selectedVaultGuid', v.guid);
     await prefs.setString('selectedVaultName', v.name);
     await prefs.setString('selectedVaultId', v.vaultId);
 
-    // Clear mfilesUserId so fetchMFilesUserId() resolves fresh for the
-    // new vault instead of returning early with the old vault's user ID.
     mfilesUserId = null;
     await prefs.remove('mfiles_user_id');
 
-    // Clear all vault-scoped caches
     clearClassPropertiesCache();
     clearExtensionCache();
+    clearRelationshipsCache();
 
     notifyListeners();
   }
 
   Future<void> restoreSelectedVault() async {
     final prefs = await SharedPreferences.getInstance();
-    final guid = prefs.getString('selectedVaultGuid');  // ✅ Match this key
+    final guid = prefs.getString('selectedVaultGuid');
     final name = prefs.getString('selectedVaultName');
     final vaultId = prefs.getString('selectedVaultId');
 
@@ -2025,16 +2169,78 @@ int extractPdfFileId(Map<String, dynamic> m) {
     }
   }
 
-
   // ==================== ASSIGNMENTS ====================
 
-  /// Marks an assignment as complete.
+  /// Approves or un-approves an assignment for a specific user.
   ///
-  /// ⚠️  URL PLACEHOLDER — swap '$baseUrl/api/Assignment/CompleteAssignment'
-  ///     with the real endpoint once confirmed with your backend team.
+  /// Maps to: POST /api/objectinstance/ApproveAssignment
   ///
-  /// On success, the item is removed from [assignedObjects] immediately
-  /// (optimistic update) so the UI updates without a full refresh.
+  /// Only the user whose [userId] matches the logged-in M-Files user should
+  /// call this. The [approve] flag mirrors the web client's toggle:
+  ///   - `true`  → mark this user's approval as complete
+  ///   - `false` → withdraw this user's approval
+  Future<bool> approveAssignment({
+    required int objectId,
+    required int classId,
+    required int userId,
+    required bool approve,
+  }) async {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
+      _setError('Session not ready');
+      return false;
+    }
+
+    // ── Enforce: only the current logged-in user may approve/withdraw ──
+    if (userId != mfilesUserId) {
+      _setError('You can only approve assignments assigned to you.');
+      return false;
+    }
+
+    try {
+      final url = Uri.parse('$baseUrl/api/objectinstance/ApproveAssignment');
+
+      final body = {
+        "vaultGuid": vaultGuidWithBraces,
+        "objectId": objectId,
+        "classId": classId,
+        "userID": userId,
+        "approve": approve,
+      };
+
+      if (kDebugMode) {
+        debugPrint('🚀 ApproveAssignment URL: $url');
+        debugPrint('📦 Body: ${jsonEncode(body)}');
+      }
+
+      final resp = await _authenticatedRequest(
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
+      );
+
+      if (kDebugMode) {
+        debugPrint('📨 ApproveAssignment status: ${resp.statusCode}');
+        debugPrint('📨 ApproveAssignment body: ${resp.body}');
+      }
+
+      if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) {
+        // If the approval is being set to true, remove from the assigned list
+        // so the home screen updates without a full refresh.
+        if (approve) {
+          assignedObjects.removeWhere((o) => o.id == objectId);
+          notifyListeners();
+        }
+        return true;
+      }
+
+      _setError('ApproveAssignment failed: ${resp.statusCode} ${resp.body}');
+      return false;
+    } catch (e) {
+      _setError('Error approving assignment: $e');
+      return false;
+    }
+  }
+
+  /// Legacy method kept for backward compatibility.
+  /// Prefer [approveAssignment] for assignment objects.
   Future<bool> markAssignmentComplete({
     required int objectId,
     required int classId,
@@ -2044,7 +2250,6 @@ int extractPdfFileId(Map<String, dynamic> m) {
     }
 
     try {
-      // ── TODO: replace URL with real endpoint once confirmed ──────────────
       final url = Uri.parse('$baseUrl/api/Assignment/CompleteAssignment');
 
       final body = {
@@ -2058,10 +2263,7 @@ int extractPdfFileId(Map<String, dynamic> m) {
         () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
       );
 
-      if (resp.statusCode == 200 ||
-          resp.statusCode == 201 ||
-          resp.statusCode == 204) {
-        // Optimistic removal — no full re-fetch needed
+      if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) {
         assignedObjects.removeWhere((o) => o.id == objectId);
         notifyListeners();
         return true;

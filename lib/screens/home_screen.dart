@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously, duplicate_ignore, deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
@@ -13,6 +15,8 @@ import '../models/view_item.dart';
 import '../models/view_object.dart';
 import '../widgets/relationships_dropdown.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
+import 'package:mfiles_app/screens/search_results_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -24,7 +28,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> tabs = ['Home', 'Recent', 'Assigned', 'Deleted', 'Reports'];
+  final List<String> tabs = ['Home', 'Recent', 'Assigned', 'Trash', 'Reports'];
   String _searchQuery = '';
 
   static const double _sectionSpacing = 10;
@@ -102,7 +106,7 @@ class _HomeScreenState extends State<HomeScreen>
       case 'Assigned':
         service.fetchAssignedObjects();
         break;
-      case 'Deleted':
+      case 'Trash':
         service.fetchDeletedObjects();
         break;
       default:
@@ -120,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen>
       case 'Assigned':
         await service.fetchAssignedObjects();
         break;
-      case 'Deleted':
+      case 'Trash':
         await service.fetchDeletedObjects();
         break;
       case 'Reports':
@@ -159,17 +163,21 @@ class _HomeScreenState extends State<HomeScreen>
           elevation: 0,
           toolbarHeight: 64,
           titleSpacing: 12,
-          title: Consumer<MFilesService>(
-            builder: (context, service, _) {
-              return Container(
-                padding: const EdgeInsets.all(4),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image.asset('assets/alignsysnew.png',
-                      height: 36, fit: BoxFit.cover),
-                ),
-              );
+          title: GestureDetector(
+            onTap: () async {
+              final uri = Uri.parse('https://www.alignsys.tech');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
             },
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: Image.asset('assets/alignsysnew.png',
+                    height: 36, fit: BoxFit.cover),
+              ),
+            ),
           ),
           actions: [
             Builder(
@@ -230,6 +238,7 @@ class _HomeScreenState extends State<HomeScreen>
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
+                // ignore: deprecated_member_use
                 color: Colors.black.withOpacity(0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 2))
@@ -271,7 +280,10 @@ class _HomeScreenState extends State<HomeScreen>
                   )
                 : null,
           ),
-          onChanged: (v) => setState(() => _searchQuery = v.trim()),
+          onChanged: (v) {
+            setState(() => _searchQuery = v.trim());
+            if (v.trim().isNotEmpty) _executeSearch();
+          },
           onSubmitted: (_) => _executeSearch(),
         ),
       ),
@@ -468,7 +480,6 @@ class _HomeScreenState extends State<HomeScreen>
           onRefresh: service.fetchAllViews,
           child: Scrollbar(
             controller: _homeScroll,
-            thumbVisibility: false,
             interactive: true,
             thickness: 6,
             radius: const Radius.circular(8),
@@ -812,7 +823,6 @@ class _HomeScreenState extends State<HomeScreen>
           onRefresh: () => onRefresh(service),
           child: Scrollbar(
             controller: _objectsScroll,
-            thumbVisibility: false,
             interactive: true,
             thickness: 6,
             radius: const Radius.circular(8),
@@ -842,15 +852,22 @@ class _HomeScreenState extends State<HomeScreen>
         type.isEmpty ? 'Modified: $modified' : '$type | $modified';
 
     final bool canExpand = obj.id != 0;
-    final bool hasMetadata = obj.classId != 0;
 
     final svc = context.watch<MFilesService>();
-    final mappedIcon = _iconForObj(svc, obj);
+    _iconForObj(svc, obj);
 
     final bool infoExpanded = _expandedInfoItemId == obj.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == obj.id;
 
     final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+
+    if (canExpand && !_isDocumentObj(svc, obj) && svc.cachedHasRelationships(obj.id) == null) {
+      svc.ensureRelationshipsPresenceForObject(
+        objectId: obj.id,
+        objectTypeId: obj.objectTypeId,
+        classId: obj.classId,
+      );
+    }
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
@@ -908,36 +925,34 @@ class _HomeScreenState extends State<HomeScreen>
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
-                      if (canExpand && !_isDocumentObj(svc, obj)) ...[
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                if (_expandedRelationshipsItemId == obj.id) {
-                                  _expandedRelationshipsItemId = null;
-                                } else {
-                                  _expandedRelationshipsItemId = obj.id;
-                                  _expandedInfoItemId = null;
-                                }
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(4),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                relationshipsExpanded
-                                    ? Icons.expand_more
-                                    : Icons.chevron_right,
-                                size: 18,
-                                color: const Color(0xFF072F5F),
-                              ),
+                      if (canExpand && !_isDocumentObj(svc, obj) && svc.cachedHasRelationships(obj.id) == true) ...[
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              if (_expandedRelationshipsItemId == obj.id) {
+                                _expandedRelationshipsItemId = null;
+                              } else {
+                                _expandedRelationshipsItemId = obj.id;
+                                _expandedInfoItemId = null;
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
+                              size: 18,
+                              color: const Color(0xFF072F5F),
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                      ] else
-                        const SizedBox(width: 4),
+                      ),
+                      const SizedBox(width: 6),
+                    ] else
+                      const SizedBox(width: 4),
 
                       _isDocumentObj(svc, obj)
                           ? FileTypeBadge(
@@ -1027,7 +1042,7 @@ class _HomeScreenState extends State<HomeScreen>
               Divider(height: 1, color: Colors.grey.shade200),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: RelationshipsDropdown(obj: obj),
+                child: RelationshipsDropdown(obj: obj, initiallyExpanded: true),
               ),
             ],
           ],
@@ -1112,9 +1127,15 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<void> _executeSearch() async {
     if (_searchQuery.isEmpty) return;
-    final service = context.read<MFilesService>();
-    await service.searchVault(_searchQuery);
-    if (_tabController.index != 1) _tabController.animateTo(1);
+    _searchFocus.unfocus();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchResultsScreen(initialQuery: _searchQuery),
+      ),
+    );
+    // When user comes back, reset the search bar
+    _resetSearch();
   }
 
   // ─── CREATE BOTTOM SHEET ──────────────────────────────────────────────────
