@@ -166,7 +166,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         style: const TextStyle(color: Colors.white, fontSize: 16),
         cursorColor: Colors.white70,
         decoration: InputDecoration(
-          hintText: 'Search vault…',
+          hintText: 'Search repository…',
           hintStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16),
           border: InputBorder.none,
           isDense: true,
@@ -327,7 +327,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             ),
             const SizedBox(height: 20),
             const Text(
-              'Search the vault',
+              'Search the repository',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,

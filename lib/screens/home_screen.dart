@@ -1,7 +1,6 @@
 // ignore_for_file: use_build_context_synchronously, duplicate_ignore, deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
@@ -80,12 +79,21 @@ class _HomeScreenState extends State<HomeScreen>
         if (mounted) Navigator.pushReplacementNamed(context, '/login');
         return;
       }
-      await service.fetchObjectTypes();
-      await service.fetchAllViews();
-      await service.fetchRecentObjects();
-      await service.fetchAssignedObjects();
-      await service.fetchDeletedObjects();  
-      await service.fetchReportObjects(); 
+
+      // Fire high-priority badge counts immediately in parallel
+      await Future.wait([
+        service.fetchRecentObjects(),
+        service.fetchAssignedObjects(),
+        service.fetchDeletedObjects(),
+      ]);
+
+      // Load the rest after badges are ready
+      await Future.wait([
+        service.fetchObjectTypes(),
+        service.fetchAllViews(),
+        service.fetchReportObjects(),
+      ]);
+
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -145,11 +153,6 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
-  String _formatModified(DateTime? dt) {
-    if (dt == null) return '—';
-    return DateFormat('dd MMM yyyy, HH:mm').format(dt.toLocal());
-  }
-
   // ─── BUILD ────────────────────────────────────────────────────────────────
 
   @override
@@ -166,8 +169,16 @@ class _HomeScreenState extends State<HomeScreen>
           title: GestureDetector(
             onTap: () async {
               final uri = Uri.parse('https://www.alignsys.tech');
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
+
+              final launched = await launchUrl(
+                uri,
+                mode: LaunchMode.externalApplication,
+              );
+
+              if (!launched && context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Could not open Alignsys website')),
+                );
               }
             },
             child: Container(
@@ -327,7 +338,7 @@ class _HomeScreenState extends State<HomeScreen>
           _buildTab(Icons.home_rounded, 'Home'),
           _buildTab(Icons.history_rounded, 'Recent'),
           _buildAssignedTab2(),
-          _buildBadgeTab(Icons.delete_outline_rounded, 'Deleted', (s) => s.deletedObjects.length),
+          _buildBadgeTab(Icons.delete_outline_rounded, 'Trash', (s) => s.deletedObjects.length),
           _buildBadgeTab(Icons.analytics_outlined, 'Reports', (s) => s.reportObjects.length),
         ],
         onTap: _onTabChanged,
@@ -847,9 +858,8 @@ class _HomeScreenState extends State<HomeScreen>
     Future<void> Function(ViewObject) onLongPress,
   ) {
     final type = obj.objectTypeName.trim();
-    final modified = _formatModified(obj.lastModifiedUtc);
-    final subtitle =
-        type.isEmpty ? 'Modified: $modified' : '$type | $modified';
+    final idPart = obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
+    final subtitle = type.isEmpty ? 'ID $idPart' : '$type | ID $idPart';
 
     final bool canExpand = obj.id != 0;
 

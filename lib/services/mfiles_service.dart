@@ -281,7 +281,6 @@ class MFilesService extends ChangeNotifier {
     username = prefs.getString('username');
     fullname = prefs.getString('full_name');
     userId = prefs.getInt('user_id');
-    mfilesUserId = prefs.getInt('mfiles_user_id');
 
     print('📦 Loading tokens from SharedPreferences:');
     print('   accessToken: ${accessToken != null ? "present (${accessToken!.length} chars)" : "null"}');
@@ -487,10 +486,7 @@ class MFilesService extends ChangeNotifier {
 
         print('✅ mfilesUserId set to: $mfilesUserId');
 
-        final prefs = await SharedPreferences.getInstance();
-        if (mfilesUserId != null) {
-          await prefs.setInt('mfiles_user_id', mfilesUserId!);
-        }
+        await SharedPreferences.getInstance();
 
         notifyListeners();
         return;
@@ -533,7 +529,9 @@ class MFilesService extends ChangeNotifier {
       return;
     }
 
-    mfilesUserId = (userId == 37) ? 20 : userId;
+    final vaultIdStr = selectedVault?.vaultId ?? '';
+    final fromVaultId = int.tryParse(vaultIdStr);
+    mfilesUserId = fromVaultId ?? userId;
     print('✅ mfilesUserId set to (fallback): $mfilesUserId');
     isAdmin = false;
     debugPrint('⚠️ Fallback used — isAdmin defaulting to false');

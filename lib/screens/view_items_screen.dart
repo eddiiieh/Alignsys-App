@@ -130,10 +130,14 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   String? _subtitleLabel(ViewContentItem item) {
     if (item.isObject) {
+      final idPart = (item.displayId ?? '').trim().isNotEmpty
+          ? item.displayId!.trim()
+          : '${item.id}';
       final t = (item.objectTypeName ?? '').trim();
-      if (t.isNotEmpty) return t;
+      if (t.isNotEmpty) return '$t | ID $idPart';
       final c = (item.classTypeName ?? '').trim();
-      if (c.isNotEmpty) return c;
+      if (c.isNotEmpty) return '$c | ID $idPart';
+      return 'ID $idPart';
     }
     return null;
   }
