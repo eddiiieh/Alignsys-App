@@ -1,8 +1,11 @@
 // ignore_for_file: use_build_context_synchronously, duplicate_ignore, deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/models/object_class.dart';
+import 'package:mfiles_app/models/vault_object_type.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
+import 'package:mfiles_app/screens/template_form_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
@@ -80,24 +83,23 @@ class _HomeScreenState extends State<HomeScreen>
         return;
       }
 
-      // Fire high-priority badge counts immediately in parallel
       await Future.wait([
+        service.fetchObjectTypes(),
+        service.fetchAllViews(),
         service.fetchRecentObjects(),
         service.fetchAssignedObjects(),
         service.fetchDeletedObjects(),
       ]);
 
-      // Load the rest after badges are ready
       await Future.wait([
-        service.fetchObjectTypes(),
-        service.fetchAllViews(),
         service.fetchReportObjects(),
       ]);
-
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading data: $e'), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text('Error loading data: $e'),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -153,6 +155,70 @@ class _HomeScreenState extends State<HomeScreen>
     super.dispose();
   }
 
+  // ─── OBJECT TYPE ICON ─────────────────────────────────────────────────────
+  IconData _iconForObjectTypeName(String name) {
+    final n = name.toLowerCase().trim();
+
+    if (n == 'cars' || n.contains('vehicle')) return Icons.directions_car_rounded;
+    if (n == 'container files') return Icons.folder_zip_rounded;
+    if (n == 'document collections') return Icons.library_books_rounded;
+    if (n == 'news') return Icons.newspaper_rounded;
+    if (n == 'students') return Icons.school_rounded;
+    if (n == 'annotations') return Icons.rate_review_rounded;
+    if (n == 'archive boxes') return Icons.archive_rounded;
+    if (n == 'calendar events') return Icons.event_rounded;
+    if (n == 'customers') return Icons.people_alt_rounded;
+    if (n == 'departments') return Icons.account_tree_rounded;
+    if (n == 'filing slots') return Icons.inbox_rounded;
+    if (n == 'finances') return Icons.account_balance_rounded;
+    if (n == 'insurers') return Icons.health_and_safety_rounded;
+    if (n == 'job vacancies') return Icons.work_history_rounded;
+    if (n == 'library books') return Icons.menu_book_rounded;
+    if (n == 'librarys' || n == 'libraries') return Icons.local_library_rounded;
+    if (n == 'prescription sales') return Icons.medication_rounded;
+    if (n == 'processes') return Icons.account_tree_rounded;
+    if (n == 'requisitions') return Icons.request_page_rounded;
+    if (n == 'shares') return Icons.share_rounded;
+    if (n == 'test') return Icons.science_rounded;
+    if (n == 'loans') return Icons.local_atm_rounded;
+    if (n == 'members') return Icons.person_2_rounded;
+    if (n == 'valuers') return Icons.currency_exchange_rounded;
+
+    if (n.contains('contact') || n.contains('person') || n.contains('client'))
+      return Icons.person_rounded;
+    if (n.contains('project')) return Icons.work_rounded;
+    if (n.contains('invoice')) return Icons.receipt_long_rounded;
+    if (n.contains('payment') || n.contains('transaction'))
+      return Icons.payments_rounded;
+    if (n.contains('contract') || n.contains('agreement'))
+      return Icons.handshake_rounded;
+    if (n.contains('report') || n.contains('analytics'))
+      return Icons.analytics_rounded;
+    if (n.contains('meeting') || n.contains('minute')) return Icons.groups_rounded;
+    if (n.contains('task') || n.contains('assignment'))
+      return Icons.task_alt_rounded;
+    if (n.contains('email') || n.contains('message') || n.contains('mail'))
+      return Icons.email_rounded;
+    if (n.contains('asset') || n.contains('equipment'))
+      return Icons.inventory_2_rounded;
+    if (n.contains('employee') || n.contains('staff') || n.contains('user'))
+      return Icons.badge_rounded;
+    if (n.contains('supplier') || n.contains('vendor'))
+      return Icons.local_shipping_rounded;
+    if (n.contains('company') ||
+        n.contains('organisation') ||
+        n.contains('organization')) return Icons.business_rounded;
+    if (n.contains('case') || n.contains('ticket') || n.contains('issue'))
+      return Icons.support_agent_rounded;
+    if (n.contains('product') || n.contains('item') || n.contains('sku'))
+      return Icons.inventory_rounded;
+    if (n.contains('property') ||
+        n.contains('real estate') ||
+        n.contains('land')) return Icons.home_work_rounded;
+
+    return Icons.category_rounded;
+  }
+
   // ─── BUILD ────────────────────────────────────────────────────────────────
 
   @override
@@ -169,15 +235,12 @@ class _HomeScreenState extends State<HomeScreen>
           title: GestureDetector(
             onTap: () async {
               final uri = Uri.parse('https://www.alignsys.tech');
-
-              final launched = await launchUrl(
-                uri,
-                mode: LaunchMode.externalApplication,
-              );
-
+              final launched =
+                  await launchUrl(uri, mode: LaunchMode.externalApplication);
               if (!launched && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Could not open Alignsys website')),
+                  const SnackBar(
+                      content: Text('Could not open Alignsys website')),
                 );
               }
             },
@@ -234,7 +297,7 @@ class _HomeScreenState extends State<HomeScreen>
             ],
           ),
         ),
-)
+      ),
     );
   }
 
@@ -249,53 +312,66 @@ class _HomeScreenState extends State<HomeScreen>
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-                // ignore: deprecated_member_use
                 color: Colors.black.withOpacity(0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 2))
           ],
         ),
-        child: TextField(
-          controller: _searchController,
-          focusNode: _searchFocus,
-          textInputAction: TextInputAction.search,
-          decoration: InputDecoration(
-            hintText: 'Search...',
-            hintStyle: TextStyle(color: Colors.grey.shade400),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                  color: Color.fromRGBO(25, 76, 129, 1), width: 2),
-            ),
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding:
-                const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
-            prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
-            suffixIconConstraints:
-                BoxConstraints(minHeight: 40, minWidth: hasText ? 48 : 0),
-            suffixIcon: hasText
-                ? IconButton(
-                    icon: Icon(Icons.close, color: Colors.grey.shade400),
-                    onPressed: () {
-                      _searchController.clear();
-                      setState(() => _searchQuery = '');
-                      _searchFocus.unfocus();
-                    },
-                  )
-                : null,
-          ),
-          onChanged: (v) {
-            setState(() => _searchQuery = v.trim());
-            if (v.trim().isNotEmpty) _executeSearch();
+        child: GestureDetector(
+          onTap: () {
+            _searchFocus.unfocus();
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SearchResultsScreen(
+                    initialQuery: _searchController.text.trim()),
+              ),
+            ).then((_) => _resetSearch());
           },
-          onSubmitted: (_) => _executeSearch(),
+          child: AbsorbPointer(
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocus,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Search...',
+                hintStyle: TextStyle(color: Colors.grey.shade400),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                      color: Color.fromRGBO(25, 76, 129, 1), width: 2),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+                prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
+                suffixIconConstraints:
+                    BoxConstraints(minHeight: 40, minWidth: hasText ? 48 : 0),
+                suffixIcon: hasText
+                    ? IconButton(
+                        icon: Icon(Icons.close, color: Colors.grey.shade400),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _searchQuery = '');
+                          _searchFocus.unfocus();
+                        },
+                      )
+                    : null,
+              ),
+              onChanged: (v) {
+                setState(() => _searchQuery = v.trim());
+                if (v.trim().isNotEmpty) _executeSearch();
+              },
+              onSubmitted: (_) => _executeSearch(),
+            ),
+          ),
         ),
       ),
     );
@@ -338,8 +414,10 @@ class _HomeScreenState extends State<HomeScreen>
           _buildTab(Icons.home_rounded, 'Home'),
           _buildTab(Icons.history_rounded, 'Recent'),
           _buildAssignedTab2(),
-          _buildBadgeTab(Icons.delete_outline_rounded, 'Trash', (s) => s.deletedObjects.length),
-          _buildBadgeTab(Icons.analytics_outlined, 'Reports', (s) => s.reportObjects.length),
+          _buildBadgeTab(Icons.delete_outline_rounded, 'Trash',
+              (s) => s.deletedObjects.length),
+          _buildBadgeTab(Icons.analytics_outlined, 'Reports',
+              (s) => s.reportObjects.length),
         ],
         onTap: _onTabChanged,
       ),
@@ -363,7 +441,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  /// Assigned tab with a red notification badge showing the count.
   Widget _buildAssignedTab2() {
     return Consumer<MFilesService>(
       builder: (context, service, _) {
@@ -390,8 +467,7 @@ class _HomeScreenState extends State<HomeScreen>
                           decoration: BoxDecoration(
                             color: Colors.red,
                             borderRadius: BorderRadius.circular(8),
-                            border:
-                                Border.all(color: Colors.white, width: 1.2),
+                            border: Border.all(color: Colors.white, width: 1.2),
                           ),
                           child: Text(
                             count > 99 ? '99+' : '$count',
@@ -417,7 +493,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  /// Generic badge tab builder for Deleted and Reports tabs.
   Widget _buildBadgeTab(
     IconData icon,
     String label,
@@ -607,8 +682,7 @@ class _HomeScreenState extends State<HomeScreen>
                       color: Color.fromRGBO(25, 76, 129, 1))),
             ),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                   color: const Color(0xFF072F5F).withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12)),
@@ -668,7 +742,8 @@ class _HomeScreenState extends State<HomeScreen>
     for (int i = 0; i < views.length; i++) {
       rows.add(_buildFlatViewRow(views[i]));
       if (i != views.length - 1) {
-        rows.add(Divider(height: 1, thickness: 1, color: Colors.grey.shade100));
+        rows.add(
+            Divider(height: 1, thickness: 1, color: Colors.grey.shade100));
       }
     }
     return rows;
@@ -858,7 +933,8 @@ class _HomeScreenState extends State<HomeScreen>
     Future<void> Function(ViewObject) onLongPress,
   ) {
     final type = obj.objectTypeName.trim();
-    final idPart = obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
+    final idPart =
+        obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
     final subtitle = type.isEmpty ? 'ID $idPart' : '$type | ID $idPart';
 
     final bool canExpand = obj.id != 0;
@@ -868,10 +944,11 @@ class _HomeScreenState extends State<HomeScreen>
 
     final bool infoExpanded = _expandedInfoItemId == obj.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == obj.id;
-
     final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
 
-    if (canExpand && !_isDocumentObj(svc, obj) && svc.cachedHasRelationships(obj.id) == null) {
+    if (canExpand &&
+        !_isDocumentObj(svc, obj) &&
+        svc.cachedHasRelationships(obj.id) == null) {
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
@@ -927,43 +1004,47 @@ class _HomeScreenState extends State<HomeScreen>
                     await context.read<MFilesService>().fetchRecentObjects();
                   }
                 },
-                onLongPress: canLongPress(obj, context, tabs[_tabController.index])
-                  ? () => onLongPress(obj)
-                  : null,
+                onLongPress:
+                    canLongPress(obj, context, tabs[_tabController.index])
+                        ? () => onLongPress(obj)
+                        : null,
                 child: Padding(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
                     children: [
-                      if (canExpand && !_isDocumentObj(svc, obj) && svc.cachedHasRelationships(obj.id) == true) ...[
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              if (_expandedRelationshipsItemId == obj.id) {
-                                _expandedRelationshipsItemId = null;
-                              } else {
-                                _expandedRelationshipsItemId = obj.id;
-                                _expandedInfoItemId = null;
-                              }
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(4),
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
-                              size: 18,
-                              color: const Color(0xFF072F5F),
+                      if (canExpand &&
+                          !_isDocumentObj(svc, obj) &&
+                          svc.cachedHasRelationships(obj.id) == true) ...[
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              setState(() {
+                                if (_expandedRelationshipsItemId == obj.id) {
+                                  _expandedRelationshipsItemId = null;
+                                } else {
+                                  _expandedRelationshipsItemId = obj.id;
+                                  _expandedInfoItemId = null;
+                                }
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                relationshipsExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                                color: const Color(0xFF072F5F),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 6),
-                    ] else
-                      const SizedBox(width: 4),
-
+                        const SizedBox(width: 6),
+                      ] else
+                        const SizedBox(width: 4),
                       _isDocumentObj(svc, obj)
                           ? FileTypeBadge(
                               extension:
@@ -975,9 +1056,7 @@ class _HomeScreenState extends State<HomeScreen>
                               color: Color(0xFF072F5F),
                               size: 22,
                             ),
-
                       const SizedBox(width: 12),
-
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -999,7 +1078,6 @@ class _HomeScreenState extends State<HomeScreen>
                           ],
                         ),
                       ),
-
                       if (canExpand) ...[
                         const SizedBox(width: 8),
                         Material(
@@ -1042,17 +1120,16 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ),
-
             if (infoExpanded && canExpand) ...[
               Divider(height: 1, color: Colors.grey.shade200),
               ObjectInfoDropdown(obj: obj),
             ],
-
             if (relationshipsExpanded && canExpand) ...[
               Divider(height: 1, color: Colors.grey.shade200),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: RelationshipsDropdown(obj: obj, initiallyExpanded: true),
+                child:
+                    RelationshipsDropdown(obj: obj, initiallyExpanded: true),
               ),
             ],
           ],
@@ -1084,8 +1161,7 @@ class _HomeScreenState extends State<HomeScreen>
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(subtext,
-                style:
-                    TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                 textAlign: TextAlign.center),
           ],
         ),
@@ -1115,8 +1191,7 @@ class _HomeScreenState extends State<HomeScreen>
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(error,
-                style:
-                    TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                 textAlign: TextAlign.center),
           ],
         ),
@@ -1144,7 +1219,6 @@ class _HomeScreenState extends State<HomeScreen>
         builder: (_) => SearchResultsScreen(initialQuery: _searchQuery),
       ),
     );
-    // When user comes back, reset the search bar
     _resetSearch();
   }
 
@@ -1154,19 +1228,29 @@ class _HomeScreenState extends State<HomeScreen>
     final service = context.read<MFilesService>();
     if (service.objectTypes.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No object types available. Please wait for data to load.'),
+        content: Text(
+            'No object types available. Please wait for data to load.'),
         backgroundColor: Colors.orange,
       ));
       return;
     }
 
-    final sortedTypes = [...service.objectTypes]
-      ..sort((a, b) =>
-          a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+    final sortedTypes = [
+      ...service.objectTypes.where((t) => t.isDocument),
+      ...([...service.objectTypes.where((t) => !t.isDocument)]
+        ..sort((a, b) => a.displayName
+            .toLowerCase()
+            .compareTo(b.displayName.toLowerCase()))),
+    ];
 
     final searchController = TextEditingController();
     final searchFocusNode = FocusNode();
-    List filteredTypes = List.from(sortedTypes);
+
+    final List<_CreateEntry> allEntries = [
+      const _CreateEntry.template(),
+      ...sortedTypes.map((t) => _CreateEntry.objectType(t)),
+    ];
+    List<_CreateEntry> filteredEntries = List.from(allEntries);
     bool showSearch = false;
 
     showModalBottomSheet(
@@ -1191,7 +1275,6 @@ class _HomeScreenState extends State<HomeScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Handle
                 Container(
                   width: 40,
                   height: 4,
@@ -1201,8 +1284,6 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // Header
                 Row(children: [
                   Container(
                     padding: const EdgeInsets.all(10),
@@ -1219,18 +1300,16 @@ class _HomeScreenState extends State<HomeScreen>
                             fontSize: 20, fontWeight: FontWeight.bold)),
                   ),
                   IconButton(
-                    icon: Icon(
-                      Icons.search_rounded,
-                      color: showSearch
-                          ? const Color(0xFF072F5F)
-                          : Colors.grey.shade700,
-                    ),
+                    icon: Icon(Icons.search_rounded,
+                        color: showSearch
+                            ? const Color(0xFF072F5F)
+                            : Colors.grey.shade700),
                     onPressed: () {
                       setSheet(() {
                         showSearch = !showSearch;
                         if (!showSearch) {
                           searchController.clear();
-                          filteredTypes = List.from(sortedTypes);
+                          filteredEntries = List.from(allEntries);
                         } else {
                           WidgetsBinding.instance.addPostFrameCallback((_) {
                             searchFocusNode.requestFocus();
@@ -1244,7 +1323,6 @@ class _HomeScreenState extends State<HomeScreen>
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ]),
-
                 AnimatedSize(
                   duration: const Duration(milliseconds: 200),
                   curve: Curves.easeInOut,
@@ -1256,7 +1334,7 @@ class _HomeScreenState extends State<HomeScreen>
                             focusNode: searchFocusNode,
                             autofocus: false,
                             decoration: InputDecoration(
-                              hintText: 'Search object types...',
+                              hintText: 'Search...',
                               hintStyle: TextStyle(
                                   color: Colors.grey.shade400, fontSize: 14),
                               prefixIcon: Icon(Icons.search,
@@ -1288,42 +1366,47 @@ class _HomeScreenState extends State<HomeScreen>
                                           color: Colors.grey.shade400),
                                       onPressed: () {
                                         searchController.clear();
-                                        setSheet(() => filteredTypes =
-                                            List.from(sortedTypes));
+                                        setSheet(() => filteredEntries =
+                                            List.from(allEntries));
                                       },
                                     )
                                   : null,
                             ),
                             onChanged: (q) {
                               setSheet(() {
-                                filteredTypes = sortedTypes
-                                    .where((t) => t.displayName
+                                if (q.trim().isEmpty) {
+                                  filteredEntries = List.from(allEntries);
+                                } else {
+                                  filteredEntries = allEntries.where((e) {
+                                    if (e.isTemplate) {
+                                      return 'templates'
+                                          .contains(q.toLowerCase());
+                                    }
+                                    return e.objectType!.displayName
                                         .toLowerCase()
-                                        .contains(q.toLowerCase()))
-                                    .toList();
+                                        .contains(q.toLowerCase());
+                                  }).toList();
+                                }
                               });
                             },
                           ),
                         )
                       : const SizedBox.shrink(),
                 ),
-
                 const SizedBox(height: 8),
-
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Text(
-                      '${filteredTypes.length} type${filteredTypes.length == 1 ? '' : 's'}',
+                      '${filteredEntries.length} item${filteredEntries.length == 1 ? '' : 's'}',
                       style: TextStyle(
                           fontSize: 12, color: Colors.grey.shade500),
                     ),
                   ),
                 ),
-
                 Flexible(
-                  child: filteredTypes.isEmpty
+                  child: filteredEntries.isEmpty
                       ? Padding(
                           padding: const EdgeInsets.all(24),
                           child: Column(
@@ -1332,22 +1415,64 @@ class _HomeScreenState extends State<HomeScreen>
                               Icon(Icons.search_off,
                                   size: 36, color: Colors.grey.shade300),
                               const SizedBox(height: 8),
-                              Text(
-                                'No matches found',
-                                style: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontSize: 13),
-                              ),
+                              Text('No matches found',
+                                  style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 13)),
                             ],
                           ),
                         )
                       : ListView.separated(
                           shrinkWrap: true,
-                          itemCount: filteredTypes.length,
-                          separatorBuilder: (_, __) =>
-                              Divider(height: 1, color: Colors.grey.shade100),
+                          itemCount: filteredEntries.length,
+                          separatorBuilder: (_, __) => Divider(
+                              height: 1, color: Colors.grey.shade100),
                           itemBuilder: (context, index) {
-                            final ot = filteredTypes[index];
+                            final entry = filteredEntries[index];
+
+                            if (entry.isTemplate) {
+                              return Material(
+                                color: Colors.transparent,
+                                child: ListTile(
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 4),
+                                  leading: Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF072F5F)
+                                          .withOpacity(0.08),
+                                      borderRadius:
+                                          BorderRadius.circular(8),
+                                    ),
+                                    child: const Icon(
+                                      Icons.dashboard_customize_rounded,
+                                      size: 20,
+                                      color:
+                                          Color.fromRGBO(25, 76, 129, 1),
+                                    ),
+                                  ),
+                                  title: const Text('Templates',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w600)),
+                                  subtitle: Text(
+                                      'Create from a pre-defined template',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade500)),
+                                  trailing: Icon(
+                                      Icons.chevron_right_rounded,
+                                      color: Colors.grey.shade400),
+                                  onTap: () {
+                                    Navigator.pop(ctx);
+                                    _showTemplateClassPicker();
+                                  },
+                                ),
+                              );
+                            }
+
+                            final ot = entry.objectType!;
                             return Material(
                               color: Colors.transparent,
                               child: ListTile(
@@ -1364,7 +1489,8 @@ class _HomeScreenState extends State<HomeScreen>
                                   child: Icon(
                                     ot.isDocument
                                         ? Icons.description_rounded
-                                        : Icons.folder_rounded,
+                                        : _iconForObjectTypeName(
+                                            ot.displayName),
                                     size: 20,
                                     color: const Color.fromRGBO(
                                         25, 76, 129, 1),
@@ -1398,6 +1524,532 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
+
+  // ─── TEMPLATE CLASS PICKER ────────────────────────────────────────────────
+
+  /// Entry point — no BuildContext parameter needed; uses `this.context`
+  /// which is always valid as long as the widget is mounted.
+  void _showTemplateClassPicker() {
+    final service = context.read<MFilesService>();
+    final allClasses = _collectAllClasses(service);
+
+    if (allClasses.isEmpty) {
+      _loadAllClassesThenPick();
+    } else {
+      _openTemplateClassSheet(allClasses);
+    }
+  }
+
+  List<ObjectClass> _collectAllClasses(MFilesService service) {
+    final seen = <int>{};
+    final result = <ObjectClass>[];
+
+    for (final ot in service.objectTypes) {
+      final cached = service.getClassGroupsForType(ot.id);
+      for (final group in cached) {
+        for (final cls in group.members) {
+          if (seen.add(cls.id)) result.add(cls);
+        }
+      }
+    }
+
+    if (result.isEmpty) {
+      for (final cls in service.objectClasses) {
+        if (seen.add(cls.id)) result.add(cls);
+      }
+    }
+
+    result.sort((a, b) =>
+        a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
+    return result;
+  }
+
+  Future<void> _loadAllClassesThenPick() async {
+    if (!mounted) return;
+    final service = context.read<MFilesService>();
+    bool dialogShowing = false;
+
+    final spinnerTimer =
+        Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        dialogShowing = true;
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator()),
+        );
+      }
+    });
+
+    try {
+      if (service.objectTypes.isEmpty) {
+        await service.fetchObjectTypes();
+      }
+      await Future.wait(
+        service.objectTypes.map((ot) => service.fetchObjectClasses(ot.id)),
+      );
+    } catch (e) {
+      spinnerTimer.ignore();
+      if (mounted) {
+        if (dialogShowing) Navigator.of(context, rootNavigator: true).pop();
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to load classes: $e'),
+          backgroundColor: Colors.red,
+        ));
+      }
+      return;
+    }
+
+    spinnerTimer.ignore();
+    if (!mounted) return;
+    if (dialogShowing) Navigator.of(context, rootNavigator: true).pop();
+
+    final allClasses = _collectAllClasses(service);
+    if (allClasses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No classes found for templates.')),
+      );
+      return;
+    }
+
+    _openTemplateClassSheet(allClasses);
+  }
+
+  void _openTemplateClassSheet(List<ObjectClass> allClasses) {
+    if (!mounted) return;
+
+    final searchController = TextEditingController();
+    final searchFocusNode = FocusNode();
+    List<ObjectClass> filtered = List.from(allClasses);
+    bool showSearch = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 14,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+            ),
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2)),
+                ),
+                const SizedBox(height: 20),
+                Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFF072F5F).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.dashboard_customize_rounded,
+                        color: Color(0xFF072F5F), size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text('Select Template',
+                        style: TextStyle(
+                            fontSize: 20, fontWeight: FontWeight.bold)),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.search_rounded,
+                        color: showSearch
+                            ? const Color(0xFF072F5F)
+                            : Colors.grey.shade700),
+                    onPressed: () {
+                      setSheet(() {
+                        showSearch = !showSearch;
+                        if (!showSearch) {
+                          searchController.clear();
+                          filtered = List.from(allClasses);
+                        } else {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            searchFocusNode.requestFocus();
+                          });
+                        }
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ]),
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeInOut,
+                  child: showSearch
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: TextField(
+                            controller: searchController,
+                            focusNode: searchFocusNode,
+                            decoration: InputDecoration(
+                              hintText: 'Search templates...',
+                              hintStyle: TextStyle(
+                                  color: Colors.grey.shade400, fontSize: 14),
+                              prefixIcon: Icon(Icons.search,
+                                  color: Colors.grey.shade400, size: 20),
+                              filled: true,
+                              fillColor: Colors.grey.shade50,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade200),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade200),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: Color(0xFF072F5F), width: 2),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 12),
+                              isDense: true,
+                              suffixIcon: searchController.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: Icon(Icons.close,
+                                          size: 16,
+                                          color: Colors.grey.shade400),
+                                      onPressed: () {
+                                        searchController.clear();
+                                        setSheet(() => filtered =
+                                            List.from(allClasses));
+                                      },
+                                    )
+                                  : null,
+                            ),
+                            onChanged: (q) {
+                              setSheet(() {
+                                filtered = q.trim().isEmpty
+                                    ? List.from(allClasses)
+                                    : allClasses
+                                        .where((c) => c.displayName
+                                            .toLowerCase()
+                                            .contains(q.toLowerCase()))
+                                        .toList();
+                              });
+                            },
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${filtered.length} template${filtered.length == 1 ? '' : 's'}',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: filtered.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.search_off,
+                                  size: 36,
+                                  color: Colors.grey.shade300),
+                              const SizedBox(height: 8),
+                              Text('No matches found',
+                                  style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 13)),
+                            ],
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, __) => Divider(
+                              height: 1, color: Colors.grey.shade100),
+                          itemBuilder: (_, index) {
+                            final cls = filtered[index];
+                            return Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                contentPadding:
+                                    const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                leading: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                      color: const Color(0xFF072F5F)
+                                          .withOpacity(0.08),
+                                      borderRadius:
+                                          BorderRadius.circular(8)),
+                                  child: const Icon(
+                                    Icons.dashboard_customize_rounded,
+                                    size: 20,
+                                    color:
+                                        Color.fromRGBO(25, 76, 129, 1),
+                                  ),
+                                ),
+                                title: Text(cls.displayName,
+                                    style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600)),
+                                trailing: Icon(
+                                    Icons.chevron_right_rounded,
+                                    color: Colors.grey.shade400),
+                                // ── KEY FIX: close sheet first, then do
+                                //    all async work via state's own context
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _fetchTemplatesForClass(cls);
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Fetches templates for [cls] and navigates appropriately.
+  /// Uses only `this.context` — never a captured sheet/dialog context.
+  Future<void> _fetchTemplatesForClass(ObjectClass cls) async {
+    if (!mounted) return;
+
+    final service = context.read<MFilesService>();
+    final vaultGuid = service.selectedVault?.guid ?? '';
+
+    // Show loader using the state's own context
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    List<Map<String, dynamic>> templates = [];
+    try {
+      templates = await service.fetchClassTemplate(
+        vaultGuid: vaultGuid,
+        classId: cls.id,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // dismiss loader
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Failed to load templates: $e'),
+        backgroundColor: Colors.red,
+      ));
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop(); // dismiss loader
+
+    if (templates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('No templates available for ${cls.displayName}.'),
+        backgroundColor: Colors.orange,
+      ));
+      return;
+    }
+
+    if (templates.length == 1) {
+      final t = templates.first;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => TemplateFormScreen(
+            classId: cls.id,
+            className: cls.displayName,
+            templateObjectId: t['id'] as int,
+            templateTitle: t['title'] as String? ?? 'Template',
+          ),
+        ),
+      );
+      return;
+    }
+
+    _openTemplateDocumentSheet(cls, templates);
+  }
+
+  // ─── TEMPLATE DOCUMENT PICKER ────────────────────────────────────────────
+
+  void _openTemplateDocumentSheet(
+    ObjectClass cls,
+    List<Map<String, dynamic>> templates,
+  ) {
+    if (!mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 14,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.7),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: const Color(0xFF072F5F).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.description_rounded,
+                    color: Color(0xFF072F5F), size: 24),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Choose Template',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+                    Text(cls.displayName,
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500)),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () => Navigator.pop(context),
+              ),
+            ]),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: templates.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: Colors.grey.shade100),
+                itemBuilder: (ctx, index) {
+                  final t = templates[index];
+                  final title = t['title'] as String? ?? 'Untitled';
+                  final modified = t['lastModifiedUtc'] as String?;
+                  String? dateStr;
+                  if (modified != null) {
+                    try {
+                      final dt = DateTime.parse(modified);
+                      dateStr =
+                          '${dt.day} ${_monthName(dt.month)} ${dt.year}';
+                    } catch (_) {}
+                  }
+
+                  return Material(
+                    color: Colors.transparent,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                            color: const Color(0xFF072F5F).withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.description_rounded,
+                            size: 20,
+                            color: Color.fromRGBO(25, 76, 129, 1)),
+                      ),
+                      title: Text(title,
+                          style: const TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                      subtitle: dateStr != null
+                          ? Text(dateStr,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade500))
+                          : null,
+                      trailing: Icon(Icons.chevron_right_rounded,
+                          color: Colors.grey.shade400),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => TemplateFormScreen(
+                              classId: cls.id,
+                              className: cls.displayName,
+                              templateObjectId: t['id'] as int,
+                              templateTitle: title,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _monthName(int m) => const [
+        '',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec'
+      ][m];
 
   // ─── PROFILE MENU ─────────────────────────────────────────────────────────
 
@@ -1472,7 +2124,8 @@ class _HomeScreenState extends State<HomeScreen>
                     return Container(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         alignment: Alignment.centerLeft,
-                        child: const LinearProgressIndicator(minHeight: 2));
+                        child:
+                            const LinearProgressIndicator(minHeight: 2));
                   }
                   if (snapshot.hasError) {
                     return Text(
@@ -1481,7 +2134,8 @@ class _HomeScreenState extends State<HomeScreen>
                             color: Colors.red.shade700, fontSize: 13));
                   }
                   final vaults = snapshot.data ?? [];
-                  if (vaults.isEmpty) return const Text('No vaults available');
+                  if (vaults.isEmpty)
+                    return const Text('No vaults available');
                   final selectedGuid = service.selectedVault?.guid;
                   return Container(
                     decoration: BoxDecoration(
@@ -1523,15 +2177,12 @@ class _HomeScreenState extends State<HomeScreen>
                         await service.fetchMFilesUserId();
                         await service.fetchObjectTypes();
                         await service.fetchAllViews();
-                        await service.fetchRecentObjects();
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text('Switched to ${newVault.name}'),
-                            backgroundColor:
-                                const Color.fromRGBO(25, 76, 129, 1),
-                            duration: const Duration(seconds: 2),
-                          ));
-                        }
+                        await Future.wait([
+                          service.fetchRecentObjects(),
+                          service.fetchDeletedObjects(),
+                          service.fetchAssignedObjects(),
+                          service.fetchReportObjects(),
+                        ]);
                       },
                     ),
                   );
@@ -1575,7 +2226,8 @@ class _HomeScreenState extends State<HomeScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Log Out',
             style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('Are you sure you want to log out?'),
@@ -1604,4 +2256,18 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
+}
+
+// ── Sealed entry type for the Create bottom sheet list ────────────────────
+class _CreateEntry {
+  final bool isTemplate;
+  final VaultObjectType? objectType;
+
+  const _CreateEntry.template()
+      : isTemplate = true,
+        objectType = null;
+
+  const _CreateEntry.objectType(VaultObjectType type)
+      : isTemplate = false,
+        objectType = type;
 }

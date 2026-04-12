@@ -573,6 +573,13 @@ class MFilesService extends ChangeNotifier {
   Future<void> fetchObjectClasses(int objectTypeId) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
 
+    // Skip if already cached for this type
+    if (_classesByObjectType.containsKey(objectTypeId)) {
+      // Already have it — just rebuild objectClasses from full cache
+      _rebuildObjectClassesFromCache();
+      return;
+    }
+
     _setLoading(true);
     _setError(null);
 
@@ -586,11 +593,7 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final parsed = ObjectClassesResponse.fromJson(json.decode(response.body));
         _classesByObjectType[objectTypeId] = parsed;
-
-        objectClasses = [
-          ...parsed.unGrouped,
-          ...parsed.grouped.expand((g) => g.members),
-        ];
+        _rebuildObjectClassesFromCache();
       } else {
         _setError('Failed to fetch object classes: ${response.statusCode}');
       }
@@ -599,6 +602,18 @@ class MFilesService extends ChangeNotifier {
     } finally {
       _setLoading(false);
     }
+  }
+
+  /// Rebuilds objectClasses from the full internal cache — always complete.
+  void _rebuildObjectClassesFromCache() {
+    final seen = <int>{};
+    final result = <ObjectClass>[];
+    for (final resp in _classesByObjectType.values) {
+      for (final cls in [...resp.unGrouped, ...resp.grouped.expand((g) => g.members)]) {
+        if (seen.add(cls.id)) result.add(cls);
+      }
+    }
+    objectClasses = result;
   }
 
   Future<void> fetchClassProperties(int objectTypeId, int classId) async {
@@ -2136,6 +2151,17 @@ class MFilesService extends ChangeNotifier {
     mfilesUserId = null;
     await prefs.remove('mfiles_user_id');
 
+    // ✅ Clear all stale vault data immediately
+    recentObjects = [];
+    assignedObjects = [];
+    deletedObjects = [];
+    reportObjects = [];
+    allViews = [];
+    commonViews = [];
+    otherViews = [];
+    objectTypes = [];
+    searchResults = [];
+
     clearClassPropertiesCache();
     clearExtensionCache();
     clearRelationshipsCache();
@@ -2273,6 +2299,86 @@ class MFilesService extends ChangeNotifier {
       _setError('Error completing assignment: $e');
       return false;
     }
+  }
+
+  // ==================== TEMPLATES ====================
+  Future<List<Map<String, dynamic>>> fetchClassTemplate({
+    required String vaultGuid,
+    required int classId,
+  }) async {
+    if (accessToken == null || mfilesUserId == null) {
+      throw Exception('Session not ready');
+    }
+
+    final url = Uri.parse(
+      '$baseUrl/api/Templates/GetClassTemplate/$vaultGuid/$classId',
+    );
+
+    debugPrint('📋 fetchClassTemplate URL: $url');
+
+    final resp = await _authenticatedRequest(
+      () => http.get(url, headers: _authHeadersNoJson),
+    );
+
+    debugPrint('📋 fetchClassTemplate status: ${resp.statusCode}');
+    debugPrint('📋 fetchClassTemplate body: ${resp.body}');
+
+    if (resp.statusCode == 200) {
+      final decoded = json.decode(resp.body);
+      if (decoded is List) {
+        return decoded.cast<Map<String, dynamic>>();
+      }
+      throw Exception('Unexpected template response shape');
+    }
+
+    if (resp.statusCode == 404) {
+      return []; // no templates for this class
+    }
+
+    throw Exception('fetchClassTemplate failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  Future<void> createObjectFromTemplate(Map<String, dynamic> payload) async {
+    if (accessToken == null || mfilesUserId == null) {
+      throw Exception('Session not ready');
+    }
+
+    final url = Uri.parse('$baseUrl/api/Templates/ObjectCreation');
+
+    final resp = await _authenticatedRequest(
+      () => http.post(url, headers: _authHeaders, body: jsonEncode(payload)),
+    );
+
+    if (resp.statusCode == 200 || resp.statusCode == 201) return;
+
+    throw Exception('createObjectFromTemplate failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  Future<List<Map<String, dynamic>>> fetchClassTemplateProps({
+    required String vaultGuid,
+    required int classId,
+    required int objectId,
+    required int userId,
+  }) async {
+    if (accessToken == null) throw Exception('Session not ready');
+
+    final url = Uri.parse(
+      '$baseUrl/api/Templates/GetClassTemplateProps/$vaultGuid/$classId/$objectId/$userId',
+    );
+
+    final resp = await _authenticatedRequest(
+      () => http.get(url, headers: _authHeadersNoJson),
+    );
+
+    if (resp.statusCode == 200) {
+      final decoded = json.decode(resp.body);
+      if (decoded is List) return decoded.cast<Map<String, dynamic>>();
+      throw Exception('Unexpected response shape');
+    }
+
+    if (resp.statusCode == 404) return [];
+
+    throw Exception('fetchClassTemplateProps failed: ${resp.statusCode} ${resp.body}');
   }
 }
 

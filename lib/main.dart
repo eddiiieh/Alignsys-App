@@ -5,6 +5,7 @@ import 'screens/login_vault_screen.dart';
 import 'screens/splash_screen.dart';
 import 'services/mfiles_service.dart';
 import 'services/network_service.dart';
+import 'theme/app_colors.dart';
 
 void main() {
   runApp(const MainApp());
@@ -29,14 +30,31 @@ Widget build(BuildContext context) {
       ),
 
       theme: ThemeData(
-        primarySwatch: Colors.blue,
         useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: AppColors.primary,
+          primary: AppColors.primary,
+          surface: AppColors.surfaceLight,
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: AppColors.surfaceLight,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+        ),
         scrollbarTheme: ScrollbarThemeData(
-          thumbVisibility: WidgetStatePropertyAll(true),
-          thickness: WidgetStatePropertyAll(6),
+          thumbVisibility: const WidgetStatePropertyAll(true),
+          thickness: const WidgetStatePropertyAll(6),
           radius: const Radius.circular(8),
           thumbColor: WidgetStatePropertyAll(
-            Color(0xFF072F5F).withOpacity(0.35),
+            AppColors.primary.withOpacity(0.35),
           ),
           interactive: true,
         ),

@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
@@ -123,11 +122,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         _hasSearched = true;
       });
     }
-  }
-
-  String _formatModified(DateTime? dt) {
-    if (dt == null) return '—';
-    return DateFormat('dd MMM yyyy, HH:mm').format(dt.toLocal());
   }
 
   @override
@@ -461,8 +455,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget _buildObjectRow(ViewObject obj) {
     final svc = context.watch<MFilesService>();
     final type = obj.objectTypeName.trim();
-    final modified = _formatModified(obj.lastModifiedUtc);
-    final subtitle = type.isEmpty ? 'Modified: $modified' : '$type | $modified';
+    final idPart = obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
+    final subtitle = type.isEmpty ? 'ID $idPart' : '$type | ID $idPart';
 
     final bool canExpand = obj.id != 0;
     final bool isDoc = svc.isDocumentViewObject(obj);
