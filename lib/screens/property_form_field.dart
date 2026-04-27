@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/class_property.dart';
 import '../widgets/lookup_field.dart';
+import '../theme/app_colors.dart';
 
 
 class PropertyFormField extends StatefulWidget {
@@ -113,7 +114,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
               borderRadius: BorderRadius.circular(8),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: AppColors.surfaceLight,
           ),
           validator: widget.property.isRequired
               ? (value) {
@@ -138,7 +139,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
               borderRadius: BorderRadius.circular(8),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: AppColors.surfaceLight,
           ),
           keyboardType: TextInputType.number,
           validator: widget.property.isRequired
@@ -180,7 +181,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
               borderRadius: BorderRadius.circular(8),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: AppColors.surfaceLight,
           ),
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           validator: widget.property.isRequired
@@ -222,7 +223,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
               borderRadius: BorderRadius.circular(8),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: AppColors.surfaceLight,
             suffixIcon: const Icon(Icons.calendar_today),
           ),
           readOnly: true,
@@ -247,7 +248,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
               borderRadius: BorderRadius.circular(8),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: AppColors.surfaceLight,
             suffixIcon: const Icon(Icons.access_time),
           ),
           readOnly: true,
@@ -362,7 +363,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
               borderRadius: BorderRadius.circular(8),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: AppColors.surfaceLight,
           ),
           maxLines: 4,
           validator: widget.property.isRequired
@@ -388,7 +389,7 @@ class _PropertyFormFieldState extends State<PropertyFormField> {
               borderRadius: BorderRadius.circular(8),
             ),
             filled: true,
-            fillColor: Colors.grey.shade50,
+            fillColor: AppColors.surfaceLight,
           ),
           validator: widget.property.isRequired
               ? (value) {

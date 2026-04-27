@@ -943,7 +943,7 @@ class MFilesService extends ChangeNotifier {
 
   Future<List<Map<String, dynamic>>> fetchObjectViewProps({
     required int objectId,
-    required int classId,
+    required int objectTypeId,
   }) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
@@ -951,7 +951,7 @@ class MFilesService extends ChangeNotifier {
 
     final url = Uri.parse(
       '$baseUrl/api/objectinstance/GetObjectViewProps/'
-      '$vaultGuidWithBraces/$objectId/$classId/$mfilesUserId',
+      '$vaultGuidWithBraces/$objectId/$objectTypeId/$mfilesUserId',
     );
 
     final resp = await http.get(url, headers: _authHeadersNoJson);
@@ -1074,9 +1074,9 @@ class MFilesService extends ChangeNotifier {
   Future<void> ensureExtensionForObject({
     required int objectId,
     required int classId,
+    bool notify = true, // ← add flag
   }) async {
     if (objectId <= 0) return;
-
     if (_extByObjectId.containsKey(objectId)) return;
     if (_extInFlight.contains(objectId)) return;
 
@@ -1085,12 +1085,11 @@ class MFilesService extends ChangeNotifier {
       final files = await fetchObjectFiles(objectId: objectId, classId: classId);
       final ext = files.isNotEmpty ? _normalizeExt(files.first.extension) : '';
       _extByObjectId[objectId] = ext;
-      notifyListeners();
     } catch (_) {
       _extByObjectId[objectId] = '';
-      notifyListeners();
     } finally {
       _extInFlight.remove(objectId);
+      if (notify) notifyListeners(); // only notify if caller wants it
     }
   }
 
@@ -1103,13 +1102,23 @@ class MFilesService extends ChangeNotifier {
   }
 }
 
-  void warmExtensionsForObjects(List<ViewObject> objects) {
+  Future<void> warmExtensionsForObjects(List<ViewObject> objects) async {
+    final futures = <Future>[];
+
     for (final o in objects) {
       if (o.id <= 0) continue;
-      // Multifiles don't resolve to a single extension
       if (isMultiFile(objectTypeId: o.objectTypeId, isSingleFile: o.isSingleFile)) continue;
-      ensureExtensionForObject(objectId: o.id, classId: o.classId);
+      futures.add(
+        ensureExtensionForObject(
+          objectId: o.id,
+          classId: o.classId,
+          notify: false, // ← silent
+        ),
+      );
     }
+
+    await Future.wait(futures); // wait for ALL
+    notifyListeners(); // ← single notification
   }
 
   void clearExtensionCache() {
@@ -1176,7 +1185,8 @@ class MFilesService extends ChangeNotifier {
   Future<void> ensureRelationshipsPresenceForObject({
     required int objectId,
     required int objectTypeId,
-    required int classId,
+    required int classId, 
+    required bool notify,
   }) async {
     if (objectId <= 0 || objectTypeId <= 0 || classId <= 0) return;
     if (_hasRelationshipsCache.containsKey(objectId)) return;
@@ -1255,21 +1265,27 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  void warmRelationshipsForObjects(List<ViewObject> objects) {
-    final items = objects
-        .where((o) =>
-            o.id > 0 &&
-            o.objectTypeId > 0 &&
-            o.classId > 0 &&
-            !isDocumentViewObject(o))
-        .map((o) => (
-              objectId: o.id,
-              objectTypeId: o.objectTypeId,
-              classId: o.classId,
-            ))
-        .toList();
-    _warmRelationshipsBatch(items); // intentionally not awaited
-  }
+ Future<void> warmRelationshipsForObjects(List<ViewObject> objects) async {
+  final items = objects
+      .where((o) =>
+          o.id > 0 &&
+          o.objectTypeId > 0 &&
+          o.classId > 0 &&
+          !isDocumentViewObject(o))
+      .toList();
+
+  final futures = items.map((o) =>
+    ensureRelationshipsPresenceForObject(
+      objectId: o.id,
+      objectTypeId: o.objectTypeId,
+      classId: o.classId,
+      notify: false, // ← silent
+    ),
+  );
+
+  await Future.wait(futures); // wait for ALL
+  notifyListeners(); // ← single notification
+}
 
   void warmRelationshipsForItems(List<ViewContentItem> items) {
     final batch = items

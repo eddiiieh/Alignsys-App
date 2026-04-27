@@ -6,11 +6,12 @@ import '../models/object_file.dart';
 import '../services/mfiles_service.dart';
 import '../utils/file_icon_resolver.dart';
 import '../screens/document_preview_screen.dart';
-
+import '../theme/app_colors.dart';
 class ObjectInfoDropdown extends StatefulWidget {
   final ViewObject obj;
+  final bool isDeleted;
 
-  const ObjectInfoDropdown({super.key, required this.obj});
+  const ObjectInfoDropdown({super.key, required this.obj,this.isDeleted = false,});
 
   @override
   State<ObjectInfoDropdown> createState() => _ObjectInfoDropdownState();
@@ -67,55 +68,73 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   Future<Map<String, dynamic>> _loadInfo() async {
     final svc = context.read<MFilesService>();
 
-    await svc.fetchClassProperties(widget.obj.objectTypeId, widget.obj.classId);
+    if (!widget.isDeleted) {
+      await svc.fetchClassProperties(widget.obj.objectTypeId, widget.obj.classId);
+      _allowedMetaPropIds
+        ..clear()
+        ..addAll(
+          svc.classProperties
+              .where((p) => !p.isHidden && !p.isAutomatic)
+              .map((p) => p.id),
+        )
+        ..add(0)
+        ..removeAll(_excludeMetaPropIds);
 
-    _allowedMetaPropIds
-      ..clear()
-      ..addAll(
-        svc.classProperties
-            .where((p) => !p.isHidden && !p.isAutomatic)
-            .map((p) => p.id),
-      )
-      ..add(0)
-      ..removeAll(_excludeMetaPropIds);
-
-    _propNameById
-      ..clear()
-      ..addAll({0: 'Name or title', 100: 'Class'})
-      ..addEntries(svc.classProperties.map((p) => MapEntry(p.id, p.title)));
-
-    final propsRaw = await svc.fetchObjectViewProps(
-      objectId: widget.obj.id,
-      classId: widget.obj.classId,
-    );
-
-    for (final m in propsRaw) {
-      final int? id = (m['id'] as num?)?.toInt() ??
-          (m['propId'] as num?)?.toInt() ??
-          (m['propertyId'] as num?)?.toInt();
-      if (id == null) continue;
-
-      final candidate = (m['propName'] as String?) ??
-          (m['propertyName'] as String?) ??
-          (m['name'] as String?) ??
-          (m['title'] as String?);
-
-      if (candidate == null) continue;
-      final trimmed = candidate.trim();
-      if (trimmed.isEmpty || trimmed.startsWith('Property ')) continue;
-
-      _propNameById[id] = trimmed;
+      _propNameById
+        ..clear()
+        ..addAll({0: 'Name or title', 100: 'Class'})
+        ..addEntries(svc.classProperties.map((p) => MapEntry(p.id, p.title)));
     }
 
-    final files = await svc.fetchObjectFiles(
-      objectId: widget.obj.id,
-      classId: widget.obj.classId,
+    final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
+
+    final propsRaw = await svc.fetchObjectViewProps(
+      objectId: displayIdInt,
+      objectTypeId: widget.obj.objectTypeId,
     );
 
-    return {
-      'props': propsRaw,
-      'files': files,
-    };
+    // For deleted objects, allow all props returned by the API
+    if (widget.isDeleted) {
+      for (final m in propsRaw) {
+        final int? id = (m['id'] as num?)?.toInt() ??
+            (m['propId'] as num?)?.toInt() ??
+            (m['propertyId'] as num?)?.toInt();
+        if (id != null && id != 100) { // exclude Class
+          _allowedMetaPropIds.add(id);
+          final name = (m['propName'] ?? m['name'] ?? m['propertyName'])
+              ?.toString().trim();
+          if (name != null && name.isNotEmpty && !name.startsWith('Property ')) {
+            _propNameById[id] = name;
+          }
+        }
+      }
+      _propNameById[0] = 'Name or title';
+    } else {
+      // existing name enrichment from raw props
+      for (final m in propsRaw) {
+        final int? id = (m['id'] as num?)?.toInt() ??
+            (m['propId'] as num?)?.toInt() ??
+            (m['propertyId'] as num?)?.toInt();
+        if (id == null) continue;
+        final candidate = (m['propName'] as String?) ??
+            (m['propertyName'] as String?) ??
+            (m['name'] as String?) ??
+            (m['title'] as String?);
+        if (candidate == null) continue;
+        final trimmed = candidate.trim();
+        if (trimmed.isEmpty || trimmed.startsWith('Property ')) continue;
+        _propNameById[id] = trimmed;
+      }
+    }
+
+    final files = widget.isDeleted
+        ? <ObjectFile>[]
+        : await svc.fetchObjectFiles(
+            objectId: displayIdInt,
+            classId: widget.obj.classId,
+          );
+
+    return {'props': propsRaw, 'files': files};
   }
 
   String _formatDate(DateTime? dt) {
@@ -212,6 +231,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                   fileTitle: file.fileTitle,
                   extension: file.extension,
                   reportGuid: file.reportGuid,
+                  objectTypeId: widget.obj.objectTypeId,
                 ),
                 Positioned(
                   top: 8,
@@ -378,7 +398,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         return Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
+            color: AppColors.surfaceLight,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
@@ -429,7 +449,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
       style: const TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w700,
-        color: Color(0xFF072F5F),
+        color: AppColors.primary,
       ),
     );
   }
@@ -485,7 +505,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         ),
         child: Row(
           children: [
-            Icon(icon, size: 16, color: const Color(0xFF072F5F)),
+            Icon(icon, size: 16, color: AppColors.primary),
             const SizedBox(width: 8),
             Expanded(
               child: Column(

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import '../theme/app_colors.dart';
 /// Represents a single breadcrumb segment
 class BreadcrumbSegment {
   final String label;
@@ -27,7 +27,7 @@ class BreadcrumbBar extends StatefulWidget {
     required this.segments,
     this.backgroundColor = Colors.white,
     this.textColor = const Color(0xFF666666),
-    this.activeTextColor = const Color(0xFF072F5F),
+    this.activeTextColor = AppColors.primary,
     this.fontSize = 13,
   });
 

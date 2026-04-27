@@ -10,6 +10,7 @@ import 'package:mfiles_app/widgets/relationships_dropdown.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_object.dart';
+import '../theme/app_colors.dart';
 
 class SearchResultsScreen extends StatefulWidget {
   final String initialQuery;
@@ -31,6 +32,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   String _lastQuery = '';
   List<ViewObject> _results = [];
   String? _errorMessage;
+  bool _isWarming = false; // ← new state for background warming
 
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
@@ -100,6 +102,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     setState(() {
       _isSearching = true;
+      _isWarming = false; // ← new state
       _errorMessage = null;
       _lastQuery = query;
     });
@@ -107,17 +110,43 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     try {
       await svc.searchVault(query);
       if (!mounted) return;
+
+      final results = List<ViewObject>.from(svc.searchResults);
+
+      // Sort by title relevance immediately
+      final q = query.toLowerCase();
+      results.sort((a, b) {
+        final aTitle = a.title.toLowerCase();
+        final bTitle = b.title.toLowerCase();
+        final aScore = aTitle.startsWith(q) ? 0 : aTitle.contains(q) ? 1 : 2;
+        final bScore = bTitle.startsWith(q) ? 0 : bTitle.contains(q) ? 1 : 2;
+        return aScore.compareTo(bScore);
+      });
+
+      // Show results immediately
       setState(() {
-        _results = List<ViewObject>.from(svc.searchResults);
+        _results = results;
         _hasSearched = true;
         _isSearching = false;
+        _isWarming = true; // ← still fetching in background
         _expandedInfoItemId = null;
         _expandedRelationshipsItemId = null;
       });
+
+      // Warm in background
+      await Future.wait([
+        svc.warmExtensionsForObjects(results),
+        svc.warmRelationshipsForObjects(results),
+      ]);
+
+      if (!mounted) return;
+      setState(() => _isWarming = false); // ← done
+
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isSearching = false;
+        _isWarming = false;
         _errorMessage = e.toString();
         _hasSearched = true;
       });
@@ -127,7 +156,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.surfaceLight,
       appBar: _buildAppBar(),
       body: NetworkBanner(
         child: Column(
@@ -142,7 +171,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: const Color(0xFF0A1541),
+      backgroundColor: AppColors.primary,
       elevation: 0,
       toolbarHeight: 64,
       leading: IconButton(
@@ -209,20 +238,20 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: const Color(0xFF072F5F).withOpacity(0.08),
+              color: AppColors.primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.search, size: 13, color: Color(0xFF072F5F)),
+                const Icon(Icons.search, size: 13, color: AppColors.primary),
                 const SizedBox(width: 5),
                 Text(
                   '"$query"',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF072F5F),
+                    color: AppColors.primary,
                   ),
                 ),
               ],
@@ -240,7 +269,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      const Color(0xFF072F5F).withOpacity(0.6),
+                      AppColors.primary.withOpacity(0.6),
                     ),
                   ),
                 ),
@@ -251,6 +280,26 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 ),
               ],
             )
+          else if (_isWarming)
+          Row(
+            children: [
+              SizedBox(
+                width: 13,
+                height: 13,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(
+                    Colors.orange.withOpacity(0.7),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Loading more results…',
+                style: TextStyle(fontSize: 12, color: Colors.orange.shade600),
+              ),
+            ],
+          )
           else if (_hasSearched)
             Text(
               _errorMessage != null
@@ -310,13 +359,13 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: const Color(0xFF072F5F).withOpacity(0.06),
+                color: AppColors.primary.withOpacity(0.06),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
                 Icons.search_rounded,
                 size: 48,
-                color: Color(0xFF072F5F),
+                color: AppColors.primary,
               ),
             ),
             const SizedBox(height: 20),
@@ -332,7 +381,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Text(
               'Start typing to search across all objects,\ndocuments and folders.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade500, height: 1.5),
+              style: TextStyle(fontSize: 14, color: AppColors.surfaceLight, height: 1.5),
             ),
           ],
         ),
@@ -383,7 +432,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Text(
               'No items matched "$query".\nTry a different search term.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade500, height: 1.5),
+              style: TextStyle(fontSize: 14, color: AppColors.surfaceLight, height: 1.5),
             ),
           ],
         ),
@@ -424,8 +473,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Try again'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF072F5F),
-                side: BorderSide(color: const Color(0xFF072F5F).withOpacity(0.4)),
+                foregroundColor: AppColors.primary,
+                side: BorderSide(color: AppColors.primary.withOpacity(0.4)),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
@@ -471,6 +520,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
         classId: obj.classId,
+        notify: false,
       );
     }
 
@@ -483,12 +533,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: infoExpanded
-              ? Border.all(color: const Color(0xFF072F5F), width: 1.5)
+              ? Border.all(color: AppColors.primary, width: 1.5)
               : null,
           boxShadow: infoExpanded
               ? [
                   BoxShadow(
-                    color: const Color(0xFF072F5F).withOpacity(0.25),
+                    color: AppColors.primary.withOpacity(0.25),
                     blurRadius: 14,
                     spreadRadius: 1,
                     offset: const Offset(0, 2),
@@ -546,7 +596,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                     ? Icons.expand_more
                                     : Icons.chevron_right,
                                 size: 18,
-                                color: const Color(0xFF072F5F),
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
@@ -563,7 +613,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                             )
                           : const Icon(
                               Icons.folder_rounded,
-                              color: Color(0xFF072F5F),
+                              color: AppColors.primary,
                               size: 22,
                             ),
 
@@ -611,8 +661,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: infoExpanded
-                                    ? const Color(0xFF072F5F).withOpacity(0.15)
-                                    : const Color(0xFF072F5F).withOpacity(0.08),
+                                    ? AppColors.primary.withOpacity(0.15)
+                                    : AppColors.primary.withOpacity(0.08),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -620,7 +670,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                     ? Icons.keyboard_arrow_up_rounded
                                     : Icons.info_outline,
                                 size: 18,
-                                color: const Color(0xFF072F5F),
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
@@ -690,7 +740,7 @@ class _HighlightedText extends StatelessWidget {
       spans.add(TextSpan(
         text: text.substring(index, index + query.length),
         style: const TextStyle(
-          color: Color(0xFF072F5F),
+          color: AppColors.primary,
           fontWeight: FontWeight.w800,
           backgroundColor: Color(0xFFDCEAFF),
         ),

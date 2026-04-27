@@ -15,6 +15,7 @@ import '../models/vault_object_type.dart';
 
 import '../widgets/network_banner.dart';
 import '../services/mfiles_service.dart';
+import '../theme/app_colors.dart';
 
 class DynamicFormScreen extends StatefulWidget {
   const DynamicFormScreen({
@@ -50,7 +51,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   static final DateFormat _uiDateFmt = DateFormat('dd MMM yyyy');
   static final DateFormat _uiTimeFmt = DateFormat('HH:mm');
 
-  static const _primaryBlue = Color(0xFF072F5F);
+  static const _primaryBlue = AppColors.primary;
   static const _filledBorder = Color(0xFF2563EB);
   static const _filledFill = Color(0xFFF0F6FF);
 
@@ -165,7 +166,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       helperStyle: const TextStyle(fontSize: 12),
       isDense: true,
       filled: true,
-      fillColor: filled ? _filledFill : Colors.grey.shade50,
+      fillColor: filled ? _filledFill : AppColors.surfaceLight,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -250,7 +251,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
-            color: isFilled ? _filledFill : Colors.grey.shade50,
+            color: isFilled ? _filledFill : AppColors.surfaceLight,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: isFilled ? _filledBorder : Colors.grey.shade200,
@@ -293,12 +294,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        selectedTexts[index],
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E40AF),
+                      Flexible(
+                        child: Text(
+                          selectedTexts[index],
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1E40AF),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 6),
@@ -515,7 +520,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14),
                           prefixIcon: Icon(Icons.search, color: Colors.grey.shade400, size: 20),
                           filled: true,
-                          fillColor: Colors.grey.shade50,
+                          fillColor: AppColors.surfaceLight,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide(color: Colors.grey.shade200),
@@ -573,7 +578,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                   const SizedBox(height: 8),
                                   Text(
                                     'No matches found',
-                                    style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                                    style: TextStyle(color: AppColors.surfaceLight, fontSize: 13),
                                   ),
                                 ],
                               ),
@@ -654,7 +659,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              color: has ? _filledFill : Colors.grey.shade50,
+              color: has ? _filledFill : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: has ? _filledBorder : Colors.grey.shade200,
@@ -680,7 +685,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: Text(
                     has ? _formatDateForUi(v) : 'Tap to select date',
                     style: _inputStyle.copyWith(
-                      color: has ? const Color(0xFF111827) : Colors.grey.shade500,
+                      color: has ? const Color(0xFF111827) : AppColors.surfaceLight,
                       fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
@@ -713,7 +718,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              color: has ? _filledFill : Colors.grey.shade50,
+              color: has ? _filledFill : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
                 color: has ? _filledBorder : Colors.grey.shade200,
@@ -739,7 +744,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: Text(
                     has ? _formatTimeForUi(v) : 'Tap to select time',
                     style: _inputStyle.copyWith(
-                      color: has ? const Color(0xFF111827) : Colors.grey.shade500,
+                      color: has ? const Color(0xFF111827) : AppColors.surfaceLight,
                       fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
@@ -952,7 +957,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 decoration: BoxDecoration(
-                  color: isFilled ? _filledFill : Colors.grey.shade50,
+                  color: isFilled ? _filledFill : AppColors.surfaceLight,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: isFilled ? _filledBorder : Colors.grey.shade200,
@@ -968,7 +973,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                             : (currentBool ? 'Yes' : 'No'),
                         style: _inputStyle.copyWith(
                           color: currentBool == null
-                              ? Colors.grey.shade500
+                              ? AppColors.surfaceLight
                               : const Color(0xFF111827),
                           fontWeight:
                               currentBool == null ? FontWeight.w400 : FontWeight.w500,
@@ -1161,9 +1166,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     return SafeArea(
       top: false,
       child: Scaffold(
-        backgroundColor: Colors.grey.shade50,
+        backgroundColor: AppColors.surfaceLight,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF0A1541),
+          backgroundColor: AppColors.primary,
           elevation: 0,
           toolbarHeight: 64,
           titleSpacing: 0,
@@ -1187,6 +1192,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           ),
         ),
         body: NetworkBanner(
+        child: GestureDetector(                          // ← ADD
+        onTap: () => FocusScope.of(context).unfocus(), // ← ADD
         child: Consumer<MFilesService>(
           builder: (context, service, _) {
             final objectClasses = service.objectClasses
@@ -1194,11 +1201,17 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 .toList();
 
             final visibleProperties = service.classProperties
-                .where((p) => !p.isHidden && !p.isAutomatic)
-                .toList();
+              .where((p) => !p.isHidden && !p.isAutomatic)
+              .toList()
+            ..sort((a, b) {
+              if (a.id == 0) return -1;
+              if (b.id == 0) return 1;
+              return 0; // preserve original order for everything else
+            });
 
             return ListView(
               padding: const EdgeInsets.all(16),
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               children: [
                 // ── Header card with object type switcher ──
                 _card(
@@ -1343,7 +1356,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                               decoration: BoxDecoration(
                                 color: _selectedClass != null
                                     ? _filledFill
-                                    : Colors.grey.shade50,
+                                    : AppColors.surfaceLight,
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
                                   color: _selectedClass != null
@@ -1361,7 +1374,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                       style: _inputStyle.copyWith(
                                         color: _selectedClass != null
                                             ? const Color(0xFF111827)
-                                            : Colors.grey.shade500,
+                                            : AppColors.surfaceLight,
                                         fontWeight: _selectedClass != null
                                             ? FontWeight.w500
                                             : FontWeight.w400,
@@ -1401,7 +1414,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           decoration: BoxDecoration(
                             color: _selectedFile != null
                                 ? _filledFill
-                                : Colors.grey.shade50,
+                                : AppColors.surfaceLight,
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: _selectedFile != null
@@ -1433,7 +1446,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                       style: _inputStyle.copyWith(
                                         color: _selectedFile != null
                                             ? const Color(0xFF111827)
-                                            : Colors.grey.shade500,
+                                            : AppColors.surfaceLight,
                                         fontWeight: _selectedFile != null
                                             ? FontWeight.w500
                                             : FontWeight.w400,
@@ -1604,6 +1617,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           },
         ),
       ),
+      )
       )
     );
   }

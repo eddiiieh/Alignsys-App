@@ -16,7 +16,7 @@ import '../widgets/relationships_dropdown.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
 import 'package:mfiles_app/widgets/network_banner.dart';
-
+import '../theme/app_colors.dart';
 class ViewItemsScreen extends StatefulWidget {
   final String title;
   final int parentViewId;
@@ -188,6 +188,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             objectId: item.id,
             objectTypeId: item.objectTypeId,
             classId: item.classId,
+            notify: true,
           );
         }
       });
@@ -222,11 +223,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             duration: const Duration(milliseconds: 200),
             opacity: isDimmed ? 0.45 : 1.0,
             child: Material(
-              color: infoExpanded ? const Color(0xFF072F5F).withOpacity(0.03) : Colors.white,
+              color: infoExpanded ? AppColors.primary.withOpacity(0.03) : Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: radius,
                 side: infoExpanded
-                    ? const BorderSide(color: Color(0xFF072F5F), width: 1.5)
+                    ? const BorderSide(color: AppColors.primary, width: 1.5)
                     : BorderSide.none,
               ),
               clipBehavior: Clip.antiAlias,
@@ -271,7 +272,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                 child: Icon(
                                   relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
                                   size: 18,
-                                  color: const Color(0xFF072F5F),
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ),
@@ -286,7 +287,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                 )
                               : const Icon(
                                   Icons.folder_rounded,
-                                  color: Color(0xFF072F5F),
+                                  color: AppColors.primary,
                                   size: 22,
                                 ),
 
@@ -331,8 +332,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   color: infoExpanded
-                                      ? const Color(0xFF072F5F).withOpacity(0.15)
-                                      : const Color(0xFF072F5F).withOpacity(0.08),
+                                      ? AppColors.primary.withOpacity(0.15)
+                                      : AppColors.primary.withOpacity(0.08),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -340,12 +341,12 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                       ? Icons.keyboard_arrow_up_rounded
                                       : Icons.info_outline,
                                   size: 18,
-                                  color: const Color(0xFF072F5F),
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ),
                           ] else
-                            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+                            Icon(Icons.chevron_right, size: 18, color: AppColors.surfaceLight),
                         ],
                       ),
                     ),
@@ -472,9 +473,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     final filtered = _applyFilter(_items);
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF072F5F),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         titleSpacing: 12,
@@ -553,7 +554,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   Widget _buildSearchBar() {
     return Container(
-      color: Colors.grey.shade50,
+      color: AppColors.surfaceLight,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: TextField(
         controller: _searchController,

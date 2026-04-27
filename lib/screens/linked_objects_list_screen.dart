@@ -4,7 +4,7 @@ import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/widgets/relationships_dropdown.dart';
 import 'package:mfiles_app/models/linked_object_item.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
-
+import '../theme/app_colors.dart';
 class LinkedObjectsListScreen extends StatefulWidget {
   final String title;
   final List<LinkedObjectItem> items;
@@ -42,9 +42,9 @@ class _LinkedObjectsListScreenState extends State<LinkedObjectsListScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF072F5F),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         title: Text(widget.title),
         ),

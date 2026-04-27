@@ -19,7 +19,7 @@ import '../models/view_object.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
 import 'package:mfiles_app/widgets/network_banner.dart';
-
+import '../theme/app_colors.dart';
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({
     super.key,
@@ -170,7 +170,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   Widget _buildInViewSearchBar() {
     return Container(
-      color: Colors.grey.shade50,
+      color: AppColors.surfaceLight,
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
       child: TextField(
         controller: _searchController,
@@ -245,6 +245,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 objectId: item.id,
                 objectTypeId: item.objectTypeId,
                 classId: item.classId,
+                notify: true,
               );
             }
           });
@@ -263,11 +264,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             duration: const Duration(milliseconds: 200),
             opacity: isDimmed ? 0.45 : 1.0,
             child: Material(
-              color: infoExpanded ? const Color(0xFF072F5F).withOpacity(0.03) : Colors.white,
+              color: infoExpanded ? AppColors.primary.withOpacity(0.03) : Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: radius,
                 side: infoExpanded
-                    ? const BorderSide(color: Color(0xFF072F5F), width: 1.5)
+                    ? const BorderSide(color: AppColors.primary, width: 1.5)
                     : BorderSide.none,
               ),
               clipBehavior: Clip.antiAlias,
@@ -319,7 +320,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                 child: Icon(
                                   relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
                                   size: 18,
-                                  color: const Color(0xFF072F5F),
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ),
@@ -337,7 +338,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                   height: 28,
                                   child: Icon(
                                     Icons.folder_rounded,
-                                    color: Color(0xFF072F5F),
+                                    color: AppColors.primary,
                                     size: 22,
                                   ),
                                 ),
@@ -383,8 +384,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                 padding: const EdgeInsets.all(8),
                                 decoration: BoxDecoration(
                                   color: infoExpanded
-                                      ? const Color(0xFF072F5F).withOpacity(0.15)
-                                      : const Color(0xFF072F5F).withOpacity(0.08),
+                                      ? AppColors.primary.withOpacity(0.15)
+                                      : AppColors.primary.withOpacity(0.08),
                                   shape: BoxShape.circle,
                                 ),
                                 child: Icon(
@@ -392,12 +393,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                       ? Icons.keyboard_arrow_up_rounded
                                       : Icons.info_outline,
                                   size: 18,
-                                  color: const Color(0xFF072F5F),
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ),
                           ] else
-                            Icon(Icons.chevron_right, size: 18, color: Colors.grey.shade500),
+                            Icon(Icons.chevron_right, size: 18, color: AppColors.surfaceLight),
                         ],
                       ),
                     ),
@@ -523,9 +524,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF072F5F),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
         titleSpacing: 12,
@@ -667,8 +668,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Refresh'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF072F5F),
-                side: BorderSide(color: const Color(0xFF072F5F).withOpacity(0.3)),
+                foregroundColor: AppColors.primary,
+                side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
@@ -742,7 +743,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   icon: const Icon(Icons.refresh_rounded, size: 18),
                   label: const Text('Try Again'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF072F5F),
+                    backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     elevation: 0,
                     padding:
@@ -792,7 +793,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               icon: const Icon(Icons.clear_rounded, size: 18),
               label: const Text('Clear Search'),
               style: TextButton.styleFrom(
-                foregroundColor: const Color(0xFF072F5F),
+                foregroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
             ),

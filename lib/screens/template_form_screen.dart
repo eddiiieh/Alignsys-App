@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/widgets/lookup_field.dart';
 import 'package:intl/intl.dart';
-
+import '../theme/app_colors.dart';
 class TemplateFormScreen extends StatefulWidget {
   final int classId;
   final String className;
@@ -31,7 +31,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   String? _error;
 
   static const _systemPropIds = {20, 21, 23, 25};
-  static const _primaryBlue = Color(0xFF072F5F);
+  static const _primaryBlue = AppColors.primary;
   static const _filledBorder = Color(0xFF2563EB);
   static const _filledFill = Color(0xFFF0F6FF);
 
@@ -245,23 +245,14 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1541),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(widget.templateTitle, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           Text(widget.className, style: const TextStyle(fontSize: 12, color: Colors.white70)),
         ]),
-        actions: [
-          if (!_loading && _error == null)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: _submitting
-                  ? const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)))
-                  : TextButton(onPressed: _submit, child: const Text('Create', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15))),
-            ),
-        ],
       ),
       body: _loading ? const Center(child: CircularProgressIndicator())
           : _error != null ? _buildError() : _buildForm(),
@@ -279,6 +270,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
     return ListView(
       padding: const EdgeInsets.all(16),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
         _sectionHeader('Fill in Details', subtitle: 'These fields will be reflected in the document.'),
         const SizedBox(height: 12),
@@ -367,15 +359,15 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
-              color: has ? _filledFill : Colors.grey.shade50, borderRadius: BorderRadius.circular(10),
+              color: has ? _filledFill : AppColors.surfaceLight, borderRadius: BorderRadius.circular(10),
               border: Border.all(color: has ? _filledBorder : Colors.grey.shade200, width: has ? 1.5 : 1),
             ),
             child: Row(children: [
               Container(padding: const EdgeInsets.all(5), decoration: BoxDecoration(color: has ? _primaryBlue.withOpacity(0.1) : Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
-                child: Icon(Icons.calendar_today_rounded, size: 16, color: has ? _primaryBlue : Colors.grey.shade500)),
+                child: Icon(Icons.calendar_today_rounded, size: 16, color: has ? _primaryBlue : AppColors.surfaceLight)),
               const SizedBox(width: 10),
-              Expanded(child: Text(display, style: TextStyle(fontSize: 14, fontWeight: has ? FontWeight.w500 : FontWeight.w400, color: has ? const Color(0xFF111827) : Colors.grey.shade500))),
-              has ? const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18) : Icon(Icons.keyboard_arrow_down, color: Colors.grey.shade500, size: 20),
+              Expanded(child: Text(display, style: TextStyle(fontSize: 14, fontWeight: has ? FontWeight.w500 : FontWeight.w400, color: has ? const Color(0xFF111827) : AppColors.surfaceLight))),
+              has ? const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18) : Icon(Icons.keyboard_arrow_down, color: AppColors.surfaceLight, size: 20),
             ]),
           ),
         );
@@ -424,7 +416,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   InputDecoration _textDeco({required String hint, required bool filled}) {
     return InputDecoration(
       hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-      filled: true, fillColor: filled ? _filledFill : Colors.grey.shade50, isDense: true,
+      filled: true, fillColor: filled ? _filledFill : AppColors.surfaceLight, isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: filled ? _filledBorder : Colors.grey.shade200, width: filled ? 1.5 : 1)),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)),
@@ -442,7 +434,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         decoration: BoxDecoration(
-          color: hasValue ? _filledFill : Colors.grey.shade50, borderRadius: BorderRadius.circular(10),
+          color: hasValue ? _filledFill : AppColors.surfaceLight, borderRadius: BorderRadius.circular(10),
           border: Border.all(color: hasValue ? _filledBorder : Colors.grey.shade200, width: hasValue ? 1.5 : 1),
         ),
         child: Row(children: [

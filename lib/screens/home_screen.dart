@@ -19,6 +19,7 @@ import '../widgets/relationships_dropdown.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/screens/search_results_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../theme/app_colors.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -226,9 +227,9 @@ class _HomeScreenState extends State<HomeScreen>
     return SafeArea(
       top: false,
       child: Scaffold(
-        backgroundColor: Colors.grey.shade50,
+        backgroundColor: AppColors.surfaceLight,
         appBar: AppBar(
-          backgroundColor: const Color(0xFF0A1541),
+          backgroundColor: AppColors.primary,
           elevation: 0,
           toolbarHeight: 64,
           titleSpacing: 12,
@@ -402,7 +403,7 @@ class _HomeScreenState extends State<HomeScreen>
         indicatorPadding: const EdgeInsets.all(4),
         dividerColor: Colors.transparent,
         indicator: BoxDecoration(
-            color: const Color(0xFF072F5F),
+            color: AppColors.primary,
             borderRadius: BorderRadius.circular(8)),
         labelColor: Colors.white,
         unselectedLabelColor: Colors.grey.shade600,
@@ -666,13 +667,13 @@ class _HomeScreenState extends State<HomeScreen>
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
             gradient: LinearGradient(colors: [
-              const Color(0xFF072F5F).withOpacity(0.08),
-              const Color(0xFF072F5F).withOpacity(0.03),
+              AppColors.primary.withOpacity(0.08),
+              AppColors.primary.withOpacity(0.03),
             ]),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Row(children: [
-            Icon(icon, size: 20, color: const Color.fromRGBO(25, 76, 129, 1)),
+            Icon(icon, size: 20, color: AppColors.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Text(title,
@@ -684,20 +685,20 @@ class _HomeScreenState extends State<HomeScreen>
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                  color: const Color(0xFF072F5F).withOpacity(0.1),
+                  color: AppColors.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12)),
               child: Text('$count',
                   style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF072F5F))),
+                      color: AppColors.primary)),
             ),
             const SizedBox(width: 8),
             Icon(
                 expanded
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
-                color: const Color(0xFF072F5F)),
+                color: AppColors.primary),
           ]),
         ),
       ),
@@ -772,7 +773,7 @@ class _HomeScreenState extends State<HomeScreen>
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                  color: const Color(0xFF072F5F).withOpacity(0.08),
+                  color: AppColors.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(8)),
               child: const Icon(Icons.grid_view_rounded,
                   size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
@@ -952,7 +953,8 @@ class _HomeScreenState extends State<HomeScreen>
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
-        classId: obj.classId,
+        classId: obj.classId, 
+        notify: false,
       );
     }
 
@@ -965,12 +967,12 @@ class _HomeScreenState extends State<HomeScreen>
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
           border: infoExpanded
-              ? Border.all(color: const Color(0xFF072F5F), width: 1.5)
+              ? Border.all(color: AppColors.primary, width: 1.5)
               : null,
           boxShadow: infoExpanded
               ? [
                   BoxShadow(
-                    color: const Color(0xFF072F5F).withOpacity(0.25),
+                    color: AppColors.primary.withOpacity(0.25),
                     blurRadius: 14,
                     spreadRadius: 1,
                     offset: const Offset(0, 2),
@@ -1037,7 +1039,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     ? Icons.expand_more
                                     : Icons.chevron_right,
                                 size: 18,
-                                color: const Color(0xFF072F5F),
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
@@ -1053,7 +1055,7 @@ class _HomeScreenState extends State<HomeScreen>
                             )
                           : const Icon(
                               Icons.folder_rounded,
-                              color: Color(0xFF072F5F),
+                              color: AppColors.primary,
                               size: 22,
                             ),
                       const SizedBox(width: 12),
@@ -1098,8 +1100,8 @@ class _HomeScreenState extends State<HomeScreen>
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: infoExpanded
-                                    ? const Color(0xFF072F5F).withOpacity(0.15)
-                                    : const Color(0xFF072F5F).withOpacity(0.08),
+                                    ? AppColors.primary.withOpacity(0.15)
+                                    : AppColors.primary.withOpacity(0.08),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -1107,7 +1109,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     ? Icons.keyboard_arrow_up_rounded
                                     : Icons.info_outline,
                                 size: 18,
-                                color: const Color(0xFF072F5F),
+                                color: AppColors.primary,
                               ),
                             ),
                           ),
@@ -1122,7 +1124,10 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             if (infoExpanded && canExpand) ...[
               Divider(height: 1, color: Colors.grey.shade200),
-              ObjectInfoDropdown(obj: obj),
+              ObjectInfoDropdown(
+                obj: obj,
+                isDeleted: tabs[_tabController.index] == 'Trash',
+              ),
             ],
             if (relationshipsExpanded && canExpand) ...[
               Divider(height: 1, color: Colors.grey.shade200),
@@ -1288,10 +1293,10 @@ class _HomeScreenState extends State<HomeScreen>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                        color: const Color(0xFF072F5F).withOpacity(0.1),
+                        color: AppColors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12)),
                     child: const Icon(Icons.add_circle_outline_rounded,
-                        color: Color(0xFF072F5F), size: 24),
+                        color: AppColors.primary, size: 24),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
@@ -1302,7 +1307,7 @@ class _HomeScreenState extends State<HomeScreen>
                   IconButton(
                     icon: Icon(Icons.search_rounded,
                         color: showSearch
-                            ? const Color(0xFF072F5F)
+                            ? AppColors.primary
                             : Colors.grey.shade700),
                     onPressed: () {
                       setSheet(() {
@@ -1319,7 +1324,7 @@ class _HomeScreenState extends State<HomeScreen>
                     },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close),
+                     icon: const Icon(Icons.close, color: Colors.grey),
                     onPressed: () => Navigator.pop(ctx),
                   ),
                 ]),
@@ -1340,7 +1345,7 @@ class _HomeScreenState extends State<HomeScreen>
                               prefixIcon: Icon(Icons.search,
                                   color: Colors.grey.shade400, size: 20),
                               filled: true,
-                              fillColor: Colors.grey.shade50,
+                              fillColor: AppColors.surfaceLight,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide:
@@ -1354,7 +1359,7 @@ class _HomeScreenState extends State<HomeScreen>
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
-                                    color: Color(0xFF072F5F), width: 2),
+                                    color: AppColors.primary, width: 2),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 12),
@@ -1440,7 +1445,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   leading: Container(
                                     padding: const EdgeInsets.all(8),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF072F5F)
+                                      color: AppColors.primary
                                           .withOpacity(0.08),
                                       borderRadius:
                                           BorderRadius.circular(8),
@@ -1448,8 +1453,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     child: const Icon(
                                       Icons.dashboard_customize_rounded,
                                       size: 20,
-                                      color:
-                                          Color.fromRGBO(25, 76, 129, 1),
+                                      color: AppColors.primary
                                     ),
                                   ),
                                   title: const Text('Templates',
@@ -1482,7 +1486,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 leading: Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                      color: const Color(0xFF072F5F)
+                                      color: AppColors.primary
                                           .withOpacity(0.08),
                                       borderRadius:
                                           BorderRadius.circular(8)),
@@ -1492,8 +1496,7 @@ class _HomeScreenState extends State<HomeScreen>
                                         : _iconForObjectTypeName(
                                             ot.displayName),
                                     size: 20,
-                                    color: const Color.fromRGBO(
-                                        25, 76, 129, 1),
+                                    color: AppColors.primary,
                                   ),
                                 ),
                                 title: Text(ot.displayName,
@@ -1530,14 +1533,7 @@ class _HomeScreenState extends State<HomeScreen>
   /// Entry point — no BuildContext parameter needed; uses `this.context`
   /// which is always valid as long as the widget is mounted.
   void _showTemplateClassPicker() {
-    final service = context.read<MFilesService>();
-    final allClasses = _collectAllClasses(service);
-
-    if (allClasses.isEmpty) {
-      _loadAllClassesThenPick();
-    } else {
-      _openTemplateClassSheet(allClasses);
-    }
+    _loadClassesWithTemplates();
   }
 
   List<ObjectClass> _collectAllClasses(MFilesService service) {
@@ -1564,55 +1560,64 @@ class _HomeScreenState extends State<HomeScreen>
     return result;
   }
 
-  Future<void> _loadAllClassesThenPick() async {
+  Future<void> _loadClassesWithTemplates() async {
     if (!mounted) return;
     final service = context.read<MFilesService>();
-    bool dialogShowing = false;
 
-    final spinnerTimer =
-        Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) {
-        dialogShowing = true;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => const Center(child: CircularProgressIndicator()),
-        );
-      }
-    });
+    // Show loader
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
 
     try {
-      if (service.objectTypes.isEmpty) {
-        await service.fetchObjectTypes();
-      }
+      if (service.objectTypes.isEmpty) await service.fetchObjectTypes();
+
       await Future.wait(
         service.objectTypes.map((ot) => service.fetchObjectClasses(ot.id)),
       );
-    } catch (e) {
-      spinnerTimer.ignore();
-      if (mounted) {
-        if (dialogShowing) Navigator.of(context, rootNavigator: true).pop();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to load classes: $e'),
-          backgroundColor: Colors.red,
-        ));
-      }
-      return;
-    }
 
-    spinnerTimer.ignore();
-    if (!mounted) return;
-    if (dialogShowing) Navigator.of(context, rootNavigator: true).pop();
+      final allClasses = _collectAllClasses(service);
+      final vaultGuid = service.selectedVault?.guid ?? '';
 
-    final allClasses = _collectAllClasses(service);
-    if (allClasses.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No classes found for templates.')),
+      // Fetch templates for ALL classes in parallel, keep only those with results
+      final results = await Future.wait(
+        allClasses.map((cls) async {
+          try {
+            final templates = await service.fetchClassTemplate(
+              vaultGuid: vaultGuid,
+              classId: cls.id,
+            );
+            return templates.isNotEmpty ? cls : null;
+          } catch (_) {
+            return null;
+          }
+        }),
       );
-      return;
-    }
 
-    _openTemplateClassSheet(allClasses);
+      final classesWithTemplates =
+          results.whereType<ObjectClass>().toList();
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // dismiss loader
+
+      if (classesWithTemplates.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No templates found in this repository.')),
+        );
+        return;
+      }
+
+      _openTemplateClassSheet(classesWithTemplates);
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Failed to load templates: $e'),
+        backgroundColor: Colors.red,
+      ));
+    }
   }
 
   void _openTemplateClassSheet(List<ObjectClass> allClasses) {
@@ -1657,10 +1662,10 @@ class _HomeScreenState extends State<HomeScreen>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                        color: const Color(0xFF072F5F).withOpacity(0.1),
+                        color: AppColors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12)),
                     child: const Icon(Icons.dashboard_customize_rounded,
-                        color: Color(0xFF072F5F), size: 24),
+                        color: AppColors.primary, size: 24),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
@@ -1671,7 +1676,7 @@ class _HomeScreenState extends State<HomeScreen>
                   IconButton(
                     icon: Icon(Icons.search_rounded,
                         color: showSearch
-                            ? const Color(0xFF072F5F)
+                            ? AppColors.primary
                             : Colors.grey.shade700),
                     onPressed: () {
                       setSheet(() {
@@ -1708,7 +1713,7 @@ class _HomeScreenState extends State<HomeScreen>
                               prefixIcon: Icon(Icons.search,
                                   color: Colors.grey.shade400, size: 20),
                               filled: true,
-                              fillColor: Colors.grey.shade50,
+                              fillColor: AppColors.surfaceLight,
                               border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide:
@@ -1722,7 +1727,7 @@ class _HomeScreenState extends State<HomeScreen>
                               focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
-                                    color: Color(0xFF072F5F), width: 2),
+                                    color: AppColors.primary, width: 2),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 12),
@@ -1801,7 +1806,7 @@ class _HomeScreenState extends State<HomeScreen>
                                 leading: Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                      color: const Color(0xFF072F5F)
+                                      color: AppColors.primary
                                           .withOpacity(0.08),
                                       borderRadius:
                                           BorderRadius.circular(8)),
@@ -1809,7 +1814,7 @@ class _HomeScreenState extends State<HomeScreen>
                                     Icons.dashboard_customize_rounded,
                                     size: 20,
                                     color:
-                                        Color.fromRGBO(25, 76, 129, 1),
+                                        AppColors.primary
                                   ),
                                 ),
                                 title: Text(cls.displayName,
@@ -1939,10 +1944,10 @@ class _HomeScreenState extends State<HomeScreen>
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                    color: const Color(0xFF072F5F).withOpacity(0.1),
+                    color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12)),
                 child: const Icon(Icons.description_rounded,
-                    color: Color(0xFF072F5F), size: 24),
+                    color: AppColors.primary, size: 24),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -1959,7 +1964,7 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close),
+                icon: const Icon(Icons.close, color: Colors.grey),
                 onPressed: () => Navigator.pop(context),
               ),
             ]),
@@ -1991,7 +1996,7 @@ class _HomeScreenState extends State<HomeScreen>
                       leading: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                            color: const Color(0xFF072F5F).withOpacity(0.08),
+                            color: AppColors.primary.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(8)),
                         child: const Icon(Icons.description_rounded,
                             size: 20,
@@ -2082,7 +2087,7 @@ class _HomeScreenState extends State<HomeScreen>
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                      color: const Color(0xFF0A1541).withOpacity(0.10),
+                      color: AppColors.primary.withOpacity(0.10),
                       borderRadius: BorderRadius.circular(16)),
                   child: const Icon(Icons.person_rounded,
                       color: Color(0xFF0A1541), size: 28),
@@ -2151,7 +2156,7 @@ class _HomeScreenState extends State<HomeScreen>
                       isExpanded: true,
                       decoration: InputDecoration(
                         filled: true,
-                        fillColor: Colors.grey.shade50,
+                        fillColor: AppColors.surfaceLight,
                         border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: BorderSide.none),

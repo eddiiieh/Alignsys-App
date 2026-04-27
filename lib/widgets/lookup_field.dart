@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mfiles_app/models/lookup_item.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
-
+import '../theme/app_colors.dart';
 class LookupField extends StatefulWidget {
   final String title;
   final int propertyId;
@@ -33,7 +33,7 @@ class _LookupFieldState extends State<LookupField> {
   List<LookupItem> _selectedItems = [];
   bool _isLoading = false;
 
-  static const _primaryBlue = Color(0xFF072F5F);
+  static const _primaryBlue = AppColors.primary;
 
   int _requestSeq = 0;
 
@@ -234,7 +234,7 @@ class _LookupFieldState extends State<LookupField> {
                         prefixIcon: Icon(Icons.search,
                             color: Colors.grey.shade400, size: 20),
                         filled: true,
-                        fillColor: Colors.grey.shade50,
+                        fillColor: AppColors.surfaceLight,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide(color: Colors.grey.shade200),
@@ -284,7 +284,7 @@ class _LookupFieldState extends State<LookupField> {
                       child: Text(
                         '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade500),
+                            fontSize: 12, color: AppColors.surfaceLight),
                       ),
                     ),
                   ),
@@ -303,7 +303,7 @@ class _LookupFieldState extends State<LookupField> {
                                 Text(
                                   'No matches found',
                                   style: TextStyle(
-                                      color: Colors.grey.shade500,
+                                      color: AppColors.surfaceLight,
                                       fontSize: 13),
                                 ),
                               ],

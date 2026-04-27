@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
+import '../theme/app_colors.dart';
 
 class SplashScreen extends StatefulWidget {
   final Duration minDuration;
@@ -137,7 +138,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF072F5F),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Center(
           child: Column(

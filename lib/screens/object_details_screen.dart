@@ -11,6 +11,7 @@ import '../models/object_comment.dart';
 import '../widgets/lookup_field.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
+import '../theme/app_colors.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
@@ -80,7 +81,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _commentsExpanded = true;
 
   // ── Design constants ──
-  static const _primaryBlue = Color(0xFF072F5F);
+  static const _primaryBlue = AppColors.primary;
   static const _filledBorder = Color(0xFF2563EB);
   static const _filledFill = Color(0xFFF0F6FF);
 
@@ -321,10 +322,19 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       ..addAll({0: 'Name or title', 100: 'Class'})
       ..addEntries(svc.classProperties.map((p) => MapEntry(p.id, p.title)));
 
-    final raw = await svc.fetchObjectViewProps(
-      objectId: widget.obj.id,
-      classId: widget.obj.classId,
+    final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
+    debugPrint(
+      'fetchObjectViewProps → '
+      'id=${widget.obj.id} '
+      'displayId=${widget.obj.displayId} '
+      'classId=${widget.obj.classId} '
+      'objectTypeId=${widget.obj.objectTypeId} '
+      'title=${widget.obj.title}'
     );
+      final raw = await svc.fetchObjectViewProps(
+        objectId: displayIdInt,
+        objectTypeId: widget.obj.objectTypeId,
+      );
 
     for (final m in raw) {
       final int? id = (m['id'] as num?)?.toInt() ??
@@ -408,16 +418,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF072F5F).withOpacity(0.10),
+        color: AppColors.primary.withOpacity(0.10),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFF072F5F).withOpacity(0.25)),
+        border: Border.all(color: AppColors.primary.withOpacity(0.25)),
       ),
       child: Text(
         title,
         style: const TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w700,
-          color: Color(0xFF072F5F),
+          color: AppColors.primary,
         ),
       ),
     );
@@ -488,9 +498,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF072F5F).withOpacity(0.04),
+        color: AppColors.primary.withOpacity(0.04),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF072F5F).withOpacity(0.12)),
+        border: Border.all(color: AppColors.primary.withOpacity(0.12)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,9 +527,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   // ASSIGNMENT APPROVAL HELPERS
   // ─────────────────────────────────────────────────────────────────────────
 
-  /// Extracts all assigned-user integer IDs from the loaded props.
-  /// Looks for any Lookup / MultiSelectLookup property whose name
-  /// contains "assign" (case-insensitive).
   List<int> _assignedUserIds(List<_PropVm> props) {
     final candidates = props.where((p) {
       final n = (_propNameById[p.id] ?? p.name).toLowerCase();
@@ -554,7 +561,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return ids.toList();
   }
 
-  /// Extracts id→displayName map for assigned users from props.
   Map<int, String> _assignedUserLabels(List<_PropVm> props) {
     final out = <int, String>{};
     final candidates = props.where((p) {
@@ -588,7 +594,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return out;
   }
 
-  /// Toggles approval for [userId]. Only callable for the current user.
   Future<void> _toggleApproval({
     required int userId,
     required bool currentlyApproved,
@@ -634,7 +639,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           ),
         );
 
-        // Refresh props + workflow so any state changes are reflected
         setState(() {
           _future = _loadProps();
           _workflowFuture = _loadWorkflow();
@@ -654,18 +658,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // ASSIGNMENT APPROVAL SECTION WIDGET
-  //
-  // Renders a per-user row with:
-  //   • Avatar with initials
-  //   • Name + "You" badge for current user
-  //   • Approval status subtitle
-  //   • Interactive circle checkbox for current user only
-  //   • Read-only icon for other users
-  // Falls back to the simple "Mark as Complete" button when no assigned-user
-  // lookup property can be found in the object's props.
-  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildAssignmentApprovalSection(List<_PropVm> props) {
     final svc = context.read<MFilesService>();
     final int? currentUserId = svc.mfilesUserId;
@@ -673,8 +665,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     final assignedIds = _assignedUserIds(props);
     final labels = _assignedUserLabels(props);
 
-    // ── Fallback: no assigned-user property found in props ──
-    // Show the simple full-width "Mark as Complete" button.
     if (assignedIds.isEmpty) {
       return SizedBox(
         width: double.infinity,
@@ -686,7 +676,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: _assignmentCompleted
                 ? const Color(0xFFE8F5E9)
-                : const Color(0xFF072F5F),
+                : AppColors.primary,
             foregroundColor:
                 _assignmentCompleted ? const Color(0xFF2E7D32) : Colors.white,
             disabledBackgroundColor: _assignmentCompleted
@@ -726,11 +716,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
     }
 
-    // ── Per-user approval rows ──
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Section heading
         const Text(
           'APPROVALS',
           style: TextStyle(
@@ -741,18 +729,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           ),
         ),
         const SizedBox(height: 10),
-
-        // One row per assigned user
         ...assignedIds.map((uid) {
           final isMe = uid == currentUserId;
           final isApproved = _approvedUserIds.contains(uid);
           final isBusy = _approvingUserIds.contains(uid);
           final isBusyGlobal = _saving || _downloading || _completingAssignment;
 
-          // Build display name: prefer map label, else "User <id>"
           final rawLabel = labels[uid] ?? 'User $uid';
 
-          // Build initials from display name
           final nameParts =
               rawLabel.split(' ').where((s) => s.isNotEmpty).toList();
           final initials = nameParts.length >= 2
@@ -769,7 +753,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   ? const Color(0xFFE8F5E9)
                   : isMe
                       ? const Color(0xFFF0F6FF)
-                      : Colors.grey.shade50,
+                      : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: isApproved
@@ -781,13 +765,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             ),
             child: Row(
               children: [
-                // ── Avatar ──
                 Container(
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
                     color: isMe
-                        ? const Color(0xFF072F5F)
+                        ? AppColors.primary
                         : Colors.grey.shade300,
                     shape: BoxShape.circle,
                   ),
@@ -803,8 +786,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-
-                // ── Name + badge + status ──
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -819,7 +800,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
                                 color: isMe
-                                    ? const Color(0xFF072F5F)
+                                    ? AppColors.primary
                                     : const Color(0xFF334155),
                               ),
                             ),
@@ -831,7 +812,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
                                 color:
-                                    const Color(0xFF072F5F).withOpacity(0.10),
+                                    AppColors.primary.withOpacity(0.10),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: const Text(
@@ -839,7 +820,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFF072F5F),
+                                  color: AppColors.primary,
                                 ),
                               ),
                             ),
@@ -854,24 +835,20 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           fontWeight: FontWeight.w500,
                           color: isApproved
                               ? Colors.green.shade600
-                              : Colors.grey.shade500,
+                              : AppColors.surfaceLight,
                         ),
                       ),
                     ],
                   ),
                 ),
-
-                // ── Action area ──
                 const SizedBox(width: 8),
                 if (isBusy)
-                  // Spinner while request in-flight
                   const SizedBox(
                     width: 26,
                     height: 26,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 else if (!isMe)
-                  // Other users: read-only status icon, not tappable
                   Icon(
                     isApproved
                         ? Icons.check_circle
@@ -882,7 +859,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         : Colors.grey.shade300,
                   )
                 else
-                  // Current user: interactive toggle checkbox
                   Tooltip(
                     message: isApproved ? 'Withdraw approval' : 'Approve assignment',
                     child: GestureDetector(
@@ -912,7 +888,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           boxShadow: isMe && !isApproved
                               ? [
                                   BoxShadow(
-                                    color: const Color(0xFF2563EB)
+                                    color: AppColors.primary
                                         .withOpacity(0.15),
                                     blurRadius: 6,
                                     offset: const Offset(0, 2),
@@ -957,13 +933,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFF072F5F).withOpacity(0.04),
+              color: AppColors.primary.withOpacity(0.04),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
               border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.account_tree_outlined, size: 16, color: Color(0xFF072F5F)),
+                const Icon(Icons.account_tree_outlined, size: 16, color: AppColors.primary),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
@@ -971,7 +947,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF072F5F),
+                      color: AppColors.primary,
                     ),
                   ),
                 ),
@@ -991,7 +967,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.info_outline, size: 14, color: Colors.grey.shade500),
+                    Icon(Icons.info_outline, size: 14, color: AppColors.surfaceLight),
                     const SizedBox(width: 6),
                     Text(
                       'No workflow is assigned to this object.',
@@ -1101,7 +1077,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   }
                                 },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF072F5F),
+                            backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
@@ -1221,8 +1197,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
   }
 
-  /// Legacy simple-button handler — used as fallback when no assigned-user
-  /// lookup property is found in the object's props.
   Future<void> _markAssignmentComplete() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1244,7 +1218,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF072F5F),
+              backgroundColor: AppColors.primary,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),
@@ -1310,9 +1284,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget build(BuildContext context) {
     final obj = widget.obj;
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF072F5F),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         titleSpacing: 12,
         title: Text(
@@ -1396,7 +1370,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         _dirty.clear();
                         _dirtyLookupLabels.clear();
                         _editMode = false;
-                        // Reset approval session state on manual refresh
                         _approvedUserIds.clear();
                         _approvingUserIds.clear();
                       });
@@ -1409,6 +1382,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       interactive: true,
                       child: ListView(
                         controller: _pageScroll,
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
                         children: [
@@ -1423,9 +1397,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             },
                           ),
                           const SizedBox(height: 12),
-                          // ── Pass the already-resolved props into _metadataCard
-                          // so the assignment section can read assigned-user
-                          // lookup values without a second FutureBuilder. ──
                           _metadataCard(metaProps),
                           FutureBuilder<WorkflowInfo?>(
                             future: _workflowFuture,
@@ -1482,7 +1453,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: const Color(0xFF072F5F).withOpacity(0.04),
+              color: AppColors.primary.withOpacity(0.04),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(12)),
               border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
@@ -1490,7 +1461,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             child: Row(
               children: [
                 const Icon(Icons.account_tree_outlined,
-                    size: 16, color: Color(0xFF072F5F)),
+                    size: 16, color: AppColors.primary),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
@@ -1498,7 +1469,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: Color(0xFF072F5F),
+                      color: AppColors.primary,
                     ),
                   ),
                 ),
@@ -1666,7 +1637,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                         }
                                       },
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF072F5F),
+                              backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(10)),
@@ -1709,14 +1680,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF072F5F).withOpacity(0.08),
+                        color: AppColors.primary.withOpacity(0.08),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Center(
                         child: Icon(
                           Icons.description_outlined,
                           size: 20,
-                          color: Color(0xFF072F5F),
+                          color: AppColors.primary,
                         ),
                       ),
                     ),
@@ -1829,9 +1800,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               ),
             ),
 
-          // ── Assignment approval section ──
-          // Only shown for assignment objects. Receives the already-loaded
-          // props so no extra async fetch is needed.
           if (_isAssignment) ...[
             const SizedBox(height: 16),
             Divider(height: 1, color: Colors.grey.shade100),
@@ -1849,7 +1817,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     if (_isLookup(p) || _isMultiLookup(p)) {
       final isMulti = _isMultiLookup(p);
       final displayText = _lookupDisplayText(p);
-      final hasValue = displayText.trim().isNotEmpty;
 
       if (_editMode) {
         final dirtyLabels = _dirtyLookupLabels[p.id];
@@ -1872,7 +1839,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               decoration: BoxDecoration(
-                color: hasDirtySelection ? _filledFill : Colors.grey.shade50,
+                color: hasDirtySelection ? _filledFill : AppColors.surfaceLight,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color:
@@ -1929,6 +1896,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 ],
               ),
             ),
+            // ── Multi-select dirty pills only — no "Current:" hint ──
             if (isMulti && dirtyLabels != null && dirtyLabels.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(
@@ -1947,12 +1915,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          dirtyLabels[index],
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E40AF),
+                        Flexible(
+                          child: Text(
+                            dirtyLabels[index],
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1E40AF),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 6),
@@ -1994,33 +1964,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     ),
                   );
                 }),
-              ),
-            ] else if (!isMulti ||
-                (dirtyLabels == null || dirtyLabels.isEmpty)) ...[
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: hasValue
-                    ? Row(
-                        children: [
-                          Icon(Icons.check_circle_outline,
-                              size: 13, color: Colors.green.shade600),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              'Current: $displayText',
-                              style: TextStyle(
-                                  fontSize: 11.5, color: Colors.grey.shade600),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Text(
-                        'No value — tap above to select',
-                        style: TextStyle(
-                            fontSize: 11.5, color: Colors.grey.shade400),
-                      ),
               ),
             ],
           ],
@@ -2064,7 +2007,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     TextStyle(color: Colors.grey.shade400, fontSize: 14),
                 isDense: true,
                 filled: true,
-                fillColor: isDirty ? _filledFill : Colors.grey.shade50,
+                fillColor: isDirty ? _filledFill : AppColors.surfaceLight,
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                 enabledBorder: OutlineInputBorder(
@@ -2217,7 +2160,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   return Container(
                     margin: const EdgeInsets.only(bottom: 8),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
+                      color: AppColors.surfaceLight,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: Colors.grey.shade200),
                     ),
@@ -2383,6 +2326,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           fileTitle: f.fileTitle,
           extension: f.extension,
           reportGuid: f.reportGuid,
+          objectTypeId: widget.obj.objectTypeId,
           canDownload:
               widget.obj.userPermission?.readPermission ?? false,
         ),
@@ -2467,7 +2411,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         width: 28,
         height: 28,
         decoration: const BoxDecoration(
-            color: Color(0xFF072F5F), shape: BoxShape.circle),
+            color: AppColors.primary, shape: BoxShape.circle),
         child: Center(
           child: Text(initials,
               style: const TextStyle(
@@ -2481,11 +2425,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-            color: const Color(0xFF072F5F).withOpacity(0.08),
+            color: AppColors.primary.withOpacity(0.08),
             shape: BoxShape.circle),
         child: const Center(
             child: Icon(Icons.person_outline,
-                size: 15, color: Color(0xFF072F5F))),
+                size: 15, color: AppColors.primary)),
       );
     }
 
@@ -2514,7 +2458,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     Text(dateText,
                         style: TextStyle(
                             fontSize: 11,
-                            color: Colors.grey.shade500,
+                            color: AppColors.surfaceLight,
                             fontWeight: FontWeight.w400)),
                 ],
               ),
@@ -2577,7 +2521,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         const Icon(Icons.chat_bubble_outline,
-                            size: 16, color: Color(0xFF072F5F)),
+                            size: 16, color: AppColors.primary),
                         const SizedBox(width: 6),
                         Text(
                           count > 0
@@ -2620,7 +2564,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       minHeight: 2,
                       backgroundColor: Colors.grey.shade100,
                       valueColor: const AlwaysStoppedAnimation<Color>(
-                          Color(0xFF072F5F)),
+                          AppColors.primary),
                     ),
                   )
                 else if (latestComment == null)
@@ -2706,13 +2650,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         height: 32,
                         decoration: BoxDecoration(
                           color:
-                              const Color(0xFF072F5F).withOpacity(0.1),
+                              AppColors.primary.withOpacity(0.1),
                           shape: BoxShape.circle,
                         ),
                         child: const Center(
                           child: Icon(Icons.person_outline,
                               size: 18,
-                              color: Color(0xFF072F5F)),
+                              color: AppColors.primary),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -2744,7 +2688,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 focusedBorder:
                                     const UnderlineInputBorder(
                                         borderSide: BorderSide(
-                                            color: Color(0xFF072F5F),
+                                            color: AppColors.primary,
                                             width: 1.5)),
                                 contentPadding:
                                     const EdgeInsets.symmetric(
@@ -2789,7 +2733,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                             : _submitComment,
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor:
-                                          const Color(0xFF072F5F),
+                                          AppColors.primary,
                                       foregroundColor: Colors.white,
                                       disabledBackgroundColor:
                                           Colors.grey.shade200,

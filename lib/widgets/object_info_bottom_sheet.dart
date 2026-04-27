@@ -7,11 +7,12 @@ import '../services/mfiles_service.dart';
 import '../utils/file_icon_resolver.dart';
 import '../screens/object_details_screen.dart';
 import '../screens/document_preview_screen.dart';
-
+import '../theme/app_colors.dart';
 class ObjectInfoBottomSheet extends StatefulWidget {
   final ViewObject obj;
+  final bool isDeleted;
 
-  const ObjectInfoBottomSheet({super.key, required this.obj});
+  const ObjectInfoBottomSheet({super.key, required this.obj, this.isDeleted = false,});
 
   @override
   State<ObjectInfoBottomSheet> createState() => _ObjectInfoBottomSheetState();
@@ -30,17 +31,26 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
   Future<Map<String, dynamic>> _loadInfo() async {
     final svc = context.read<MFilesService>();
 
-    // Fetch metadata properties
+    final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
+    debugPrint(
+      'fetchObjectViewProps → '
+      'id=${widget.obj.id} '
+      'displayId=${widget.obj.displayId} '
+      'classId=${widget.obj.classId} '
+      'objectTypeId=${widget.obj.objectTypeId} '
+      'title=${widget.obj.title}'
+    );
     final propsRaw = await svc.fetchObjectViewProps(
-      objectId: widget.obj.id,
-      classId: widget.obj.classId,
+      objectId: displayIdInt,  // ← was widget.obj.id
+      objectTypeId: widget.obj.objectTypeId,
     );
 
-    // Fetch attached files
-    final files = await svc.fetchObjectFiles(
-      objectId: widget.obj.id,
-      classId: widget.obj.classId,
-    );
+    final files = widget.isDeleted
+        ? <ObjectFile>[]
+        : await svc.fetchObjectFiles(
+            objectId: displayIdInt,  // ← was widget.obj.id
+            classId: widget.obj.classId,
+          );
 
     return {
       'props': propsRaw,
@@ -76,6 +86,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
           fileTitle: file.fileTitle,
           extension: file.extension,
           reportGuid: file.reportGuid,
+          objectTypeId: widget.obj.objectTypeId,
         ),
       ),
     );
@@ -218,7 +229,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
+            color: AppColors.surfaceLight,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -302,6 +313,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                     return ListView(
                       controller: scrollController,
                       padding: const EdgeInsets.all(20),
+                      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                       children: [
                         // Basic Info Section
                         _buildSectionTitle('Basic Information'),
@@ -355,7 +367,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                             icon: const Icon(Icons.open_in_full, size: 18),
                             label: const Text('View Full Details'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF072F5F),
+                              backgroundColor: AppColors.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
@@ -385,7 +397,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       style: const TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w700,
-        color: Color(0xFF072F5F),
+        color: AppColors.primary,
       ),
     );
   }
@@ -459,7 +471,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ),
       child: ListTile(
         dense: true,
-        leading: Icon(icon, color: const Color(0xFF072F5F)),
+        leading: Icon(icon, color: AppColors.primary),
         title: Text(
           file.fileTitle.isEmpty ? 'File ${file.fileId}' : file.fileTitle,
           maxLines: 1,

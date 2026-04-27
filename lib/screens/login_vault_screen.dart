@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:mfiles_app/theme/app_colors.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/network_banner.dart';
@@ -32,8 +33,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
   late final Animation<Offset> _vaultSlide;
   late final Animation<double> _vaultFade;
 
-  static const _primaryBlue = Color(0xFF072F5F);
-  static const _accentBlue = Color.fromRGBO(25, 76, 129, 1);
+  static const _primaryBlue = AppColors.primary;
+  static const _accentBlue = AppColors.primary;
 
   @override
   void initState() {
@@ -182,6 +183,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     return Scaffold(
       backgroundColor: _primaryBlue,
       body: NetworkBanner(
+        child: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),  // ← ADD THIS
         child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24),
@@ -401,7 +404,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                             const EdgeInsets.symmetric(
                                                 horizontal: 16, vertical: 12),
                                         filled: true,
-                                        fillColor: Colors.grey.shade50,
+                                        fillColor: AppColors.surfaceLight,
                                       ),
                                       icon: const Icon(Icons.arrow_drop_down,
                                           color: _accentBlue),
@@ -470,6 +473,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
         ),
       ),
     )
+    )
     );
   }
 
@@ -503,12 +507,14 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
   }) {
     return TextField(
       controller: controller,
+      textInputAction: TextInputAction.next, // or .done on the last field
+      onSubmitted: (_) => FocusScope.of(context).nextFocus(),
       keyboardType: keyboardType,
       obscureText: obscureText,
       autofillHints: autofillHints,
       decoration: InputDecoration(
         labelText: label,
-        prefixIcon: Icon(icon, color: const Color.fromRGBO(25, 76, 129, 1)),
+        prefixIcon: Icon(icon, color: AppColors.primary),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -521,7 +527,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
         ),
         errorText: errorText,
         filled: true,
-        fillColor: Colors.grey.shade50,
+        fillColor: AppColors.surfaceLight,
         suffixIcon: suffixIcon,
       ),
     );
@@ -548,7 +554,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   String? _emailError;
   String _errorMessage = '';
 
-  static const _primaryBlue = Color(0xFF072F5F);
+  static const _primaryBlue = AppColors.primary;
   static const _accentBlue = Color.fromRGBO(25, 76, 129, 1);
 
   @override
@@ -711,7 +717,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 ),
                 errorText: _emailError,
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: AppColors.surfaceLight,
               ),
             ),
 

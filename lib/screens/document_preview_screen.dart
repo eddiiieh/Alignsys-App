@@ -7,12 +7,13 @@ import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import '../widgets/network_banner.dart';
 import '../services/mfiles_service.dart';
-
+import '../theme/app_colors.dart';
 
 class DocumentPreviewScreen extends StatefulWidget {
   final int displayObjectId;
   final int classId;
   final int fileId;
+  final int objectTypeId;
   final String fileTitle;
   final String extension;
   final String reportGuid;
@@ -24,6 +25,7 @@ class DocumentPreviewScreen extends StatefulWidget {
     required this.displayObjectId,
     required this.classId,
     required this.fileId,
+    required this.objectTypeId,
     required this.fileTitle,
     required this.extension,
     required this.reportGuid,
@@ -148,7 +150,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
         imageProvider: FileImage(file),
         minScale: PhotoViewComputedScale.contained,
         maxScale: PhotoViewComputedScale.covered * 3,
-        backgroundDecoration: BoxDecoration(color: Colors.grey.shade50),
+        backgroundDecoration: BoxDecoration(color: AppColors.surfaceLight),
         loadingBuilder: (context, event) => Center(
           child: CircularProgressIndicator(
             value: event == null
@@ -167,10 +169,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snap.hasError) {
-            return _buildUnsupportedPreview(
-              'Error reading file: ${snap.error}',
-              file: file,
-            );
+            WidgetsBinding.instance.addPostFrameCallback((_) => _openExternally(file));
+            return const Center(child: CircularProgressIndicator());
           }
 
           return SingleChildScrollView(
@@ -187,39 +187,18 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
       );
     }
 
-    // Not previewable -> push user to open externally
-    return _buildUnsupportedPreview(
-      'Click on "Open Externally" to view this file.',
-      file: file,
-    );
-  }
-
-  Widget _buildUnsupportedPreview(String message, {required File file}) {
+    WidgetsBinding.instance.addPostFrameCallback((_) => _openExternally(file));
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-            Icon(Icons.visibility_off, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => _openExternally(file),
-              icon: const Icon(Icons.open_in_new),
-              label: const Text('Open Externally'),
-              style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF072F5F),
-              foregroundColor: Colors.white,
-              ),
-            ),
-          ],
-        ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(height: 16),
+          Text(
+            'Opening file...',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+          ),
+        ],
       ),
     );
   }
@@ -229,16 +208,27 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
     final bannerExt = widget.extension.isEmpty ? '' : '.${_cleanExt(widget.extension)}';
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade50,
+      backgroundColor: AppColors.surfaceLight,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF072F5F),
+        backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
+        titleSpacing: 0, // optional
         title: Text(
           widget.fileTitle.isEmpty ? 'File ${widget.fileId}' : widget.fileTitle,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          FutureBuilder<File>(
+            future: _fileFuture,
+            builder: (context, snap) {
+              return IconButton(
+                onPressed: snap.hasData ? () => _openExternally(snap.data!) : null,
+                icon: const Icon(Icons.open_in_new),
+                tooltip: 'Open Externally',
+              );
+            },
+          ),
           if (widget.canDownload)
             IconButton(
               onPressed: _downloading ? null : _downloadToDevice,
@@ -254,17 +244,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen> {
                   : const Icon(Icons.download),
               tooltip: 'Download',
             ),
-          FutureBuilder<File>(
-            future: _fileFuture,
-            builder: (context, snap) {
-              return IconButton(
-                onPressed: snap.hasData ? () => _openExternally(snap.data!) : null,
-                icon: const Icon(Icons.open_in_new),
-                tooltip: 'Open Externally',
-              );
-            },
-          ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4), // small right padding to pull away from edge
         ],
       ),
       body: NetworkBanner(
