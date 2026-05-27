@@ -1,4 +1,6 @@
 // object_details_screen.dart
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
+
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +14,7 @@ import '../widgets/lookup_field.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
+import 'package:mfiles_app/dss/screens/dss_signing_screen.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
@@ -44,18 +47,22 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   int? _selectedWorkflowId;
   bool _assigningWorkflow = false;
 
-  bool _editMode = false;
+  // _editingPropId == null  →  no field is being edited
+  // _editingPropId == p.id  →  that field's inline editor is open
+  int? _editingPropId;
+
   bool _saving = false;
   bool _downloading = false;
+
+  // e-Sign state
+  bool _eSigning = false;
 
   // Assignment completion (legacy simple button fallback)
   bool _completingAssignment = false;
   bool _assignmentCompleted = false;
 
   // ── Per-user approval state ──
-  // Tracks which userIds have been approved in this session (optimistic UI)
   final Set<int> _approvedUserIds = {};
-  // Tracks which userIds have an in-flight approval request
   final Set<int> _approvingUserIds = {};
 
   bool _headerDetailsExpanded = false;
@@ -67,8 +74,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   static const Set<int> _excludeMetaPropIds = {100}; // Class
   final Map<int, _PropVm> _dirty = {};
 
-  // Store display labels for multi-select lookups so pills can show text
   final Map<int, List<String>> _dirtyLookupLabels = {};
+
+  // ── Per-field TextEditingControllers so we can show an inline editor ──
+  final Map<int, TextEditingController> _fieldCtrl = {};
 
   final ScrollController _pageScroll = ScrollController();
 
@@ -85,7 +94,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   static const _filledBorder = Color(0xFF2563EB);
   static const _filledFill = Color(0xFFF0F6FF);
 
-  // ── Returns true when this object is an Assignment ──
+  // ── Design constant — fields visible before "Show all" ──
+  static const int _metaPreviewCount = 5;
+
+  // ── Collapsible metadata state ──
+  bool _metadataExpanded = false;
+
+  String _currentUserInitials = '';
+
+  final GlobalKey _commentInputKey = GlobalKey();
+
   bool get _isAssignment =>
       widget.obj.classId == -100 ||
       widget.obj.classTypeName.trim().toLowerCase() == 'assignment';
@@ -100,9 +118,34 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     _workflowFuture = _loadWorkflow();
     _workflowsFuture = _loadWorkflowsForThisObject();
     _commentFocusNode.addListener(() {
-      if (mounted) {
-        setState(() => _commentInputFocused = _commentFocusNode.hasFocus);
+    if (mounted) {
+      setState(() => _commentInputFocused = _commentFocusNode.hasFocus);
+      if (_commentFocusNode.hasFocus) {
+        Future.delayed(const Duration(milliseconds: 350), () {
+          if (!mounted) return;
+          final ctx = _commentInputKey.currentContext;
+          if (ctx != null) {
+            Scrollable.ensureVisible(
+              ctx,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOut,
+              alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+            );
+          }
+        });
       }
+    }
+  });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final svc = context.read<MFilesService>();
+      final name = svc.userEmail ?? svc.username ?? '';
+      final parts = name.split(RegExp(r'[@\s.]')).where((s) => s.isNotEmpty).toList();
+      setState(() {
+        _currentUserInitials = parts.length >= 2
+            ? '${parts.first[0]}${parts[1][0]}'.toUpperCase()
+            : name.substring(0, name.length.clamp(0, 2)).toUpperCase();
+      });
     });
   }
 
@@ -111,7 +154,102 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     _pageScroll.dispose();
     _commentCtrl.dispose();
     _commentFocusNode.dispose();
+    for (final c in _fieldCtrl.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  // ── Open a single field for editing ──────────────────────────────────────
+  void _startEditingField(_PropVm p, String currentText) {
+    _cancelEditingField();
+    final ctrl = TextEditingController(text: currentText);
+    _fieldCtrl[p.id] = ctrl;
+    setState(() => _editingPropId = p.id);
+  }
+
+  // ── Cancel / close without saving ────────────────────────────────────────
+  void _cancelEditingField() {
+    if (_editingPropId == null) return;
+    final old = _editingPropId!;
+    _fieldCtrl[old]?.dispose();
+    _fieldCtrl.remove(old);
+    setState(() {
+      _editingPropId = null;
+      _dirty.remove(old);
+      _dirtyLookupLabels.remove(old);
+    });
+  }
+
+  // ── Save a single field ───────────────────────────────────────────────────
+  Future<void> _saveField(_PropVm p) async {
+    if (!_dirty.containsKey(p.id)) {
+      _cancelEditingField();
+      return;
+    }
+    if (_saving) return;
+    setState(() => _saving = true);
+    try {
+      final svc = context.read<MFilesService>();
+      final dirty = _dirty[p.id]!;
+      dynamic v = dirty.editedValue ?? dirty.value ?? '';
+
+      if (p.datatype == 'MFDatatypeLookup') {
+        if (v is int) v = v.toString();
+        if (v is List<int> && v.isNotEmpty) v = v.first.toString();
+      } else if (p.datatype == 'MFDatatypeMultiSelectLookup') {
+        if (v is List<int>) v = v.map((x) => x.toString()).join(',');
+      }
+
+      final ok = await svc.updateObjectProps(
+        objectId: widget.obj.id,
+        objectTypeId: widget.obj.objectTypeId,
+        classId: widget.obj.classId,
+        props: [
+          {"id": p.id, "value": v.toString(), "datatype": p.datatype}
+        ],
+      );
+
+      if (!mounted) return;
+
+      if (!ok) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Update failed: ${svc.error ?? 'Unknown error'}'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+        return;
+      }
+
+      _dirty.remove(p.id);
+      _dirtyLookupLabels.remove(p.id);
+      _fieldCtrl[p.id]?.dispose();
+      _fieldCtrl.remove(p.id);
+
+      setState(() {
+        _editingPropId = null;
+        _future = _loadProps();
+        _filesFuture = _loadFiles();
+        _workflowFuture = _loadWorkflow();
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 16),
+            SizedBox(width: 8),
+            Text('Saved'),
+          ]),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   int _initialStateForWorkflow(int workflowId) {
@@ -317,6 +455,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       )
       ..add(0)
       ..removeAll(_excludeMetaPropIds);
+
+      // ── ADD THIS: if class properties returned very few results,
+      //    fall back to showing all raw props instead of filtering
+      if (svc.classProperties.length <= 2) {
+        _allowedMetaPropIds.clear();
+        // will be populated from raw props below
+      }
+
     _propNameById
       ..clear()
       ..addAll({0: 'Name or title', 100: 'Class'})
@@ -329,12 +475,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       'displayId=${widget.obj.displayId} '
       'classId=${widget.obj.classId} '
       'objectTypeId=${widget.obj.objectTypeId} '
-      'title=${widget.obj.title}'
+      'title=${widget.obj.title}',
     );
-      final raw = await svc.fetchObjectViewProps(
-        objectId: displayIdInt,
-        objectTypeId: widget.obj.objectTypeId,
-      );
+    final raw = await svc.fetchObjectViewProps(
+      objectId: displayIdInt,
+      objectTypeId: widget.obj.objectTypeId,
+    );
 
     for (final m in raw) {
       final int? id = (m['id'] as num?)?.toInt() ??
@@ -352,7 +498,21 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
 
     final vms = raw.map(_PropVm.fromJsonLoose).toList();
+
+    // ── ADD THIS ──
+    if (_allowedMetaPropIds.isEmpty) {
+      _allowedMetaPropIds.addAll(
+        vms.map((p) => p.id).where((id) => !_excludeMetaPropIds.contains(id)),
+      );
+    }
+
     _maybeUpdateTitleFromProps(vms);
+
+    debugPrint('classProperties count: ${svc.classProperties.length}');
+    debugPrint('allowedMetaPropIds: $_allowedMetaPropIds');
+    debugPrint('raw props count: ${raw.length}');
+    debugPrint('raw prop IDs: ${raw.map((m) => m['id'] ?? m['propId']).toList()}');
+
     return vms;
   }
 
@@ -380,59 +540,130 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // WORKFLOW CARD HELPERS
+  // e-SIGN ─ SEND FOR SIGNING DIALOG
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _wfRow({
-    required String label,
-    required Widget child,
-    CrossAxisAlignment crossAxisAlignment = CrossAxisAlignment.center,
-    double labelTopPadding = 2.0,
-  }) {
-    final isTop = crossAxisAlignment == CrossAxisAlignment.start;
-    return Row(
-      crossAxisAlignment: crossAxisAlignment,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Padding(
-            padding: EdgeInsets.only(top: isTop ? labelTopPadding : 0.0),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF64748B),
-                letterSpacing: 0.2,
-              ),
-            ),
+  Future<void> _showSendForSigningDialog(ObjectFile file) async {
+    await showDialog(
+      context: context,
+      builder: (_) => _SendForSigningDialog(
+        file: file,
+        onSend: (emails) => _sendForSigning(file: file, emails: emails),
+      ),
+    );
+  }
+
+  Future<void> _sendForSigning({
+    required ObjectFile file,
+    required List<String> emails,
+  }) async {
+    final svc = context.read<MFilesService>();
+    final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
+    try {
+      for (final email in emails) {
+        await svc.dssPostObjectFile(
+          objectId: displayIdInt,
+          classId: widget.obj.classId,
+          fileId: file.fileId,
+          versionId: file.fileVersion,
+          vaultGuid: svc.vaultGuidWithBraces,
+          signerEmail: email,
+        );
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            const Icon(Icons.check_circle, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text(
+                'Sent for signing to ${emails.length} signee${emails.length == 1 ? '' : 's'}'),
+          ]),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to send: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    }
+  }
+
+  Future<void> _selfSign(ObjectFile file) async {
+    final svc = context.read<MFilesService>();
+    final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
+    final userEmail = svc.userEmail ?? svc.username ?? '';
+
+    setState(() => _eSigning = true);
+    try {
+      final signingUrl = await svc.dssSelfSign(
+        objectId: displayIdInt,
+        classId: widget.obj.classId,
+        fileId: file.fileId,
+        versionId: file.fileVersion,
+        vaultGuid: svc.vaultGuidWithBraces,
+        signerEmail: userEmail,
+        userId: svc.mfilesUserId ?? 0,
+      );
+
+      if (!mounted) return;
+      setState(() => _eSigning = false);
+
+      final signed = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DssSigningScreen(signingUrl: signingUrl),
+        ),
+      );
+
+      if (signed == true && mounted) {
+        setState(() {
+          _future = _loadProps();
+          _filesFuture = _loadFiles();
+          _workflowFuture = _loadWorkflow();
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 18),
+              SizedBox(width: 8),
+              Text('Document signing completed'),
+            ]),
+            backgroundColor: Colors.green.shade600,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
           ),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _eSigning = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Signing failed: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10)),
         ),
-        const SizedBox(width: 8),
-        if (child is Expanded) child else Flexible(child: child),
-      ],
-    );
+      );
+    }
   }
 
-  Widget _currentStateBadge(String title) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withOpacity(0.25)),
-      ),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w700,
-          color: AppColors.primary,
-        ),
-      ),
-    );
-  }
-
+  // ─────────────────────────────────────────────────────────────────────────
+  // WORKFLOW CARD HELPERS
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _descriptionBox({required String desc, required bool isAssignedToMe}) {
     if (isAssignedToMe) {
       return Column(
@@ -449,7 +680,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.person_pin_outlined, size: 11, color: Color(0xFF92700A)),
+                const Icon(Icons.person_pin_outlined,
+                    size: 11, color: Color(0xFF92700A)),
                 const SizedBox(width: 4),
                 const Text(
                   'Assigned to you',
@@ -469,12 +701,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFFFFF8E1),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+              border:
+                  Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.assignment_ind_outlined, size: 15, color: Color(0xFF92700A)),
+                const Icon(Icons.assignment_ind_outlined,
+                    size: 15, color: Color(0xFF92700A)),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -579,7 +813,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       if (rawId is String) id = int.tryParse(rawId.trim());
       if (id == null) return;
       final label =
-          (x['displayValue'] ?? x['title'] ?? x['name'])?.toString().trim() ?? '';
+          (x['displayValue'] ?? x['title'] ?? x['name'])?.toString().trim() ??
+              '';
       if (label.isNotEmpty) out[id] = label;
     }
 
@@ -630,12 +865,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 size: 18,
               ),
               const SizedBox(width: 8),
-              Text(!currentlyApproved ? 'Assignment approved' : 'Approval withdrawn'),
+              Text(!currentlyApproved
+                  ? 'Assignment approved'
+                  : 'Approval withdrawn'),
             ]),
-            backgroundColor:
-                !currentlyApproved ? Colors.green.shade600 : Colors.orange.shade600,
+            backgroundColor: !currentlyApproved
+                ? Colors.green.shade600
+                : Colors.orange.shade600,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
 
@@ -649,7 +888,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             content: Text('Failed: ${svc.error ?? 'Unknown error'}'),
             backgroundColor: Colors.red.shade600,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
@@ -669,23 +909,26 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed:
-              (_assignmentCompleted || _completingAssignment || _saving || _downloading)
-                  ? null
-                  : _markAssignmentComplete,
+          onPressed: (_assignmentCompleted ||
+                  _completingAssignment ||
+                  _saving ||
+                  _downloading)
+              ? null
+              : _markAssignmentComplete,
           style: ElevatedButton.styleFrom(
-            backgroundColor: _assignmentCompleted
-                ? const Color(0xFFE8F5E9)
-                : AppColors.primary,
-            foregroundColor:
-                _assignmentCompleted ? const Color(0xFF2E7D32) : Colors.white,
+            backgroundColor:
+                _assignmentCompleted ? const Color(0xFFE8F5E9) : AppColors.primary,
+            foregroundColor: _assignmentCompleted
+                ? const Color(0xFF2E7D32)
+                : Colors.white,
             disabledBackgroundColor: _assignmentCompleted
                 ? const Color(0xFFE8F5E9)
                 : Colors.grey.shade200,
             disabledForegroundColor: _assignmentCompleted
                 ? const Color(0xFF2E7D32)
                 : Colors.grey.shade400,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
             elevation: 0,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
@@ -695,7 +938,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    valueColor:
+                        AlwaysStoppedAnimation<Color>(Colors.white),
                   ),
                 )
               : Icon(
@@ -736,7 +980,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           final isBusyGlobal = _saving || _downloading || _completingAssignment;
 
           final rawLabel = labels[uid] ?? 'User $uid';
-
           final nameParts =
               rawLabel.split(' ').where((s) => s.isNotEmpty).toList();
           final initials = nameParts.length >= 2
@@ -747,7 +990,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: isApproved
                   ? const Color(0xFFE8F5E9)
@@ -769,9 +1013,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: isMe
-                        ? AppColors.primary
-                        : Colors.grey.shade300,
+                    color: isMe ? AppColors.primary : Colors.grey.shade300,
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -811,8 +1053,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color:
-                                    AppColors.primary.withOpacity(0.10),
+                                color: AppColors.primary.withOpacity(0.10),
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: const Text(
@@ -860,7 +1101,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   )
                 else
                   Tooltip(
-                    message: isApproved ? 'Withdraw approval' : 'Approve assignment',
+                    message:
+                        isApproved ? 'Withdraw approval' : 'Approve assignment',
                     child: GestureDetector(
                       onTap: isBusyGlobal
                           ? null
@@ -888,8 +1130,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           boxShadow: isMe && !isApproved
                               ? [
                                   BoxShadow(
-                                    color: AppColors.primary
-                                        .withOpacity(0.15),
+                                    color: AppColors.primary.withOpacity(0.15),
                                     blurRadius: 6,
                                     offset: const Offset(0, 2),
                                   )
@@ -920,7 +1161,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   Widget _assignWorkflowCard() {
-    final canInteract = !_assigningWorkflow && !_saving && !_downloading && !_changingWorkflow;
+    final canInteract =
+        !_assigningWorkflow && !_saving && !_downloading && !_changingWorkflow;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -930,6 +1173,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Card header ─────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
@@ -939,7 +1183,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.account_tree_outlined, size: 16, color: AppColors.primary),
+                const Icon(Icons.account_tree_outlined,
+                    size: 16, color: AppColors.primary),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
@@ -960,18 +1205,55 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               ],
             ),
           ),
+
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── No workflow notice ─────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded,
+                          size: 15, color: Colors.grey.shade400),
+                      const SizedBox(width: 8),
+                      Text(
+                        'No workflow assigned to this object',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Divider(height: 1, color: Colors.grey.shade100),
+                const SizedBox(height: 14),
+
+                // ── Assign section ─────────────────────────────────────────
                 Row(
                   children: [
-                    Icon(Icons.info_outline, size: 14, color: AppColors.surfaceLight),
+                    const Icon(Icons.add_circle_outline_rounded,
+                        size: 14, color: AppColors.primary),
                     const SizedBox(width: 6),
-                    Text(
-                      'No workflow is assigned to this object.',
-                      style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                    const Text(
+                      'ASSIGN WORKFLOW',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                        letterSpacing: 0.8,
+                      ),
                     ),
                   ],
                 ),
@@ -981,113 +1263,145 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   builder: (context, snap) {
                     if (snap.connectionState == ConnectionState.waiting) {
                       return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 6),
+                        padding: EdgeInsets.symmetric(vertical: 8),
                         child: LinearProgressIndicator(minHeight: 2),
                       );
                     }
                     if (snap.hasError) {
                       return Text(
                         'Failed to load workflows: ${snap.error}',
-                        style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.red.shade700),
                       );
                     }
                     final workflows = snap.data ?? [];
                     if (workflows.isEmpty) {
                       return Text(
-                        'No workflows available for this object type/class.',
-                        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                        'No workflows available for this object type.',
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade500),
                       );
                     }
                     _selectedWorkflowId ??= workflows.first.id;
                     return Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         Expanded(
-                          child: DropdownButtonFormField<int>(
-                            value: _selectedWorkflowId,
-                            isExpanded: true,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF1E293B),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(10),
+                              border:
+                                  Border.all(color: Colors.grey.shade200),
                             ),
-                            decoration: InputDecoration(
-                              labelText: 'Workflow',
-                              labelStyle: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF475569),
+                            child: DropdownButtonHideUnderline(
+                              child: ButtonTheme(
+                                alignedDropdown: true,
+                                child: DropdownButton<int>(
+                                  value: _selectedWorkflowId,
+                                  isExpanded: true,
+                                  isDense: true,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFF1E293B),
+                                  ),
+                                  icon: Icon(
+                                    Icons.keyboard_arrow_down_rounded,
+                                    color: Colors.grey.shade500,
+                                    size: 20,
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                  borderRadius: BorderRadius.circular(10),
+                                  items: workflows
+                                      .map((w) => DropdownMenuItem<int>(
+                                            value: w.id,
+                                            child: Text(
+                                              w.title,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF1E293B),
+                                              ),
+                                            ),
+                                          ))
+                                      .toList(),
+                                  onChanged: !canInteract
+                                      ? null
+                                      : (v) => setState(
+                                          () => _selectedWorkflowId = v),
+                                ),
                               ),
-                              border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                              isDense: true,
                             ),
-                            items: workflows
-                                .map((w) => DropdownMenuItem<int>(
-                                      value: w.id,
-                                      child: Text(
-                                        w.title,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w500,
-                                          color: Color(0xFF1E293B),
-                                        ),
-                                      ),
-                                    ))
-                                .toList(),
-                            onChanged: !canInteract
-                                ? null
-                                : (v) => setState(() => _selectedWorkflowId = v),
                           ),
                         ),
                         const SizedBox(width: 10),
-                        ElevatedButton(
-                          onPressed: (!canInteract || _selectedWorkflowId == null)
-                              ? null
-                              : () async {
-                                  setState(() => _assigningWorkflow = true);
-                                  try {
-                                    final workflowId = _selectedWorkflowId!;
-                                    final initialStateId =
-                                        _initialStateForWorkflow(workflowId);
-                                    final svc = context.read<MFilesService>();
-                                    final ok = await svc.setObjectWorkflowState(
-                                      objectTypeId: widget.obj.objectTypeId,
-                                      objectId: widget.obj.id,
-                                      workflowId: workflowId,
-                                      stateId: initialStateId,
-                                    );
-                                    if (!ok) throw Exception(svc.error ?? 'Unknown');
-                                    if (!mounted) return;
-                                    setState(() {
-                                      _workflowFuture = _loadWorkflow();
-                                      _future = _loadProps();
-                                    });
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(e.toString()),
-                                        backgroundColor: Colors.red.shade600,
-                                      ),
-                                    );
-                                  } finally {
-                                    if (mounted)
-                                      setState(() => _assigningWorkflow = false);
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                            elevation: 0,
-                            overlayColor: Colors.white.withOpacity(0.1),
-                          ),
-                          child: const Text(
-                            'Assign',
-                            style:
-                                TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                        SizedBox(
+                          height: 44,
+                          child: ElevatedButton(
+                            onPressed: (!canInteract ||
+                                    _selectedWorkflowId == null)
+                                ? null
+                                : () async {
+                                    setState(
+                                        () => _assigningWorkflow = true);
+                                    try {
+                                      final workflowId = _selectedWorkflowId!;
+                                      final initialStateId =
+                                          _initialStateForWorkflow(workflowId);
+                                      final svc =
+                                          context.read<MFilesService>();
+                                      final ok =
+                                          await svc.setObjectWorkflowState(
+                                        objectTypeId: widget.obj.objectTypeId,
+                                        objectId: widget.obj.id,
+                                        workflowId: workflowId,
+                                        stateId: initialStateId,
+                                      );
+                                      if (!ok) {
+                                        throw Exception(
+                                            svc.error ?? 'Unknown');
+                                      }
+                                      if (!mounted) return;
+                                      setState(() {
+                                        _workflowFuture = _loadWorkflow();
+                                        _future = _loadProps();
+                                      });
+                                    } catch (e) {
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(e.toString()),
+                                          backgroundColor: Colors.red.shade600,
+                                        ),
+                                      );
+                                    } finally {
+                                      if (mounted) {
+                                        setState(
+                                            () => _assigningWorkflow = false);
+                                      }
+                                    }
+                                  },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primary,
+                              foregroundColor: Colors.white,
+                              disabledBackgroundColor: Colors.grey.shade200,
+                              disabledForegroundColor: Colors.grey.shade400,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10)),
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20),
+                            ),
+                            child: const Text(
+                              'Assign',
+                              style: TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w700),
+                            ),
                           ),
                         ),
                       ],
@@ -1100,60 +1414,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _save(List<_PropVm> current) async {
-    if (_saving) return;
-    if (_dirty.isEmpty) return;
-    setState(() => _saving = true);
-    try {
-      final svc = context.read<MFilesService>();
-      final payloadProps = _dirty.values
-          .where((p) => _allowedMetaPropIds.contains(p.id))
-          .map((p) {
-            dynamic v = p.editedValue ?? p.value ?? '';
-            if (p.datatype == 'MFDatatypeLookup') {
-              if (v is int) v = v.toString();
-              if (v is List<int> && v.isNotEmpty) v = v.first.toString();
-            } else if (p.datatype == 'MFDatatypeMultiSelectLookup') {
-              if (v is List<int>) v = v.map((x) => x.toString()).join(',');
-            }
-            return {"id": p.id, "value": v.toString(), "datatype": p.datatype};
-          })
-          .toList();
-
-      if (payloadProps.isEmpty) return;
-
-      final ok = await svc.updateObjectProps(
-        objectId: widget.obj.id,
-        objectTypeId: widget.obj.objectTypeId,
-        classId: widget.obj.classId,
-        props: payloadProps,
-      );
-
-      if (!ok) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Update failed: ${svc.error ?? 'Unknown error'}'),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
-        return;
-      }
-
-      _dirty.clear();
-      _dirtyLookupLabels.clear();
-      if (!mounted) return;
-      setState(() {
-        _editMode = false;
-        _future = _loadProps();
-        _filesFuture = _loadFiles();
-        _workflowFuture = _loadWorkflow();
-      });
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
   }
 
   Future<void> _confirmAndDelete() async {
@@ -1213,8 +1473,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child:
-                Text('Cancel', style: TextStyle(color: Colors.grey.shade700)),
+            child: Text('Cancel',
+                style: TextStyle(color: Colors.grey.shade700)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -1252,8 +1512,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             ]),
             backgroundColor: Colors.green.shade600,
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
           ),
         );
         Navigator.pop(context, true);
@@ -1263,8 +1523,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             content: Text('Failed: ${svc.error ?? 'Unknown error'}'),
             backgroundColor: Colors.red.shade600,
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
           ),
         );
       }
@@ -1296,48 +1556,26 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           style: const TextStyle(fontSize: 15, height: 1.2),
         ),
         actions: [
-          IconButton(
-            onPressed: (_saving || _downloading || _changingWorkflow)
-                ? null
-                : () {
-                    setState(() {
-                      _editMode = !_editMode;
-                      if (!_editMode) {
-                        _dirty.clear();
-                        _dirtyLookupLabels.clear();
-                      }
-                    });
-                  },
-            icon: Icon(_editMode ? Icons.close : Icons.edit),
-          ),
-          if (_editMode)
-            FutureBuilder<List<_PropVm>>(
-              future: _future,
-              builder: (context, snap) {
-                final props = snap.data;
-                final canSave =
-                    _editMode && !_saving && _dirty.isNotEmpty && props != null;
-                return IconButton(
-                  onPressed: canSave ? () => _save(props) : null,
-                  icon: _saving
-                      ? const SizedBox(
-                          height: 18,
-                          width: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Icon(Icons.check),
-                );
-              },
+          if (_saving)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                ),
+              ),
             ),
           if (widget.obj.userPermission?.deletePermission ?? false)
             IconButton(
-              onPressed: (_saving || _downloading || _changingWorkflow)
-                  ? null
-                  : _confirmAndDelete,
+              onPressed:
+                  (_saving || _downloading || _changingWorkflow)
+                      ? null
+                      : _confirmAndDelete,
               icon: const Icon(Icons.delete_outline),
             ),
           const SizedBox(width: 4),
@@ -1358,8 +1596,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     return Center(child: Text('Error: ${snap.error}'));
                   }
                   final props = snap.data ?? [];
-                  final metaProps =
-                      props.where((p) => _allowedMetaPropIds.contains(p.id)).toList();
+                  final metaProps = props
+                      .where((p) => _allowedMetaPropIds.contains(p.id))
+                      .toList();
                   return RefreshIndicator(
                     onRefresh: () async {
                       setState(() {
@@ -1369,7 +1608,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         _commentsFuture = _loadComments();
                         _dirty.clear();
                         _dirtyLookupLabels.clear();
-                        _editMode = false;
+                        _editingPropId = null;
                         _approvedUserIds.clear();
                         _approvingUserIds.clear();
                       });
@@ -1382,10 +1621,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       interactive: true,
                       child: ListView(
                         controller: _pageScroll,
-                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
                         physics: const AlwaysScrollableScrollPhysics(),
                         padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
                         children: [
+                          // ── Header card ──────────────────────────────────
                           FutureBuilder<List<ObjectFile>>(
                             future: _filesFuture,
                             builder: (context, filesSnap) {
@@ -1397,7 +1638,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             },
                           ),
                           const SizedBox(height: 12),
+
+                          // ── Metadata card ────────────────────────────────
                           _metadataCard(metaProps),
+
+                          // ── Workflow card ────────────────────────────────
                           FutureBuilder<WorkflowInfo?>(
                             future: _workflowFuture,
                             builder: (context, wsnap) {
@@ -1417,8 +1662,48 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               );
                             },
                           ),
-                          const SizedBox(height: 12),
-                          _previewCard(obj),
+
+                          // ── Preview card ─────────────────────────────────
+                          FutureBuilder<List<ObjectFile>>(
+                            future: _filesFuture,
+                            builder: (context, previewSnap) {
+                              final files = previewSnap.data;
+                              if (files != null &&
+                                  files.isEmpty &&
+                                  widget.obj.objectTypeId != 0) {
+                                return const SizedBox.shrink();
+                              }
+                              return Column(
+                                children: [
+                                  const SizedBox(height: 12),
+                                  _previewCard(obj),
+                                ],
+                              );
+                            },
+                          ),
+
+                          // ── e-Signature card (separate, optional) ────────
+                          FutureBuilder<List<ObjectFile>>(
+                            future: _filesFuture,
+                            builder: (context, sigSnap) {
+                              final svc = context.read<MFilesService>();
+                              final firstFile =
+                                  (sigSnap.data?.isNotEmpty ?? false)
+                                      ? sigSnap.data!.first
+                                      : null;
+                              if (firstFile == null || !svc.isDssAvailable) {
+                                return const SizedBox.shrink();
+                              }
+                              return Column(
+                                children: [
+                                  const SizedBox(height: 12),
+                                  _signingCard(firstFile),
+                                ],
+                              );
+                            },
+                          ),
+
+                          // ── Comments card ────────────────────────────────
                           const SizedBox(height: 12),
                           _commentsCard(),
                           const SizedBox(height: 32),
@@ -1435,9 +1720,152 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // e-SIGNATURE CARD  ── standalone, clearly optional
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Widget _signingCard(ObjectFile file) {
+    final busy = _saving || _downloading || _changingWorkflow || _eSigning;
+    final fileName = file.fileTitle.trim().isEmpty ? 'this file' : file.fileTitle;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Card header ──────────────────────────────────────────────────
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.04),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
+              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.draw_rounded,
+                    size: 16, color: AppColors.primary),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'e-Sign options',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                if (_eSigning)
+                  const SizedBox(
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+          ),
+
+          // ── Card body ────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Context note — makes it clear this is optional
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline,
+                        size: 13, color: Colors.grey.shade400),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Optionally sign or send "$fileName" for signing.',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // ── Action buttons ───────────────────────────────────────
+                Row(
+                  children: [
+                    // Sign Myself
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: busy ? null : () => _selfSign(file),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          elevation: 0,
+                          textStyle: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        icon: _eSigning
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
+                                ),
+                              )
+                            : const Icon(Icons.draw_rounded, size: 15),
+                        label: const Text('Sign Myself'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Send for Signing
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: busy
+                            ? null
+                            : () => _showSendForSigningDialog(file),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(color: AppColors.primary),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
+                          elevation: 0,
+                          textStyle: const TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                        icon: const Icon(Icons.send_rounded, size: 15),
+                        label: const Text('Send for Signing'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // WORKFLOW CARD WITH STATE
+  // ─────────────────────────────────────────────────────────────────────────
+
   Widget _buildWorkflowCardWithState(WorkflowInfo info) {
-    final canChange =
-        info.nextStates.isNotEmpty && !_changingWorkflow && !_saving && !_downloading;
+    final canChange = info.nextStates.isNotEmpty &&
+        !_changingWorkflow &&
+        !_saving &&
+        !_downloading;
     final hasDesc = info.assignmentDesc.trim().isNotEmpty;
     final isAssignedToMe = info.isAssignedToMe;
 
@@ -1450,12 +1878,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Card header ─────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.04),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
               border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Row(
@@ -1482,177 +1910,224 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               ],
             ),
           ),
+
           Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _wfRow(
-                  label: 'Workflow',
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  child: Text(
-                    info.workflowTitle,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
-                    ),
-                    softWrap: true,
+                // ── Workflow name ──────────────────────────────────────────
+                Text(
+                  info.workflowTitle,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
                   ),
                 ),
-                const SizedBox(height: 10),
-                _wfRow(
-                  label: 'Current state',
-                  child: _currentStateBadge(info.currentStateTitle),
+                const SizedBox(height: 12),
+
+                // ── Current state pill ─────────────────────────────────────
+                Row(
+                  children: [
+                    Text(
+                      'Current state',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: AppColors.primary.withOpacity(0.25)),
+                      ),
+                      child: Text(
+                        info.currentStateTitle,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+
+                // ── Assignment description ─────────────────────────────────
                 if (hasDesc) ...[
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Assignment description',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF334155),
-                      letterSpacing: 0.2,
+                  const SizedBox(height: 14),
+                  _descriptionBox(
+                    desc: info.assignmentDesc.trim(),
+                    isAssignedToMe: isAssignedToMe,
+                  ),
+                ],
+
+                // ── Advance to ────────────────────────────────────────────
+                if (info.nextStates.isEmpty) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.lock_outline_rounded,
+                            size: 15, color: Colors.grey.shade400),
+                        const SizedBox(width: 8),
+                        Text(
+                          'No further steps available',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  _descriptionBox(
-                      desc: info.assignmentDesc.trim(),
-                      isAssignedToMe: isAssignedToMe),
-                ],
-                const SizedBox(height: 14),
-                Divider(height: 1, color: Colors.grey.shade200),
-                const SizedBox(height: 14),
-                if (info.nextStates.isEmpty)
+                ] else ...[
+                  const SizedBox(height: 16),
+                  Divider(height: 1, color: Colors.grey.shade100),
+                  const SizedBox(height: 14),
                   Row(
                     children: [
-                      Icon(Icons.block, size: 14, color: Colors.grey.shade400),
+                      const Icon(Icons.arrow_circle_right_outlined,
+                          size: 14, color: AppColors.primary),
                       const SizedBox(width: 6),
-                      Text(
-                        'No next steps available.',
-                        style:
-                            TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                      ),
-                    ],
-                  )
-                else
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
                       const Text(
                         'ADVANCE TO',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF475569),
-                          letterSpacing: 1.0,
+                          color: AppColors.primary,
+                          letterSpacing: 0.8,
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              value: _selectedNextStateId,
-                              isExpanded: true,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF1E293B),
-                              ),
-                              decoration: InputDecoration(
-                                labelText: 'Next state',
-                                labelStyle: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF475569),
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                isDense: true,
-                              ),
-                              items: info.nextStates
-                                  .map((s) => DropdownMenuItem<int>(
-                                        value: s.id,
-                                        child: Text(
-                                          s.title,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 14,
-                                            fontWeight: FontWeight.w500,
-                                            color: Color(0xFF1E293B),
-                                          ),
-                                        ),
-                                      ))
-                                  .toList(),
-                              onChanged: canChange
-                                  ? (v) =>
-                                      setState(() => _selectedNextStateId = v)
-                                  : null,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          ElevatedButton(
-                            onPressed:
-                                (!canChange || _selectedNextStateId == null)
-                                    ? null
-                                    : () async {
-                                        setState(
-                                            () => _changingWorkflow = true);
-                                        try {
-                                          final svc =
-                                              context.read<MFilesService>();
-                                          final ok =
-                                              await svc.setObjectWorkflowState(
-                                            objectTypeId:
-                                                widget.obj.objectTypeId,
-                                            objectId: widget.obj.id,
-                                            workflowId: info.workflowId,
-                                            stateId: _selectedNextStateId!,
-                                          );
-                                          if (!ok) {
-                                            if (!mounted) return;
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
-                                              SnackBar(
-                                                content: Text(
-                                                    'Workflow update failed: ${svc.error ?? 'Unknown'}'),
-                                                backgroundColor:
-                                                    Colors.red.shade600,
-                                              ),
-                                            );
-                                            return;
-                                          }
-                                          if (!mounted) return;
-                                          setState(() {
-                                            _workflowFuture = _loadWorkflow();
-                                            _future = _loadProps();
-                                          });
-                                        } finally {
-                                          if (mounted)
-                                            setState(
-                                                () => _changingWorkflow = false);
-                                        }
-                                      },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                              elevation: 0,
-                            ),
-                            child: const Text(
-                              'Apply',
-                              style: TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                        ],
                       ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: DropdownButtonHideUnderline(
+                            child: ButtonTheme(
+                              alignedDropdown: true,
+                              child: DropdownButton<int>(
+                                value: _selectedNextStateId,
+                                isExpanded: true,
+                                isDense: true,
+                                style: const TextStyle(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: Color(0xFF1E293B),
+                                ),
+                                icon: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  color: Colors.grey.shade500,
+                                  size: 20,
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                borderRadius: BorderRadius.circular(10),
+                                items: info.nextStates
+                                    .map((s) => DropdownMenuItem<int>(
+                                          value: s.id,
+                                          child: Text(
+                                            s.title,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              fontSize: 13.5,
+                                              fontWeight: FontWeight.w500,
+                                              color: Color(0xFF1E293B),
+                                            ),
+                                          ),
+                                        ))
+                                    .toList(),
+                                onChanged: canChange
+                                    ? (v) => setState(
+                                        () => _selectedNextStateId = v)
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      SizedBox(
+                        height: 44,
+                        child: ElevatedButton(
+                          onPressed: (!canChange || _selectedNextStateId == null)
+                              ? null
+                              : () async {
+                                  setState(() => _changingWorkflow = true);
+                                  try {
+                                    final svc = context.read<MFilesService>();
+                                    final ok = await svc.setObjectWorkflowState(
+                                      objectTypeId: widget.obj.objectTypeId,
+                                      objectId: widget.obj.id,
+                                      workflowId: info.workflowId,
+                                      stateId: _selectedNextStateId!,
+                                    );
+                                    if (!ok) {
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                              'Workflow update failed: ${svc.error ?? 'Unknown'}'),
+                                          backgroundColor: Colors.red.shade600,
+                                        ),
+                                      );
+                                      return;
+                                    }
+                                    if (!mounted) return;
+                                    setState(() {
+                                      _workflowFuture = _loadWorkflow();
+                                      _future = _loadProps();
+                                    });
+                                  } finally {
+                                    if (mounted) {
+                                      setState(() => _changingWorkflow = false);
+                                    }
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor: Colors.grey.shade200,
+                            disabledForegroundColor: Colors.grey.shade400,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                          ),
+                          child: const Text(
+                            'Apply',
+                            style: TextStyle(
+                                fontSize: 13.5, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -1684,11 +2159,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Center(
-                        child: Icon(
-                          Icons.description_outlined,
-                          size: 20,
-                          color: AppColors.primary,
-                        ),
+                        child: Icon(Icons.description_outlined,
+                            size: 20, color: AppColors.primary),
                       ),
                     ),
               const SizedBox(width: 10),
@@ -1756,6 +2228,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   Widget _metadataCard(List<_PropVm> props) {
+    final hasMore = props.length > _metaPreviewCount;
+    final visibleProps =
+        _metadataExpanded ? props : props.take(_metaPreviewCount).toList();
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1766,24 +2242,43 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ── Header ────────────────────────────────────────────────────────
           Row(
             children: [
-              const Expanded(
-                child: Text('Metadata',
-                    style:
-                        TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+              const Icon(Icons.tune_rounded, size: 15, color: AppColors.primary),
+              const SizedBox(width: 6),
+              const Text(
+                'Metadata',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               ),
-              Text(
-                _editMode ? 'Editing' : 'Read-only',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${props.length} fields',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-          if (props.isNotEmpty)
-            Column(
+
+          // ── Fields (animated expand/collapse) ─────────────────────────────
+          AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            alignment: Alignment.topCenter,
+            child: Column(
               children: List.generate(
-                props.length * 2 - 1,
+                visibleProps.length * 2 - 1,
                 (index) {
                   if (index.isOdd) {
                     return const Padding(
@@ -1795,11 +2290,60 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       ),
                     );
                   }
-                  return _propField(props[index ~/ 2]);
+                  return _propField(visibleProps[index ~/ 2]);
                 },
               ),
             ),
+          ),
 
+          // ── Show more / less toggle ────────────────────────────────────────
+          if (hasMore) ...[
+            const SizedBox(height: 12),
+            Divider(height: 1, color: Colors.grey.shade100),
+            const SizedBox(height: 8),
+            Center(
+              child: GestureDetector(
+                onTap: () => setState(() => _metadataExpanded = !_metadataExpanded),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.15),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _metadataExpanded
+                            ? 'Show less'
+                            : 'Show all ${props.length} fields',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      AnimatedRotation(
+                        turns: _metadataExpanded ? 0.5 : 0.0,
+                        duration: const Duration(milliseconds: 250),
+                        child: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          // ── Assignment approval section (always visible) ───────────────────
           if (_isAssignment) ...[
             const SizedBox(height: 16),
             Divider(height: 1, color: Colors.grey.shade100),
@@ -1811,39 +2355,1166 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // PREVIEW CARD  ── file list only; signing moved to _signingCard
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Widget _previewCard(ViewObject obj) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.04),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(12)),
+              border:
+                  Border(bottom: BorderSide(color: Colors.grey.shade100)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.insert_drive_file_outlined,
+                    size: 16, color: AppColors.primary),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Preview file',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+                if (_downloading)
+                  const SizedBox(
+                      height: 16,
+                      width: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: FutureBuilder<List<ObjectFile>>(
+              future: _filesFuture,
+              builder: (context, snap) {
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 16),
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (snap.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Failed to load files: ${snap.error}',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.red.shade700),
+                    ),
+                  );
+                }
+
+                final files = snap.data ?? [];
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (files.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20),
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.insert_drive_file_outlined,
+                                  color: Colors.grey.shade400, size: 36),
+                              const SizedBox(height: 8),
+                              Text(
+                                'There are no files attached to this item yet.',
+                                style: TextStyle(
+                                    color: Colors.grey.shade600),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    // ── File rows — no signing buttons here ───────────────
+                    ...files.map((f) {
+                      final ext =
+                          (f.extension.isEmpty ? '' : '.${f.extension}')
+                              .toLowerCase();
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceLight,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(12),
+                            onTap: (_saving ||
+                                    _downloading ||
+                                    _changingWorkflow)
+                                ? null
+                                : () => _previewFileInApp(obj, f),
+                            child: ListTile(
+                              dense: true,
+                              leading: FileTypeBadge(
+                                  extension: f.extension, size: 36),
+                              title: Text(
+                                f.fileTitle.isEmpty
+                                    ? 'File ${f.fileId}'
+                                    : f.fileTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              subtitle: Text(
+                                  'v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+                              trailing: PopupMenuButton<String>(
+                                onSelected: (action) async {
+                                  final displayIdInt =
+                                      int.tryParse(obj.displayId);
+                                  if (displayIdInt == null) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(SnackBar(
+                                      content: Text(
+                                          'Invalid object display ID: ${obj.displayId}'),
+                                      backgroundColor: Colors.red.shade600,
+                                    ));
+                                    return;
+                                  }
+                                  setState(() => _downloading = true);
+                                  try {
+                                    final svc =
+                                        context.read<MFilesService>();
+                                    if (action == 'preview') {
+                                      await _previewFileInApp(obj, f);
+                                    } else if (action == 'open') {
+                                      await svc.downloadAndOpenFile(
+                                        displayObjectId: displayIdInt,
+                                        classId: obj.classId,
+                                        fileId: f.fileId,
+                                        fileTitle: f.fileTitle,
+                                        extension: f.extension,
+                                        reportGuid: f.reportGuid,
+                                      );
+                                    } else if (action == 'download') {
+                                      final savedPath =
+                                          await svc.downloadAndSaveFile(
+                                        displayObjectId: displayIdInt,
+                                        classId: obj.classId,
+                                        fileId: f.fileId,
+                                        fileTitle: f.fileTitle,
+                                        extension: f.extension,
+                                        reportGuid: f.reportGuid,
+                                      );
+                                    
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(SnackBar(
+                                        content: Text(
+                                            'Saved to: $savedPath'),
+                                        backgroundColor:
+                                            Colors.green.shade600,
+                                        duration:
+                                            const Duration(seconds: 4),
+                                      ));
+                                    } else if (action == 'convert_pdf') {
+                                      setState(() => _downloading = false);
+                                      await _convertToPdf(obj, f);
+                                    }
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(SnackBar(
+                                      content:
+                                          Text('Action failed: $e'),
+                                      backgroundColor:
+                                          Colors.red.shade600,
+                                    ));
+                                  } finally {
+                                    if (mounted) {
+                                      setState(
+                                          () => _downloading = false);
+                                    }
+                                  }
+                                },
+                                itemBuilder: (_) {
+                                  final canDownload = widget
+                                          .obj.userPermission
+                                          ?.readPermission ??
+                                      false;
+                                  return [
+                                    const PopupMenuItem(
+                                      value: 'preview',
+                                      child: Row(children: [
+                                        Icon(Icons.visibility,
+                                            size: 18),
+                                        SizedBox(width: 12),
+                                        Text('Preview'),
+                                      ]),
+                                    ),
+                                    const PopupMenuItem(
+                                      value: 'open',
+                                      child: Row(children: [
+                                        Icon(Icons.open_in_new,
+                                            size: 18),
+                                        SizedBox(width: 12),
+                                        Text('Open Externally'),
+                                      ]),
+                                    ),
+                                    if (canDownload)
+                                      const PopupMenuItem(
+                                        value: 'download',
+                                        child: Row(children: [
+                                          Icon(Icons.download,
+                                              size: 18),
+                                          SizedBox(width: 12),
+                                          Text('Download'),
+                                        ]),
+                                      ),
+
+                                      // ── Only show for non-PDF files ──
+                                      if (f.extension.trim().toLowerCase() != 'pdf')
+                                        const PopupMenuItem(
+                                          value: 'convert_pdf',
+                                          child: Row(children: [
+                                            Icon(Icons.picture_as_pdf_rounded, size: 18),
+                                            SizedBox(width: 12),
+                                            Text('Convert to PDF'),
+                                          ]),
+                                        ),
+                                  ];
+                                },
+                                child: const Icon(Icons.more_vert,
+                                    size: 18),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
+    final displayIdInt = int.tryParse(obj.displayId);
+    if (displayIdInt == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Invalid object display ID: ${obj.displayId}'),
+          backgroundColor: Colors.red.shade600,
+        ),
+      );
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DocumentPreviewScreen(
+          displayObjectId: displayIdInt,
+          classId: obj.classId,
+          fileId: f.fileId,
+          fileTitle: f.fileTitle,
+          extension: f.extension,
+          reportGuid: f.reportGuid,
+          objectTypeId: widget.obj.objectTypeId,
+          canDownload: widget.obj.userPermission?.readPermission ?? false,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _convertToPdf(ViewObject obj, ObjectFile f) async {
+    // Show options bottom sheet
+    bool overwrite = false;
+    bool separate = true;
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Handle bar
+                  Center(
+                    child: Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(Icons.picture_as_pdf_rounded,
+                            color: AppColors.primary, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Convert to PDF',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'Choose conversion options',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Divider(height: 1, color: Colors.grey.shade100),
+                  const SizedBox(height: 8),
+
+                  // Toggle: Overwrite original
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Overwrite original file',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Replace the existing file with the PDF version',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    value: overwrite,
+                    activeColor: AppColors.primary,
+                    onChanged: (v) => setSheet(() => overwrite = v),
+                  ),
+                  Divider(height: 1, color: Colors.grey.shade100),
+
+                  // Toggle: Save as separate file
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Save as separate file',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    subtitle: Text(
+                      'Keep the original and add the PDF alongside it',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    value: separate,
+                    activeColor: AppColors.primary,
+                    onChanged: (v) => setSheet(() => separate = v),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Confirm button
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                      label: const Text(
+                        'Convert',
+                        style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _downloading = true);
+    try {
+      final svc = context.read<MFilesService>();
+      await svc.convertToPdf(
+        objectId: widget.obj.id,
+        classId: widget.obj.classId,
+        fileId: f.fileId,
+        overWriteOriginal: overwrite,
+        separateFile: separate,
+      );
+      if (!mounted) return;
+      setState(() => _filesFuture = _loadFiles());
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(children: [
+            Icon(Icons.check_circle, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('Converted to PDF successfully'),
+          ]),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Conversion failed: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // COMMENTS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Future<List<ObjectComment>> _loadComments() async {
+    final svc = context.read<MFilesService>();
+    try {
+      final items = await svc.fetchComments(
+        objectId: widget.obj.id,
+        objectTypeId: widget.obj.objectTypeId,
+        vaultGuid: svc.vaultGuidWithBraces,
+      );
+      return items;
+    } catch (_) {
+      return <ObjectComment>[];
+    }
+  }
+
+  Future<void> _submitComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
+    if (_postingComment) return;
+    setState(() => _postingComment = true);
+    try {
+      final svc = context.read<MFilesService>();
+      final ok = await svc.postComment(
+        comment: text,
+        objectId: widget.obj.id,
+        objectTypeId: widget.obj.objectTypeId,
+        vaultGuid: svc.vaultGuidWithBraces,
+      );
+      if (!ok) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content:
+                Text('Comment failed: ${svc.error ?? 'Unknown error'}'),
+            backgroundColor: Colors.red.shade600,
+          ),
+        );
+        return;
+      }
+      _commentCtrl.clear();
+      _commentFocusNode.unfocus();
+      if (!mounted) return;
+      setState(() => _commentsFuture = _loadComments());
+    } finally {
+      if (mounted) setState(() => _postingComment = false);
+    }
+  }
+
+  String _fmtCommentDate(DateTime? dt) {
+    if (dt == null) return '';
+    final now = DateTime.now();
+    final local = dt.toLocal();
+    final diff = now.difference(local);
+    if (diff.inMinutes < 1) return 'Just now';
+    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
+    if (diff.inDays < 1) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${local.month}/${local.day}/${local.year}';
+  }
+
+  Widget _commentRow(ObjectComment c, {bool isPreview = false}) {
+    final dateText = _fmtCommentDate(c.modifiedDate);
+    final authorName = c.author.trim();
+    final hasAuthor = authorName.isNotEmpty;
+
+    final parts = authorName.split(' ').where((s) => s.isNotEmpty).toList();
+    final initials = hasAuthor
+        ? (parts.length >= 2
+            ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
+            : authorName.substring(0, authorName.length.clamp(0, 2)).toUpperCase())
+        : '?';
+
+    // Give each author a consistent subtle color based on their name
+    final avatarColors = [
+      const Color(0xFF6366F1), // indigo
+      const Color(0xFF0EA5E9), // sky
+      const Color(0xFF10B981), // emerald
+      const Color(0xFFF59E0B), // amber
+      const Color(0xFFEF4444), // red
+      const Color(0xFF8B5CF6), // violet
+      const Color(0xFF14B8A6), // teal
+    ];
+    final avatarColor =
+        avatarColors[authorName.hashCode.abs() % avatarColors.length];
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── Avatar ──────────────────────────────────────────────────────
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: hasAuthor ? avatarColor : Colors.grey.shade300,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              initials,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+
+        // ── Bubble ──────────────────────────────────────────────────────
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Author + timestamp
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  if (hasAuthor)
+                    Text(
+                      authorName,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                  if (hasAuthor) const SizedBox(width: 6),
+                  if (dateText.isNotEmpty)
+                    Text(
+                      dateText,
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade400,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              // Message bubble
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(12),
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Text(
+                  c.text,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    height: 1.45,
+                    color: Color(0xFF334155),
+                  ),
+                  maxLines: isPreview ? 2 : null,
+                  overflow:
+                      isPreview ? TextOverflow.ellipsis : TextOverflow.visible,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // DATE SEPARATOR CHIP
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _dateSeparator(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(child: Divider(height: 1, color: Colors.grey.shade200)),
+          const SizedBox(width: 10),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade500,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: Divider(height: 1, color: Colors.grey.shade200)),
+        ],
+      ),
+    );
+  }
+
+  String _dateGroupLabel(DateTime? dt) {
+    if (dt == null) return '';
+    final now = DateTime.now();
+    final local = dt.toLocal();
+    final diff = DateTime(now.year, now.month, now.day)
+        .difference(DateTime(local.year, local.month, local.day))
+        .inDays;
+    if (diff == 0) return 'Today';
+    if (diff == 1) return 'Yesterday';
+    if (diff < 7) return '${diff} days ago';
+    return '${local.day}/${local.month}/${local.year}';
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // COMMENTS CARD  ── redesigned
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _commentsCard() {
+    final disabled =
+        _saving || _downloading || _changingWorkflow || _assigningWorkflow;
+
+    return FutureBuilder<List<ObjectComment>>(
+      future: _commentsFuture,
+      builder: (context, snap) {
+        final isLoading = snap.connectionState == ConnectionState.waiting;
+        // Reverse so newest is at top
+        final comments =
+            (snap.data ?? []).reversed.toList();
+        final count = comments.length;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Card header (tappable toggle) ──────────────────────────
+              Material(
+                color: Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.only(
+                    topLeft: const Radius.circular(12),
+                    topRight: const Radius.circular(12),
+                    bottomLeft:
+                        Radius.circular(_commentsExpanded ? 0 : 12),
+                    bottomRight:
+                        Radius.circular(_commentsExpanded ? 0 : 12),
+                  ),
+                  onTap: () => setState(() {
+                    _commentsExpanded = !_commentsExpanded;
+                    if (!_commentsExpanded) _commentFocusNode.unfocus();
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.chat_bubble_outline_rounded,
+                            size: 15, color: AppColors.primary),
+                        const SizedBox(width: 6),
+                        Text(
+                          count > 0 ? 'Comments ($count)' : 'Comments',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                        const Spacer(),
+                        if (_postingComment)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 8),
+                            child: SizedBox(
+                              height: 14,
+                              width: 14,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2),
+                            ),
+                          ),
+                        AnimatedRotation(
+                          turns: _commentsExpanded ? 0.5 : 0.0,
+                          duration: const Duration(milliseconds: 220),
+                          child: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            size: 20,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // ── Collapsed preview — newest comment ─────────────────────
+              if (!_commentsExpanded) ...[
+                Divider(height: 1, color: Colors.grey.shade100),
+                if (isLoading)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 14),
+                    child: LinearProgressIndicator(
+                      minHeight: 2,
+                      backgroundColor: Colors.grey.shade100,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                          AppColors.primary),
+                    ),
+                  )
+                else if (comments.isEmpty)
+                  InkWell(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(12)),
+                    onTap: () => setState(() => _commentsExpanded = true),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 14),
+                      child: Row(
+                        children: [
+                          Icon(Icons.add_comment_outlined,
+                              size: 14, color: Colors.grey.shade400),
+                          const SizedBox(width: 8),
+                          Text(
+                            'No comments yet — tap to add one',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.grey.shade400,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  InkWell(
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(12)),
+                    onTap: () => setState(() => _commentsExpanded = true),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _commentRow(comments.first, isPreview: true),
+                          if (count > 1) ...[
+                            const SizedBox(height: 10),
+                            Center(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.06),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                      color:
+                                          AppColors.primary.withOpacity(0.15)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      '+${count - 1} more comment${count - 1 == 1 ? '' : 's'}',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    const Icon(
+                                      Icons.arrow_forward_rounded,
+                                      size: 12,
+                                      color: AppColors.primary,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+
+              // ── Expanded: comment list (newest first) + input at bottom ─
+              if (_commentsExpanded) ...[
+                Divider(height: 1, color: Colors.grey.shade100),
+
+                // Comment list
+                if (isLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                  )
+                else if (snap.hasError)
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Text(
+                      'Failed to load comments: ${snap.error}',
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.red.shade600),
+                    ),
+                  )
+                else if (comments.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 28),
+                    child: Center(
+                      child: Column(
+                        children: [
+                          Icon(Icons.chat_bubble_outline_rounded,
+                              size: 30, color: Colors.grey.shade300),
+                          const SizedBox(height: 8),
+                          Text(
+                            'No comments yet.\nBe the first to comment.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.grey.shade400,
+                              height: 1.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  Padding(
+                    padding:
+                        const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                    child: _buildCommentList(comments),
+                  ),
+
+                // ── Comment input — always docked at the bottom ────────────
+                Divider(height: 1, color: Colors.grey.shade100),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // Current user avatar
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: _currentUserInitials.isNotEmpty
+                              ? Text(
+                                  _currentUserInitials,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Icon(Icons.person_outline,
+                                  size: 16, color: Colors.white),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+
+                      // Input field + send button
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Container(
+                              key: _commentInputKey,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: _commentInputFocused
+                                      ? AppColors.primary
+                                      : Colors.grey.shade200,
+                                  width: _commentInputFocused ? 1.5 : 1,
+                                ),
+                              ),
+                              child: TextField(
+                                controller: _commentCtrl,
+                                focusNode: _commentFocusNode,
+                                enabled: !disabled && !_postingComment,
+                                minLines: 1,
+                                maxLines: _commentInputFocused ? 4 : 1,
+                                decoration: InputDecoration(
+                                  hintText: 'Add a comment…',
+                                  hintStyle: TextStyle(
+                                    color: Colors.grey.shade400,
+                                    fontSize: 13,
+                                  ),
+                                  border: InputBorder.none,
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                  isDense: true,
+                                ),
+                                style: const TextStyle(fontSize: 13.5),
+                              ),
+                            ),
+                            if (_commentInputFocused) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.end,
+                                children: [
+                                  TextButton(
+                                    onPressed: () {
+                                      _commentCtrl.clear();
+                                      _commentFocusNode.unfocus();
+                                    },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor:
+                                          Colors.grey.shade600,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(20)),
+                                    ),
+                                    child: const Text('Cancel',
+                                        style: TextStyle(fontSize: 12)),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  ElevatedButton.icon(
+                                    onPressed: (disabled || _postingComment)
+                                        ? null
+                                        : _submitComment,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                      disabledBackgroundColor:
+                                          Colors.grey.shade200,
+                                      disabledForegroundColor:
+                                          Colors.grey.shade400,
+                                      shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(20)),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 14, vertical: 7),
+                                      elevation: 0,
+                                      textStyle: const TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    icon: _postingComment
+                                        ? const SizedBox(
+                                            width: 12,
+                                            height: 12,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                              valueColor:
+                                                  AlwaysStoppedAnimation
+                                                      <Color>(Colors.white),
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.send_rounded,
+                                            size: 13,
+                                          ),
+                                    label: const Text('Send'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+// ─────────────────────────────────────────────────────────────────────────
+// COMMENT LIST WITH DATE GROUP SEPARATORS
+// ─────────────────────────────────────────────────────────────────────────
+
+Widget _buildCommentList(List<ObjectComment> comments) {
+  final items = <Widget>[];
+  String? lastGroup;
+
+  for (final c in comments) {
+    final group = _dateGroupLabel(c.modifiedDate);
+    if (group != lastGroup) {
+      items.add(_dateSeparator(group));
+      lastGroup = group;
+    }
+    items.add(
+      Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: _commentRow(c),
+      ),
+    );
+  }
+
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: items,
+  );
+}
+
+  Widget _kv(String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(k,
+                style:
+                    TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+          ),
+          Expanded(
+            child: Text(
+              v.isEmpty ? '-' : v,
+              style: const TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROP FIELD  ── per-field pencil + inline save/cancel
+  // ─────────────────────────────────────────────────────────────────────────
+
   Widget _propField(_PropVm p) {
     final label = _friendlyPropLabel(p);
+    final isThisFieldEditing = _editingPropId == p.id;
 
+    // ── Lookup fields ─────────────────────────────────────────────────────
     if (_isLookup(p) || _isMultiLookup(p)) {
       final isMulti = _isMultiLookup(p);
       final displayText = _lookupDisplayText(p);
 
-      if (_editMode) {
+      if (isThisFieldEditing) {
         final dirtyLabels = _dirtyLookupLabels[p.id];
         final hasDirtySelection = _dirty.containsKey(p.id);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF475569),
-                ),
-              ),
-            ),
+            _fieldLabelRow(label, p, isDirty: hasDirtySelection),
+            const SizedBox(height: 8),
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               decoration: BoxDecoration(
                 color: hasDirtySelection ? _filledFill : AppColors.surfaceLight,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color:
-                      hasDirtySelection ? _filledBorder : Colors.grey.shade300,
+                  color: hasDirtySelection
+                      ? _filledBorder
+                      : Colors.grey.shade300,
                   width: hasDirtySelection ? 1.5 : 1,
                 ),
               ),
@@ -1862,14 +3533,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         onSelected: (items) {
                           setState(() {
                             if (isMulti) {
-                              final ids = items.map((x) => x.id).toList();
-                              final labels =
-                                  items.map((x) => x.displayValue.toString()).toList();
+                              final ids =
+                                  items.map((x) => x.id).toList();
+                              final labels = items
+                                  .map((x) =>
+                                      x.displayValue.toString())
+                                  .toList();
                               if (ids.isEmpty) {
                                 _dirty.remove(p.id);
                                 _dirtyLookupLabels.remove(p.id);
                               } else {
-                                _dirty[p.id] = p.copyWith(editedValue: ids);
+                                _dirty[p.id] =
+                                    p.copyWith(editedValue: ids);
                                 _dirtyLookupLabels[p.id] = labels;
                               }
                             } else {
@@ -1879,7 +3554,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 _dirty.remove(p.id);
                                 _dirtyLookupLabels.remove(p.id);
                               } else {
-                                _dirty[p.id] = p.copyWith(editedValue: id);
+                                _dirty[p.id] =
+                                    p.copyWith(editedValue: id);
                               }
                             }
                           });
@@ -1896,8 +3572,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 ],
               ),
             ),
-            // ── Multi-select dirty pills only — no "Current:" hint ──
-            if (isMulti && dirtyLabels != null && dirtyLabels.isNotEmpty) ...[
+            if (isMulti &&
+                dirtyLabels != null &&
+                dirtyLabels.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(
                 spacing: 6,
@@ -1932,10 +3609,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               final currentIds =
                                   (_dirty[p.id]?.editedValue is List)
                                       ? List<int>.from(
-                                          _dirty[p.id]!.editedValue as List)
+                                          _dirty[p.id]!.editedValue
+                                              as List)
                                       : <int>[];
-                              final newIds =
-                                  List<int>.from(currentIds)..removeAt(index);
+                              final newIds = List<int>.from(currentIds)
+                                ..removeAt(index);
                               final newLabels =
                                   List<String>.from(dirtyLabels)
                                     ..removeAt(index);
@@ -1953,7 +3631,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             width: 16,
                             height: 16,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF3B82F6).withOpacity(0.2),
+                              color: const Color(0xFF3B82F6)
+                                  .withOpacity(0.2),
                               shape: BoxShape.circle,
                             ),
                             child: const Icon(Icons.close,
@@ -1970,32 +3649,29 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         );
       }
 
-      return _readOnlyField(label: label, value: displayText);
+      return _readOnlyFieldWithPencil(
+          label: label, value: displayText, prop: p);
     }
 
+    // ── Plain text/date/number fields ─────────────────────────────────────
     final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
     final currentText = _valueToText(rawCurrent);
 
-    if (_editMode) {
+    if (isThisFieldEditing) {
+      final ctrl = _fieldCtrl[p.id] ??
+          (_fieldCtrl[p.id] = TextEditingController(text: currentText));
       final isDirty = _dirty.containsKey(p.id);
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF475569),
-              ),
-            ),
-          ),
+          _fieldLabelRow(label, p, isDirty: isDirty),
+          const SizedBox(height: 8),
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             child: TextFormField(
-              initialValue: currentText,
+              controller: ctrl,
+              autofocus: true,
               style: const TextStyle(
                 fontSize: 14.5,
                 fontWeight: FontWeight.w500,
@@ -2007,9 +3683,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     TextStyle(color: Colors.grey.shade400, fontSize: 14),
                 isDense: true,
                 filled: true,
-                fillColor: isDirty ? _filledFill : AppColors.surfaceLight,
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                fillColor:
+                    isDirty ? _filledFill : AppColors.surfaceLight,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 14),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: isDirty
@@ -2022,7 +3699,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: _primaryBlue, width: 2),
+                  borderSide:
+                      const BorderSide(color: _primaryBlue, width: 2),
                 ),
                 suffixIcon: isDirty
                     ? const Icon(Icons.check_circle_rounded,
@@ -2030,7 +3708,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     : null,
               ),
               onChanged: (v) {
-                if (!_editMode) return;
                 setState(() {
                   final originalText = _valueToText(p.value);
                   if (v == originalText) {
@@ -2046,17 +3723,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
     }
 
-    return _readOnlyField(label: label, value: currentText);
+    return _readOnlyFieldWithPencil(
+        label: label, value: currentText, prop: p);
   }
 
-  Widget _readOnlyField({required String label, required String value}) {
-    final hasValue = value.trim().isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _fieldLabelRow(String label, _PropVm p, {required bool isDirty}) {
+    return Row(
       children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+        Expanded(
           child: Text(
             label,
             style: const TextStyle(
@@ -2066,6 +3740,105 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             ),
           ),
         ),
+        GestureDetector(
+          onTap: _cancelEditingField,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text('Cancel',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade600)),
+          ),
+        ),
+        const SizedBox(width: 8),
+        GestureDetector(
+          onTap: (isDirty && !_saving) ? () => _saveField(p) : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: (isDirty && !_saving)
+                  ? AppColors.primary
+                  : Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: _saving && _editingPropId == p.id
+                ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : Text(
+                    'Save',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: (isDirty && !_saving)
+                          ? Colors.white
+                          : Colors.grey.shade400,
+                    ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _readOnlyFieldWithPencil({
+    required String label,
+    required String value,
+    required _PropVm prop,
+  }) {
+    final hasValue = value.trim().isNotEmpty;
+    final busy = _saving || _downloading || _changingWorkflow;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475569),
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: busy
+                  ? null
+                  : () => _startEditingField(prop, _valueToText(prop.value)),
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: busy
+                      ? Colors.grey.shade100
+                      : AppColors.primary.withOpacity(0.07),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.edit_outlined,
+                  size: 14,
+                  color: busy ? Colors.grey.shade400 : AppColors.primary,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
         Container(
           width: double.infinity,
           padding:
@@ -2079,781 +3852,279 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             hasValue ? value : '—',
             style: TextStyle(
               fontSize: 14.5,
-              fontWeight:
-                  hasValue ? FontWeight.w500 : FontWeight.w400,
-              color: hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
+              fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
+              color:
+                  hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
             ),
           ),
         ),
       ],
     );
   }
+}
 
-  Widget _previewCard(ViewObject obj) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text('Preview',
-                    style:
-                        TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-              ),
-              if (_downloading)
-                const SizedBox(
-                    height: 16,
-                    width: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          FutureBuilder<List<ObjectFile>>(
-            future: _filesFuture,
-            builder: (context, snap) {
-              if (snap.connectionState == ConnectionState.waiting) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 10),
-                  child: Center(child: CircularProgressIndicator()),
-                );
-              }
-              if (snap.hasError) {
-                return Text(
-                  'Failed to load files: ${snap.error}',
-                  style: TextStyle(fontSize: 12, color: Colors.red.shade700),
-                );
-              }
-              final files = snap.data ?? [];
-              if (files.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.insert_drive_file_outlined,
-                            color: Colors.grey.shade400, size: 36),
-                        const SizedBox(height: 8),
-                        Text(
-                          'There are no files attached to this item yet.',
-                          style:
-                              TextStyle(color: Colors.grey.shade600),
-                          textAlign: TextAlign.center,
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-              return Column(
-                children: files.map((f) {
-                  final ext =
-                      (f.extension.isEmpty ? '' : '.${f.extension}')
-                          .toLowerCase();
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceLight,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: (_saving || _downloading || _changingWorkflow)
-                            ? null
-                            : () => _previewFileInApp(obj, f),
-                        child: ListTile(
-                          dense: true,
-                          leading: FileTypeBadge(
-                              extension: f.extension, size: 36),
-                          title: Text(
-                            f.fileTitle.isEmpty
-                                ? 'File ${f.fileId}'
-                                : f.fileTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                              'v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
-                          trailing: PopupMenuButton<String>(
-                            onSelected: (action) async {
-                              final displayIdInt =
-                                  int.tryParse(obj.displayId);
-                              if (displayIdInt == null) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                        'Invalid object display ID: ${obj.displayId}'),
-                                    backgroundColor: Colors.red.shade600,
-                                  ),
-                                );
-                                return;
-                              }
-                              setState(() => _downloading = true);
-                              try {
-                                final svc = context.read<MFilesService>();
-                                if (action == 'preview') {
-                                  await _previewFileInApp(obj, f);
-                                } else if (action == 'open') {
-                                  await svc.downloadAndOpenFile(
-                                    displayObjectId: displayIdInt,
-                                    classId: obj.classId,
-                                    fileId: f.fileId,
-                                    fileTitle: f.fileTitle,
-                                    extension: f.extension,
-                                    reportGuid: f.reportGuid,
-                                  );
-                                } else if (action == 'download') {
-                                  final savedPath =
-                                      await svc.downloadAndSaveFile(
-                                    displayObjectId: displayIdInt,
-                                    classId: obj.classId,
-                                    fileId: f.fileId,
-                                    fileTitle: f.fileTitle,
-                                    extension: f.extension,
-                                    reportGuid: f.reportGuid,
-                                  );
-                                  if (!mounted) return;
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content:
-                                          Text('Saved to: $savedPath'),
-                                      backgroundColor:
-                                          Colors.green.shade600,
-                                      duration:
-                                          const Duration(seconds: 4),
-                                    ),
-                                  );
-                                }
-                              } catch (e) {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content:
-                                        Text('Action failed: $e'),
-                                    backgroundColor: Colors.red.shade600,
-                                  ),
-                                );
-                              } finally {
-                                if (mounted)
-                                  setState(() => _downloading = false);
-                              }
-                            },
-                            itemBuilder: (_) {
-                              final canDownload =
-                                  widget.obj.userPermission
-                                          ?.readPermission ??
-                                      false;
-                              return [
-                                const PopupMenuItem(
-                                  value: 'preview',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.visibility, size: 18),
-                                      SizedBox(width: 12),
-                                      Text('Preview'),
-                                    ],
-                                  ),
-                                ),
-                                const PopupMenuItem(
-                                  value: 'open',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.open_in_new, size: 18),
-                                      SizedBox(width: 12),
-                                      Text('Open Externally'),
-                                    ],
-                                  ),
-                                ),
-                                if (canDownload)
-                                  const PopupMenuItem(
-                                    value: 'download',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.download, size: 18),
-                                        SizedBox(width: 12),
-                                        Text('Download'),
-                                      ],
-                                    ),
-                                  ),
-                              ];
-                            },
-                            child: const Icon(Icons.more_vert, size: 18),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
+// ─────────────────────────────────────────────────────────────────────────────
+// SEND FOR SIGNING DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _SendForSigningDialog extends StatefulWidget {
+  final ObjectFile file;
+  final Future<void> Function(List<String> emails) onSend;
+
+  const _SendForSigningDialog({required this.file, required this.onSend});
+
+  @override
+  State<_SendForSigningDialog> createState() => _SendForSigningDialogState();
+}
+
+class _SendForSigningDialogState extends State<_SendForSigningDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final List<TextEditingController> _controllers = [TextEditingController()];
+  bool _sending = false;
+
+  @override
+  void dispose() {
+    for (final c in _controllers) c.dispose();
+    super.dispose();
   }
 
-  Future<void> _previewFileInApp(ViewObject obj, ObjectFile f) async {
-    final displayIdInt = int.tryParse(obj.displayId);
-    if (displayIdInt == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content:
-              Text('Invalid object display ID: ${obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-      return;
-    }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DocumentPreviewScreen(
-          displayObjectId: displayIdInt,
-          classId: obj.classId,
-          fileId: f.fileId,
-          fileTitle: f.fileTitle,
-          extension: f.extension,
-          reportGuid: f.reportGuid,
-          objectTypeId: widget.obj.objectTypeId,
-          canDownload:
-              widget.obj.userPermission?.readPermission ?? false,
-        ),
-      ),
-    );
+  void _addEmail() {
+    setState(() => _controllers.add(TextEditingController()));
   }
 
-  Future<List<ObjectComment>> _loadComments() async {
-    final svc = context.read<MFilesService>();
+  void _removeEmail(int index) {
+    setState(() {
+      _controllers[index].dispose();
+      _controllers.removeAt(index);
+    });
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _sending = true);
     try {
-      final items = await svc.fetchComments(
-        objectId: widget.obj.id,
-        objectTypeId: widget.obj.objectTypeId,
-        vaultGuid: svc.vaultGuidWithBraces,
-      );
-      return items;
-    } catch (_) {
-      return <ObjectComment>[];
-    }
-  }
-
-  Future<void> _submitComment() async {
-    final text = _commentCtrl.text.trim();
-    if (text.isEmpty) return;
-    if (_postingComment) return;
-    setState(() => _postingComment = true);
-    try {
-      final svc = context.read<MFilesService>();
-      final ok = await svc.postComment(
-        comment: text,
-        objectId: widget.obj.id,
-        objectTypeId: widget.obj.objectTypeId,
-        vaultGuid: svc.vaultGuidWithBraces,
-      );
-      if (!ok) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Comment failed: ${svc.error ?? 'Unknown error'}'),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
-        return;
-      }
-      _commentCtrl.clear();
-      _commentFocusNode.unfocus();
-      if (!mounted) return;
-      setState(() => _commentsFuture = _loadComments());
+      final emails = _controllers
+          .map((c) => c.text.trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      await widget.onSend(emails);
+      if (mounted) Navigator.pop(context);
     } finally {
-      if (mounted) setState(() => _postingComment = false);
+      if (mounted) setState(() => _sending = false);
     }
   }
 
-  String _fmtCommentDate(DateTime? dt) {
-    if (dt == null) return '';
-    final now = DateTime.now();
-    final local = dt.toLocal();
-    final diff = now.difference(local);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-    if (diff.inDays < 1) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${local.month}/${local.day}/${local.year}';
-  }
-
-  Widget _commentRow(ObjectComment c) {
-    final dateText = _fmtCommentDate(c.modifiedDate);
-    final authorName = c.author.trim();
-    final hasAuthor = authorName.isNotEmpty;
-
-    Widget avatarWidget;
-    if (hasAuthor) {
-      final parts =
-          authorName.split(' ').where((s) => s.isNotEmpty).toList();
-      final initials = parts.length >= 2
-          ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
-          : authorName
-              .substring(0, authorName.length.clamp(0, 2))
-              .toUpperCase();
-      avatarWidget = Container(
-        width: 28,
-        height: 28,
-        decoration: const BoxDecoration(
-            color: AppColors.primary, shape: BoxShape.circle),
-        child: Center(
-          child: Text(initials,
-              style: const TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white)),
-        ),
-      );
-    } else {
-      avatarWidget = Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.08),
-            shape: BoxShape.circle),
-        child: const Center(
-            child: Icon(Icons.person_outline,
-                size: 15, color: AppColors.primary)),
-      );
-    }
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        avatarWidget,
-        const SizedBox(width: 10),
-        Expanded(
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Form(
+          key: _formKey,
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
                 children: [
-                  if (hasAuthor) ...[
-                    Text(authorName,
-                        style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1E293B))),
-                    const SizedBox(width: 6),
-                  ],
-                  if (dateText.isNotEmpty)
-                    Text(dateText,
-                        style: TextStyle(
-                            fontSize: 11,
-                            color: AppColors.surfaceLight,
-                            fontWeight: FontWeight.w400)),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.send_rounded,
+                        color: AppColors.primary, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Send for Signing',
+                            style: TextStyle(
+                                fontSize: 17, fontWeight: FontWeight.w700)),
+                        SizedBox(height: 2),
+                        Text('Enter signee email addresses',
+                            style: TextStyle(
+                                fontSize: 12, color: Color(0xFF64748B))),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: _sending ? null : () => Navigator.pop(context),
+                    icon: Icon(Icons.close, color: Colors.grey.shade500),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
                 ],
               ),
-              const SizedBox(height: 3),
-              Text(c.text,
-                  style: const TextStyle(
+              const SizedBox(height: 20),
+              Divider(color: Colors.grey.shade100, height: 1),
+              const SizedBox(height: 20),
+              const Text('Signee Emails',
+                  style: TextStyle(
                       fontSize: 13,
-                      height: 1.4,
-                      color: Color(0xFF1E293B))),
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF475569))),
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.3),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: List.generate(_controllers.length, (i) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextFormField(
+                                controller: _controllers[i],
+                                keyboardType: TextInputType.emailAddress,
+                                decoration: InputDecoration(
+                                  hintText: 'name@example.com',
+                                  hintStyle: TextStyle(
+                                      color: Colors.grey.shade400,
+                                      fontSize: 14),
+                                  prefixIcon: Icon(Icons.email_outlined,
+                                      color: Colors.grey.shade400, size: 18),
+                                  filled: true,
+                                  fillColor: const Color(0xFFF8FAFC),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                        color: Colors.grey.shade200),
+                                  ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                        color: Colors.grey.shade200),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(
+                                        color: AppColors.primary, width: 1.5),
+                                  ),
+                                  errorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                        color: Colors.red.shade400),
+                                  ),
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                          vertical: 13, horizontal: 14),
+                                  isDense: true,
+                                ),
+                                validator: (v) {
+                                  final val = v?.trim() ?? '';
+                                  if (val.isEmpty) return 'Email is required';
+                                  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+                                      .hasMatch(val)) {
+                                    return 'Enter a valid email';
+                                  }
+                                  return null;
+                                },
+                              ),
+                            ),
+                            if (_controllers.length > 1) ...[
+                              const SizedBox(width: 8),
+                              GestureDetector(
+                                onTap: () => _removeEmail(i),
+                                child: Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(Icons.remove,
+                                      size: 16, color: Colors.red.shade400),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      );
+                    }),
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: _sending ? null : _addEmail,
+                icon: const Icon(Icons.add_circle_outline,
+                    size: 16, color: AppColors.primary),
+                label: const Text('Add another email',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600)),
+                style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 4)),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed:
+                          _sending ? null : () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey.shade700,
+                        side: BorderSide(color: Colors.grey.shade300),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                      ),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _sending ? null : _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: Colors.grey.shade200,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                        padding: const EdgeInsets.symmetric(vertical: 13),
+                        elevation: 0,
+                      ),
+                      child: _sending
+                          ? const SizedBox(
+                              height: 18,
+                              width: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white),
+                              ),
+                            )
+                          : const Text('Send',
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                ],
+              ),
             ],
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _commentsCard() {
-    final disabled =
-        _saving || _downloading || _changingWorkflow || _assigningWorkflow;
-    return FutureBuilder<List<ObjectComment>>(
-      future: _commentsFuture,
-      builder: (context, snap) {
-        final isLoading =
-            snap.connectionState == ConnectionState.waiting;
-        final comments = snap.data ?? [];
-        final count = comments.length;
-        final latestComment =
-            comments.isNotEmpty ? comments.last : null;
-
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Material(
-                color: Colors.transparent,
-                borderRadius: BorderRadius.circular(12),
-                child: InkWell(
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(12),
-                    topRight: const Radius.circular(12),
-                    bottomLeft:
-                        Radius.circular(_commentsExpanded ? 0 : 12),
-                    bottomRight:
-                        Radius.circular(_commentsExpanded ? 0 : 12),
-                  ),
-                  onTap: () => setState(() {
-                    _commentsExpanded = !_commentsExpanded;
-                    if (!_commentsExpanded)
-                      _commentFocusNode.unfocus();
-                  }),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(12, 12, 12, 12),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.chat_bubble_outline,
-                            size: 16, color: AppColors.primary),
-                        const SizedBox(width: 6),
-                        Text(
-                          count > 0
-                              ? 'Comments ($count)'
-                              : 'Comments',
-                          style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700),
-                        ),
-                        const Spacer(),
-                        if (_postingComment)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 8),
-                            child: SizedBox(
-                                height: 14,
-                                width: 14,
-                                child: CircularProgressIndicator(
-                                    strokeWidth: 2)),
-                          ),
-                        AnimatedRotation(
-                          turns: _commentsExpanded ? 0.5 : 0.0,
-                          duration:
-                              const Duration(milliseconds: 200),
-                          child: Icon(Icons.keyboard_arrow_down,
-                              size: 20,
-                              color: Colors.grey.shade600),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              if (!_commentsExpanded) ...[
-                Divider(height: 1, color: Colors.grey.shade200),
-                if (isLoading)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 14, horizontal: 12),
-                    child: LinearProgressIndicator(
-                      minHeight: 2,
-                      backgroundColor: Colors.grey.shade100,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                          AppColors.primary),
-                    ),
-                  )
-                else if (latestComment == null)
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(12)),
-                      onTap: () =>
-                          setState(() => _commentsExpanded = true),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 14),
-                        child: Row(
-                          children: [
-                            Icon(Icons.edit_outlined,
-                                size: 14,
-                                color: Colors.grey.shade400),
-                            const SizedBox(width: 8),
-                            Text(
-                              'No comments yet — tap to add one',
-                              style: TextStyle(
-                                  fontSize: 12.5,
-                                  color: Colors.grey.shade500),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  )
-                else
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: const BorderRadius.vertical(
-                          bottom: Radius.circular(12)),
-                      onTap: () =>
-                          setState(() => _commentsExpanded = true),
-                      child: Padding(
-                        padding:
-                            const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _commentRow(latestComment),
-                            if (count > 1) ...[
-                              const SizedBox(height: 10),
-                              Row(
-                                children: [
-                                  const SizedBox(width: 38),
-                                  Text(
-                                    'View all $count comments',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF2563EB),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  const Icon(
-                                      Icons.arrow_forward_rounded,
-                                      size: 13,
-                                      color: Color(0xFF2563EB)),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-              if (_commentsExpanded) ...[
-                Divider(height: 1, color: Colors.grey.shade200),
-                Padding(
-                  padding:
-                      const EdgeInsets.fromLTRB(12, 12, 12, 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color:
-                              AppColors.primary.withOpacity(0.1),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Center(
-                          child: Icon(Icons.person_outline,
-                              size: 18,
-                              color: AppColors.primary),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment:
-                              CrossAxisAlignment.end,
-                          children: [
-                            TextField(
-                              controller: _commentCtrl,
-                              focusNode: _commentFocusNode,
-                              enabled:
-                                  !disabled && !_postingComment,
-                              minLines: 1,
-                              maxLines:
-                                  _commentInputFocused ? 4 : 1,
-                              decoration: InputDecoration(
-                                hintText: 'Add a comment…',
-                                hintStyle: TextStyle(
-                                    color: Colors.grey.shade400,
-                                    fontSize: 13),
-                                filled: false,
-                                border: InputBorder.none,
-                                enabledBorder:
-                                    UnderlineInputBorder(
-                                        borderSide: BorderSide(
-                                            color:
-                                                Colors.grey.shade300)),
-                                focusedBorder:
-                                    const UnderlineInputBorder(
-                                        borderSide: BorderSide(
-                                            color: AppColors.primary,
-                                            width: 1.5)),
-                                contentPadding:
-                                    const EdgeInsets.symmetric(
-                                        vertical: 8),
-                                isDense: true,
-                              ),
-                              style: const TextStyle(fontSize: 13.5),
-                            ),
-                            if (_commentInputFocused) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.end,
-                                children: [
-                                  TextButton(
-                                    onPressed: () {
-                                      _commentCtrl.clear();
-                                      _commentFocusNode.unfocus();
-                                    },
-                                    style: TextButton.styleFrom(
-                                      foregroundColor:
-                                          Colors.grey.shade600,
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 6),
-                                      shape:
-                                          RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius
-                                                      .circular(20)),
-                                    ),
-                                    child: const Text('Cancel',
-                                        style: TextStyle(
-                                            fontSize: 12)),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  ElevatedButton(
-                                    onPressed:
-                                        (disabled || _postingComment)
-                                            ? null
-                                            : _submitComment,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor:
-                                          AppColors.primary,
-                                      foregroundColor: Colors.white,
-                                      disabledBackgroundColor:
-                                          Colors.grey.shade200,
-                                      disabledForegroundColor:
-                                          Colors.grey.shade400,
-                                      shape:
-                                          RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius
-                                                      .circular(20)),
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 7),
-                                      elevation: 0,
-                                      textStyle: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight:
-                                              FontWeight.w600),
-                                    ),
-                                    child: const Text('Comment'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                if (isLoading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2)),
-                  )
-                else if (snap.hasError)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 10, horizontal: 12),
-                    child: Text(
-                        'Failed to load comments: ${snap.error}',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.red.shade700),
-                        textAlign: TextAlign.center),
-                  )
-                else if (comments.isEmpty)
-                  Padding(
-                    padding:
-                        const EdgeInsets.symmetric(vertical: 20),
-                    child: Center(
-                      child: Column(
-                        children: [
-                          Icon(Icons.chat_bubble_outline,
-                              size: 32,
-                              color: Colors.grey.shade300),
-                          const SizedBox(height: 6),
-                          Text('No comments yet. Be the first!',
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade500)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                    child: Column(
-                      children: [
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(bottom: 12),
-                          child: Divider(
-                              height: 1,
-                              color: Colors.grey.shade100),
-                        ),
-                        ...comments.map((c) => Padding(
-                              padding:
-                                  const EdgeInsets.only(bottom: 14),
-                              child: _commentRow(c),
-                            )),
-                      ],
-                    ),
-                  ),
-              ],
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _kv(String k, String v) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 110,
-            child: Text(k,
-                style: TextStyle(
-                    fontSize: 12, color: Colors.grey.shade700)),
-          ),
-          Expanded(
-            child: Text(
-              v.isEmpty ? '-' : v,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
       ),
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DATA CLASSES
+// ─────────────────────────────────────────────────────────────────────────────
 
 class _PropVm {
   final int id;
@@ -2897,8 +4168,7 @@ class _PropVm {
         (m['propertytype'] as String?) ??
         'MFDatatypeText';
 
-    final datatype =
-        rawDatatype.replaceAll('MFDataType', 'MFDatatype');
+    final datatype = rawDatatype.replaceAll('MFDataType', 'MFDatatype');
     final value = m.containsKey('value')
         ? m['value']
         : (m['displayValue'] ?? '');

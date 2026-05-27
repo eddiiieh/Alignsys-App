@@ -2,16 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_object.dart';
-import '../models/object_file.dart';
 import '../services/mfiles_service.dart';
-import '../utils/file_icon_resolver.dart';
-import '../screens/document_preview_screen.dart';
 import '../theme/app_colors.dart';
+
 class ObjectInfoDropdown extends StatefulWidget {
   final ViewObject obj;
   final bool isDeleted;
 
-  const ObjectInfoDropdown({super.key, required this.obj,this.isDeleted = false,});
+  const ObjectInfoDropdown({
+    super.key,
+    required this.obj,
+    this.isDeleted = false,
+  });
 
   @override
   State<ObjectInfoDropdown> createState() => _ObjectInfoDropdownState();
@@ -19,35 +21,39 @@ class ObjectInfoDropdown extends StatefulWidget {
 
 class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   Future<Map<String, dynamic>>? _infoFuture;
-  bool _downloading = false;
 
+  // Maps propId → friendly display name
   final Map<int, String> _propNameById = {};
-  final Set<int> _allowedMetaPropIds = {};
-  static const Set<int> _excludeMetaPropIds = {100};
+
+  // ── FIX: We no longer gate on a whitelist from classProperties.
+  //         Instead we show every prop the API returns, except a small
+  //         exclusion set (system / noisy props).
+  //
+  //  Excluded:
+  //    100 = Class  (already shown in "Basic Information" as classTypeName)
+  //    20  = Created by
+  //    21  = Last modified by
+  //    23  = Status changed by
+  //    25  = Marked for archiving
+  //    38  = Single file  (internal flag)
+  static const Set<int> _excludePropIds = {20, 21, 23, 25, 38, 100};
+
+  bool _showAllProps = false;
+  static const int _initialPropCount = 10;
 
   @override
   void initState() {
     super.initState();
-
-    // Critical: defer provider work until after the first frame to avoid
-    // "notifyListeners during build" from fetchClassProperties/_setLoading.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      setState(() {
-        _infoFuture = _loadInfo();
-      });
+      _infoFuture = _loadInfo();
+      setState(() {});
     });
   }
 
   @override
   void didUpdateWidget(covariant ObjectInfoDropdown oldWidget) {
     super.didUpdateWidget(oldWidget);
-
-    // ✅ Compare by field values, NOT by object identity.
-    // The parent builds a new ViewObject(...) on every setState (e.g. when
-    // toggling the info icon), so identity always differs even when nothing
-    // meaningful changed. Reloading on every parent rebuild causes the
-    // spurious fetchClassProperties / fetchObjectFiles calls seen in the logs.
     final o = oldWidget.obj;
     final n = widget.obj;
     final meaningfullyChanged = o.id != n.id ||
@@ -56,11 +62,11 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         o.versionId != n.versionId;
 
     if (meaningfullyChanged) {
+      _showAllProps = false;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        setState(() {
-          _infoFuture = _loadInfo();
-        });
+        _infoFuture = _loadInfo();
+        setState(() {});
       });
     }
   }
@@ -68,99 +74,75 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   Future<Map<String, dynamic>> _loadInfo() async {
     final svc = context.read<MFilesService>();
 
-    if (!widget.isDeleted) {
-      await svc.fetchClassProperties(widget.obj.objectTypeId, widget.obj.classId);
-      _allowedMetaPropIds
-        ..clear()
-        ..addAll(
-          svc.classProperties
-              .where((p) => !p.isHidden && !p.isAutomatic)
-              .map((p) => p.id),
-        )
-        ..add(0)
-        ..removeAll(_excludeMetaPropIds);
-
+    // Always try to fetch classProperties so we get friendly names,
+    // but don't gate visibility on the result.
+    try {
+      await svc.fetchClassProperties(
+          widget.obj.objectTypeId, widget.obj.classId);
       _propNameById
         ..clear()
         ..addAll({0: 'Name or title', 100: 'Class'})
         ..addEntries(svc.classProperties.map((p) => MapEntry(p.id, p.title)));
+    } catch (_) {
+      // Non-fatal — we'll fall back to the names embedded in the API response.
+      _propNameById
+        ..clear()
+        ..addAll({0: 'Name or title', 100: 'Class'});
     }
 
-    final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
+    final displayIdInt =
+        int.tryParse(widget.obj.displayId) ?? widget.obj.id;
 
     final propsRaw = await svc.fetchObjectViewProps(
       objectId: displayIdInt,
       objectTypeId: widget.obj.objectTypeId,
-    );
+    ).timeout(const Duration(seconds: 15), onTimeout: () => []);
 
-    // For deleted objects, allow all props returned by the API
-    if (widget.isDeleted) {
-      for (final m in propsRaw) {
-        final int? id = (m['id'] as num?)?.toInt() ??
-            (m['propId'] as num?)?.toInt() ??
-            (m['propertyId'] as num?)?.toInt();
-        if (id != null && id != 100) { // exclude Class
-          _allowedMetaPropIds.add(id);
-          final name = (m['propName'] ?? m['name'] ?? m['propertyName'])
-              ?.toString().trim();
-          if (name != null && name.isNotEmpty && !name.startsWith('Property ')) {
-            _propNameById[id] = name;
-          }
-        }
-      }
-      _propNameById[0] = 'Name or title';
-    } else {
-      // existing name enrichment from raw props
-      for (final m in propsRaw) {
-        final int? id = (m['id'] as num?)?.toInt() ??
-            (m['propId'] as num?)?.toInt() ??
-            (m['propertyId'] as num?)?.toInt();
-        if (id == null) continue;
-        final candidate = (m['propName'] as String?) ??
-            (m['propertyName'] as String?) ??
-            (m['name'] as String?) ??
-            (m['title'] as String?);
-        if (candidate == null) continue;
-        final trimmed = candidate.trim();
-        if (trimmed.isEmpty || trimmed.startsWith('Property ')) continue;
-        _propNameById[id] = trimmed;
+    // Enrich _propNameById from the raw response (handles cases where
+    // classProperties is empty or mismatched).
+    for (final m in propsRaw) {
+      final int? id = _extractId(m);
+      if (id == null) continue;
+      // Only overwrite if we don't already have a name from classProperties
+      if (!_propNameById.containsKey(id) || _propNameById[id]!.startsWith('Property ')) {
+        final candidate = _firstName(m);
+        if (candidate != null) _propNameById[id] = candidate;
       }
     }
 
-    final files = widget.isDeleted
-        ? <ObjectFile>[]
-        : await svc.fetchObjectFiles(
-            objectId: displayIdInt,
-            classId: widget.obj.classId,
-          );
-
-    return {'props': propsRaw, 'files': files};
+    return {'props': propsRaw};
   }
 
-  String _formatDate(DateTime? dt) {
-    if (dt == null) return '-';
-    return dt.toLocal().toString().split('.')[0];
+  // ── helpers ──────────────────────────────────────────────────────────────
+
+  int? _extractId(Map<String, dynamic> m) {
+    final v = m['id'] ?? m['propId'] ?? m['propertyId'];
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v);
+    return null;
+  }
+
+  String? _firstName(Map<String, dynamic> m) {
+    for (final key in ['propName', 'name', 'propertyName', 'title']) {
+      final v = m[key];
+      if (v is String) {
+        final s = v.trim();
+        if (s.isNotEmpty && !s.startsWith('Property ')) return s;
+      }
+    }
+    return null;
   }
 
   String _friendlyPropLabel(Map<String, dynamic> prop) {
-    final int? id = (prop['id'] as num?)?.toInt() ??
-        (prop['propId'] as num?)?.toInt() ??
-        (prop['propertyId'] as num?)?.toInt();
-
-    if (id == null) return 'Property';
-
-    final mapped = _propNameById[id];
-    if (mapped != null && mapped.trim().isNotEmpty) return mapped;
-
-    final name = (prop['propName'] as String?) ??
-        (prop['name'] as String?) ??
-        (prop['propertyName'] as String?) ??
-        '';
-    final n = name.trim();
-    final isFallback = n.startsWith('Property ');
-    if (!isFallback && n.isNotEmpty) return n;
-
-    return 'Property ($id)';
+    final int? id = _extractId(prop);
+    if (id != null) {
+      final mapped = _propNameById[id];
+      if (mapped != null && mapped.trim().isNotEmpty) return mapped;
+    }
+    final fallback = _firstName(prop);
+    if (fallback != null) return fallback;
+    return id != null ? 'Property ($id)' : 'Property';
   }
 
   String _extractValue(dynamic value) {
@@ -196,164 +178,24 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     return value.toString();
   }
 
-  Future<void> _previewFile(ObjectFile file) async {
-    final displayIdInt = int.tryParse(widget.obj.displayId);
-    if (displayIdInt == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Invalid object display ID: ${widget.obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-      return;
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: true,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Container(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.85,
-              maxWidth: MediaQuery.of(context).size.width * 0.95,
-            ),
-            child: Stack(
-              children: [
-                DocumentPreviewScreen(
-                  displayObjectId: displayIdInt,
-                  classId: widget.obj.classId,
-                  fileId: file.fileId,
-                  fileTitle: file.fileTitle,
-                  extension: file.extension,
-                  reportGuid: file.reportGuid,
-                  objectTypeId: widget.obj.objectTypeId,
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Material(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
-                    child: InkWell(
-                      onTap: () => Navigator.pop(context),
-                      borderRadius: BorderRadius.circular(20),
-                      child: const Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(Icons.close, color: Colors.white, size: 20),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
+  String _formatDate(DateTime? dt) {
+    if (dt == null) return '-';
+    return dt.toLocal().toString().split('.')[0];
   }
 
-  Future<void> _openFile(ObjectFile file) async {
-    final displayIdInt = int.tryParse(widget.obj.displayId);
-    if (displayIdInt == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Invalid object display ID: ${widget.obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _downloading = true);
-    try {
-      final svc = context.read<MFilesService>();
-      await svc.downloadAndOpenFile(
-        displayObjectId: displayIdInt,
-        classId: widget.obj.classId,
-        fileId: file.fileId,
-        fileTitle: file.fileTitle,
-        extension: file.extension,
-        reportGuid: file.reportGuid,
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Open failed: $e'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
-  }
-
-  Future<void> _downloadFile(ObjectFile file) async {
-    final displayIdInt = int.tryParse(widget.obj.displayId);
-    if (displayIdInt == null) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Invalid object display ID: ${widget.obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-      return;
-    }
-
-    setState(() => _downloading = true);
-    try {
-      final svc = context.read<MFilesService>();
-      final savedPath = await svc.downloadAndSaveFile(
-        displayObjectId: displayIdInt,
-        classId: widget.obj.classId,
-        fileId: file.fileId,
-        fileTitle: file.fileTitle,
-        extension: file.extension,
-        reportGuid: file.reportGuid,
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Saved to: $savedPath'),
-          backgroundColor: Colors.green.shade600,
-          duration: const Duration(seconds: 4),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Download failed: $e'),
-          backgroundColor: Colors.red.shade600,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _downloading = false);
-    }
-  }
+  // ── build ─────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final future = _infoFuture;
-
-    // While waiting for the post-frame setState that assigns _infoFuture.
     if (future == null) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
         child: Center(
           child: SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2)),
         ),
       );
     }
@@ -366,10 +208,9 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Center(
               child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
             ),
           );
         }
@@ -379,20 +220,23 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
             padding: const EdgeInsets.all(12),
             child: Text(
               'Error loading info: ${snap.error}',
-              style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+              style:
+                  TextStyle(color: Colors.red.shade700, fontSize: 12),
             ),
           );
         }
 
-        final data = snap.data!;
-        final propsRaw = data['props'] as List;
-        final files = data['files'] as List<ObjectFile>;
+        final propsRaw = (snap.data!['props'] as List);
 
+        // ── FIX: show all props except the excluded set ──
         final metaProps = propsRaw.where((prop) {
-          final int? id = (prop['id'] as num?)?.toInt() ??
-              (prop['propId'] as num?)?.toInt() ??
-              (prop['propertyId'] as num?)?.toInt();
-          return id != null && _allowedMetaPropIds.contains(id);
+          final int? id = _extractId(prop as Map<String, dynamic>);
+          if (id == null) return false;
+          if (_excludePropIds.contains(id)) return false;
+
+          // Also skip props whose value is completely empty / null
+          final val = _extractValue(prop['value']);
+          return val.trim().isNotEmpty;
         }).toList();
 
         return Container(
@@ -408,7 +252,8 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               const SizedBox(height: 8),
               _buildInfoRow('Title', widget.obj.title),
               _buildInfoRow('Class', widget.obj.classTypeName),
-              _buildInfoRow('Created', _formatDate(widget.obj.createdUtc)),
+              _buildInfoRow(
+                  'Created', _formatDate(widget.obj.createdUtc)),
 
               const SizedBox(height: 12),
               Divider(height: 1, color: Colors.grey.shade300),
@@ -416,25 +261,62 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
 
               _buildSectionTitle('Metadata'),
               const SizedBox(height: 8),
+              // NEW
               if (metaProps.isEmpty)
                 Text(
                   'No metadata available',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 )
-              else
-                ...metaProps.map((prop) {
-                  final name = _friendlyPropLabel(prop);
-                  final value = _extractValue(prop['value']);
-                  return _buildInfoRow(name, value);
-                }),
+              else ...[
+                // Slice the list
+                ...(_showAllProps ? metaProps : metaProps.take(_initialPropCount).toList())
+                    .map((prop) {
+                      final name = _friendlyPropLabel(prop as Map<String, dynamic>);
+                      final value = _extractValue(prop['value']);
+                      return _buildInfoRow(name, value);
+                    }),
 
-              if (files.isNotEmpty) ...[
-                const SizedBox(height: 12),
-                Divider(height: 1, color: Colors.grey.shade300),
-                const SizedBox(height: 12),
-                _buildSectionTitle('Preview Files (${files.length})'),
-                const SizedBox(height: 8),
-                ...files.map(_buildFileRow),
+                // Show more / show less button
+                if (metaProps.length > _initialPropCount) ...[
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: () => setState(() => _showAllProps = !_showAllProps),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: AppColors.primary.withOpacity(0.20),
+                          width: 0.5,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _showAllProps
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.keyboard_arrow_down_rounded,
+                            size: 15,
+                            color: AppColors.primary,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _showAllProps
+                                ? 'Show less'
+                                : 'Show ${metaProps.length - _initialPropCount} more',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ],
           ),
@@ -461,7 +343,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 90,
+            width: 110,
             child: Text(
               label,
               style: TextStyle(
@@ -480,109 +362,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildFileRow(ObjectFile file) {
-    final ext = file.extension.isEmpty ? '' : '.${file.extension}';
-    final icon = FileIconResolver.iconForExtension(file.extension);
-
-    return GestureDetector(
-      // ✅ HitTestBehavior.opaque ensures this gesture is fully consumed here
-      // and never bubbles up to any ancestor InkWell (e.g. the row tap in
-      // ViewDetailsScreen / ViewItemsScreen), which would otherwise navigate
-      // to ObjectDetailsScreen instead of opening the preview dialog.
-      behavior: HitTestBehavior.opaque,
-      onTap: _downloading ? null : () => _previewFile(file),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: AppColors.primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    file.fileTitle.isEmpty ? 'File ${file.fileId}' : file.fileTitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  Text(
-                    'v${file.fileVersion}${ext.isEmpty ? '' : ' • $ext'}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_downloading)
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              // ✅ Also wrap the PopupMenuButton tap area so the "⋮" menu
-              // tap does not bubble to the row either.
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {}, // absorb tap so it doesn't reach the row
-                child: PopupMenuButton<String>(
-                  padding: EdgeInsets.zero,
-                  icon: Icon(
-                    Icons.more_vert,
-                    size: 16,
-                    color: Colors.grey.shade600,
-                  ),
-                  tooltip: 'More options',
-                  onSelected: (action) async {
-                    if (action == 'open') {
-                      await _openFile(file);
-                    } else if (action == 'download') {
-                      await _downloadFile(file);
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: 'open',
-                      child: Row(
-                        children: [
-                          Icon(Icons.open_in_new, size: 16),
-                          SizedBox(width: 12),
-                          Text('Open Externally'),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'download',
-                      child: Row(
-                        children: [
-                          Icon(Icons.download, size: 16),
-                          SizedBox(width: 12),
-                          Text('Download'),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
       ),
     );
   }

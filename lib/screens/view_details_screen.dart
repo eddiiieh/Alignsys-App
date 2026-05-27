@@ -1,4 +1,5 @@
-// ViewDetailsScreen.dart (UPDATED - copy/paste whole file)
+// ViewDetailsScreen.dart (UPDATED)
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
 
 import 'dart:ui';
 
@@ -17,9 +18,10 @@ import '../models/view_content_item.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
-
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
+import 'document_preview_screen.dart';
+
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({
     super.key,
@@ -40,7 +42,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
-
   final ScrollController _viewScroll = ScrollController();
 
   int? _expandedInfoItemId;
@@ -48,7 +49,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   bool _dataLoaded = false;
 
-  // ✅ Unified icon-tap claim: timestamp-based, set synchronously.
+  // ── per-item preview-loading set ──────────────────────────────────────────
+  final Set<int> _previewLoading = {};
+
   bool _suppressRowTap = false;
   DateTime? _lastIconTap;
 
@@ -60,7 +63,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     }
     _lastIconTap = now;
     _suppressRowTap = true;
-    // Clear after the gesture arena has fully resolved.
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) _suppressRowTap = false;
     });
@@ -72,8 +74,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     super.didChangeDependencies();
     if (!_dataLoaded) {
       _dataLoaded = true;
-
-      _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
+      _future =
+          context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
         context.read<MFilesService>().warmExtensionsForItems(items);
         return items;
       });
@@ -102,8 +104,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       _dataLoaded = false;
       _expandedInfoItemId = null;
       _expandedRelationshipsItemId = null;
-
-      _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
+      _future =
+          context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
         context.read<MFilesService>().warmExtensionsForItems(items);
         return items;
       });
@@ -132,6 +134,62 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     });
   }
 
+  // ── Fetch files first, then push DocumentPreviewScreen ────────────────────
+  Future<void> _openPreview(ViewContentItem item) async {
+    if (!_tryClaimIconTap()) return;
+    if (_previewLoading.contains(item.id)) return;
+
+    setState(() => _previewLoading.add(item.id));
+    try {
+      final svc = context.read<MFilesService>();
+      final files = await svc.fetchObjectFiles(
+        objectId: item.id,
+        classId: item.classId,
+      );
+
+      if (!mounted) return;
+
+      if (files.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No files attached to this document.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final f = files.first;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentPreviewScreen(
+            displayObjectId: item.id,
+            classId: item.classId,
+            fileId: f.fileId,
+            fileTitle: f.fileTitle,
+            extension: f.extension,
+            reportGuid: f.reportGuid,
+            objectTypeId: item.objectTypeId,
+            canDownload: true,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load preview: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _previewLoading.remove(item.id));
+    }
+  }
+
   String? _subtitleLabel(ViewContentItem item) {
     if (item.isObject) {
       final idPart = (item.displayId ?? '').trim().isNotEmpty
@@ -149,7 +207,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   List<ViewContentItem> _applyFilter(List<ViewContentItem> items) {
     final q = _filter.trim().toLowerCase();
     if (q.isEmpty) return items;
-
     return items.where((o) {
       final title = o.title.toLowerCase();
       final label = _subtitleLabel(o)?.toLowerCase() ?? '';
@@ -187,13 +244,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: const BorderSide(
-              color: Color.fromRGBO(25, 76, 129, 1),
-              width: 2,
-            ),
+                color: Color.fromRGBO(25, 76, 129, 1), width: 2),
           ),
           filled: true,
           fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
           suffixIcon: _filter.isEmpty
               ? null
               : IconButton(
@@ -214,12 +270,13 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     final svc = context.watch<MFilesService>();
 
     final bool isObject = item.isObject && item.id > 0;
-    final bool hasRelationships = isObject && item.objectTypeId > 0 && item.classId > 0;
+    final bool hasRelationships =
+        isObject && item.objectTypeId > 0 && item.classId > 0;
     final bool canDelete = isObject;
+    final bool isDocument = isObject && svc.isDocumentContentItem(item);
 
     final bool infoExpanded = _expandedInfoItemId == item.id;
     final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
-
     final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
 
     final ViewObject? asViewObj = canDelete
@@ -238,191 +295,230 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           )
         : null;
 
-        if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              svc.ensureRelationshipsPresenceForObject(
-                objectId: item.id,
-                objectTypeId: item.objectTypeId,
-                classId: item.classId,
-                notify: true,
-              );
-            }
-          });
+    if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          svc.ensureRelationshipsPresenceForObject(
+            objectId: item.id,
+            objectTypeId: item.objectTypeId,
+            classId: item.classId,
+            notify: true,
+          );
         }
+      });
+    }
 
-    final BorderRadius radius =
-        isLast ? const BorderRadius.vertical(bottom: Radius.circular(12)) : BorderRadius.zero;
+    final BorderRadius radius = isLast
+        ? const BorderRadius.vertical(bottom: Radius.circular(12))
+        : BorderRadius.zero;
 
-    // ✅ TapRegion removed: onTapOutside was firing on the SAME tap as icon
-    // GestureDetectors, collapsing _expandedInfoItemId immediately after it
-    // was set — causing a spurious rebuild / re-fetch. Dismiss on outside tap
-    // is now handled by the GestureDetector wrapping the entire ListView.
     return Column(
       children: [
         AnimatedOpacity(
-            duration: const Duration(milliseconds: 200),
-            opacity: isDimmed ? 0.45 : 1.0,
-            child: Material(
-              color: infoExpanded ? AppColors.primary.withOpacity(0.03) : Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: radius,
-                side: infoExpanded
-                    ? const BorderSide(color: AppColors.primary, width: 1.5)
-                    : BorderSide.none,
-              ),
-              clipBehavior: Clip.antiAlias,
-              elevation: 0,
-              child: InkWell(
-                borderRadius: radius,
-                onTap: () {
-                  // ✅ Guard: reject if an icon tap was just claimed.
-                  final now = DateTime.now();
-                  if (_suppressRowTap) return;
-                  if (_lastIconTap != null &&
-                      now.difference(_lastIconTap!) < const Duration(milliseconds: 350)) return;
-
-                  if (isDimmed) {
-                    setState(() {
-                      _expandedInfoItemId = null;
-                      _expandedRelationshipsItemId = null;
-                    });
-                    return;
-                  }
-
-                  _handleTap(item);
-                },
-                onLongPress: canDelete
-                    ? () => showLongPressDeleteSheet(
-                          context,
-                          obj: asViewObj!,
-                          onDeleted: _refreshThisView,
-                        )
-                    : null,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      child: Row(
-                        children: [
-                          // ✅ Relationships chevron — GestureDetector with opaque hit-test
-                          // so the gesture is fully consumed here and never reaches the row.
-                          // NEW
-                          if (hasRelationships && svc.cachedHasRelationships(item.id) == true) ...[
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {
-                                if (!_tryClaimIconTap()) return;
-                                _toggleRelationships(item.id);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(
-                                  relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
-                                  size: 18,
-                                  color: AppColors.primary,
-                                ),
+          duration: const Duration(milliseconds: 200),
+          opacity: isDimmed ? 0.45 : 1.0,
+          child: Material(
+            color: infoExpanded
+                ? AppColors.primary.withOpacity(0.03)
+                : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side: infoExpanded
+                  ? const BorderSide(color: AppColors.primary, width: 1.5)
+                  : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias,
+            elevation: 0,
+            child: InkWell(
+              borderRadius: radius,
+              onTap: () {
+                final now = DateTime.now();
+                if (_suppressRowTap) return;
+                if (_lastIconTap != null &&
+                    now.difference(_lastIconTap!) <
+                        const Duration(milliseconds: 350)) return;
+                if (isDimmed) {
+                  setState(() {
+                    _expandedInfoItemId = null;
+                    _expandedRelationshipsItemId = null;
+                  });
+                  return;
+                }
+                _handleTap(item);
+              },
+              onLongPress: canDelete
+                  ? () => showLongPressDeleteSheet(
+                        context,
+                        obj: asViewObj!,
+                        onDeleted: _refreshThisView,
+                      )
+                  : null,
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 12),
+                    child: Row(
+                      children: [
+                        // Relationships chevron
+                        if (hasRelationships &&
+                            svc.cachedHasRelationships(item.id) == true) ...[
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleRelationships(item.id);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                relationshipsExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                                color: AppColors.primary,
                               ),
-                            ),
-                            const SizedBox(width: 6),
-                          ] else
-                            const SizedBox(width: 4),
-
-                          (item.isObject && svc.isDocumentContentItem(item))
-                              ? FileTypeBadge(
-                                  extension: svc.cachedExtensionForObject(item.id) ?? '',
-                                  size: 40,
-                                )
-                              : const SizedBox(
-                                  width: 28,
-                                  height: 28,
-                                  child: Icon(
-                                    Icons.folder_rounded,
-                                    color: AppColors.primary,
-                                    size: 22,
-                                  ),
-                                ),
-
-                          const SizedBox(width: 10),
-
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontSize: 14, fontWeight: FontWeight.w600),
-                                ),
-                                if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    subtitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 12, color: Colors.grey.shade600),
-                                  ),
-                                ],
-                              ],
                             ),
                           ),
+                          const SizedBox(width: 6),
+                        ] else
+                          const SizedBox(width: 4),
 
-                          // ✅ Info icon — GestureDetector with opaque hit-test
-                          // consumes the gesture before it can bubble to the row InkWell.
-                          if (isObject) ...[
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {
-                                if (!_tryClaimIconTap()) return;
-                                _toggleInfo(item.id);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
+                        // Badge / folder
+                        (item.isObject && svc.isDocumentContentItem(item))
+                            ? FileTypeBadge(
+                                extension:
+                                    svc.cachedExtensionForObject(item.id) ??
+                                        '',
+                                size: 40,
+                              )
+                            : Container(
+                                width: 38,
+                                height: 38,
                                 decoration: BoxDecoration(
-                                  color: infoExpanded
-                                      ? AppColors.primary.withOpacity(0.15)
-                                      : AppColors.primary.withOpacity(0.08),
-                                  shape: BoxShape.circle,
+                                  color: AppColors.primary.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
-                                child: Icon(
-                                  infoExpanded
-                                      ? Icons.keyboard_arrow_up_rounded
-                                      : Icons.info_outline,
-                                  size: 18,
-                                  color: AppColors.primary,
+                                child: const Icon(Icons.folder_rounded,
+                                    color: AppColors.primary, size: 20),
+                              ),
+
+                        const SizedBox(width: 10),
+
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                              if (subtitle != null &&
+                                  subtitle.trim().isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600),
                                 ),
+                              ],
+                            ],
+                          ),
+                        ),
+
+                        // ── Eye icon (documents only) ──────────────────
+                        if (isDocument) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _openPreview(item),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blueGrey.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: _previewLoading.contains(item.id)
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                                Colors.blueGrey.shade400),
+                                      ),
+                                    )
+                                  : Icon(
+                                      Icons.remove_red_eye_outlined,
+                                      size: 18,
+                                      color: Colors.blueGrey.shade400,
+                                    ),
+                            ),
+                          ),
+                        ],
+
+                        // Info icon
+                        if (isObject) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleInfo(item.id);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: infoExpanded
+                                    ? AppColors.primary.withOpacity(0.15)
+                                    : AppColors.primary.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                infoExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.info_outline,
+                                size: 18,
+                                color: AppColors.primary,
                               ),
                             ),
-                          ] else
-                            Icon(Icons.chevron_right, size: 18, color: AppColors.surfaceLight),
-                        ],
-                      ),
+                          ),
+                        ] else
+                          Icon(Icons.chevron_right_rounded,
+                              size: 18, color: Colors.grey.shade400),
+                      ],
                     ),
+                  ),
 
-                    if (infoExpanded && isObject) ...[
-                      Divider(height: 1, color: Colors.grey.shade200),
-                      ObjectInfoDropdown(obj: asViewObj!),
-                    ],
-
-                    if (relationshipsExpanded && hasRelationships) ...[
-                      Divider(height: 1, color: Colors.grey.shade200),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        child: RelationshipsDropdown(obj: asViewObj!),
-                      ),
-                    ],
+                  if (infoExpanded && isObject) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    ObjectInfoDropdown(obj: asViewObj!),
                   ],
-                ),
+
+                  if (relationshipsExpanded && hasRelationships) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: RelationshipsDropdown(obj: asViewObj!),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
-          if (!isLast) Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
-        ],
-      );
+        ),
+        if (!isLast)
+          Divider(height: 0.5, thickness: 0.5, color: Colors.grey.shade100),
+      ],
+    );
   }
 
   Future<void> _handleTap(ViewContentItem item) async {
@@ -449,7 +545,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             propDatatype == null ||
             propDatatype.trim().isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('There are no items in this view.')),
+            const SnackBar(
+                content: Text('There are no items in this view.')),
           );
           return;
         }
@@ -460,11 +557,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         try {
           final items = await svc.fetchViewPropItems(
             viewId: vid,
-            filters: [GroupFilter(propId: propId, propDatatype: propDatatype)],
+            filters: [
+              GroupFilter(propId: propId, propDatatype: propDatatype)
+            ],
           );
-
           if (!context.mounted) return;
-
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -472,7 +569,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 title: item.title,
                 items: items,
                 parentViewId: vid,
-                filters: [GroupFilter(propId: propId, propDatatype: propDatatype)],
+                filters: [
+                  GroupFilter(propId: propId, propDatatype: propDatatype)
+                ],
                 parentViewName: widget.view.name,
                 parentSection: widget.parentSection,
               ),
@@ -492,7 +591,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       return;
     }
 
-    // object
     final obj = ViewObject(
       id: item.id,
       title: item.title,
@@ -530,11 +628,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         titleSpacing: 12,
-        title: Text(
-          widget.view.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        title: Text(widget.view.name,
+            maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           IconButton(
             icon: Icon(_showSearch ? Icons.close : Icons.search),
@@ -544,93 +639,95 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         ],
       ),
       body: NetworkBanner(
-      child: Column(
-        children: [
-          _buildBreadcrumbs(),
-          if (_showSearch) _buildInViewSearchBar(),
-          Expanded(
-            child: FutureBuilder<List<ViewContentItem>>(
-              future: _future,
-              builder: (context, snap) {
-                if (snap.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+        child: Column(
+          children: [
+            _buildBreadcrumbs(),
+            if (_showSearch) _buildInViewSearchBar(),
+            Expanded(
+              child: FutureBuilder<List<ViewContentItem>>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                        child: CircularProgressIndicator());
+                  }
 
-                if (snap.hasError) {
-                  final error = snap.error.toString();
-                  final isEmpty = error.contains('400') ||
-                      error.contains('cannot be used to define a grouping level') ||
-                      error.contains('Unspecified error') ||
-                      error.contains('No items') ||
-                      error.contains('empty');
+                  if (snap.hasError) {
+                    final error = snap.error.toString();
+                    final isEmpty = error.contains('400') ||
+                        error.contains(
+                            'cannot be used to define a grouping level') ||
+                        error.contains('Unspecified error') ||
+                        error.contains('No items') ||
+                        error.contains('empty');
+                    return isEmpty
+                        ? _buildEmptyState()
+                        : _buildErrorState(error);
+                  }
 
-                  return isEmpty ? _buildEmptyState() : _buildErrorState(error);
-                }
+                  final items = snap.data ?? [];
+                  final filtered = _applyFilter(items);
 
-                final items = snap.data ?? [];
-                final filtered = _applyFilter(items);
+                  if (items.isEmpty) return _buildEmptyState();
+                  if (filtered.isEmpty) return _buildNoMatchesState();
 
-                if (items.isEmpty) return _buildEmptyState();
-                if (filtered.isEmpty) return _buildNoMatchesState();
-
-                // ✅ Dismiss expanded dropdowns when user taps on empty space
-                // in the list (outside any row). This replaces TapRegion which
-                // was incorrectly firing onTapOutside on icon taps too.
-                return GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onTap: () {
-                    if (_expandedInfoItemId != null ||
-                        _expandedRelationshipsItemId != null) {
-                      setState(() {
-                        _expandedInfoItemId = null;
-                        _expandedRelationshipsItemId = null;
-                      });
-                    }
-                  },
-                  child: RefreshIndicator(
-                  onRefresh: () async {
-                    _refreshThisView();
-                    await _future;
-                  },
-                  child: Scrollbar(
-                    controller: _viewScroll,
-                    interactive: true,
-                    thickness: 6,
-                    radius: const Radius.circular(8),
-                    child: ListView(
-                      controller: _viewScroll,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(8),
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 10,
-                                offset: const Offset(0, 2),
+                  return GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () {
+                      if (_expandedInfoItemId != null ||
+                          _expandedRelationshipsItemId != null) {
+                        setState(() {
+                          _expandedInfoItemId = null;
+                          _expandedRelationshipsItemId = null;
+                        });
+                      }
+                    },
+                    child: RefreshIndicator(
+                      onRefresh: () async {
+                        _refreshThisView();
+                        await _future;
+                      },
+                      child: Scrollbar(
+                        controller: _viewScroll,
+                        interactive: true,
+                        thickness: 6,
+                        radius: const Radius.circular(8),
+                        child: ListView(
+                          controller: _viewScroll,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.all(8),
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: Colors.grey.shade100, width: 0.5),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.04),
+                                    blurRadius: 12,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: Column(
-                            children: List.generate(
-                              filtered.length,
-                              (i) => _buildRow(filtered[i], i == filtered.length - 1),
+                              child: Column(
+                                children: List.generate(
+                                  filtered.length,
+                                  (i) => _buildRow(filtered[i],
+                                      i == filtered.length - 1),
+                                ),
+                              ),
                             ),
-                          ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
-                  ), // RefreshIndicator
-                ); // GestureDetector
-              },
+                  );
+                },
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
       ),
     );
   }
@@ -644,24 +741,22 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(24),
-              decoration:
-                  BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle),
-              child: Icon(Icons.inbox_outlined, size: 64, color: Colors.grey.shade400),
+              decoration: BoxDecoration(
+                  color: Colors.grey.shade100, shape: BoxShape.circle),
+              child: Icon(Icons.inbox_outlined,
+                  size: 64, color: Colors.grey.shade400),
             ),
             const SizedBox(height: 24),
-            Text(
-              'No Items Found',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800),
-            ),
+            Text('No Items Found',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800)),
             const SizedBox(height: 8),
-            Text(
-              'This view is currently empty',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
-            ),
+            Text('This view is currently empty',
+                style: TextStyle(
+                    fontSize: 14, color: Colors.grey.shade600),
+                textAlign: TextAlign.center),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               onPressed: _refreshThisView,
@@ -669,9 +764,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               label: const Text('Refresh'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
-                side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                side: BorderSide(
+                    color: AppColors.primary.withOpacity(0.3)),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 24, vertical: 12),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
             ),
           ],
@@ -700,26 +798,24 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(24),
-              decoration:
-                  BoxDecoration(color: Colors.orange.shade50, shape: BoxShape.circle),
-              child:
-                  Icon(Icons.warning_amber_rounded, size: 64, color: Colors.orange.shade400),
+              decoration: BoxDecoration(
+                  color: Colors.orange.shade50, shape: BoxShape.circle),
+              child: Icon(Icons.warning_amber_rounded,
+                  size: 64, color: Colors.orange.shade400),
             ),
             const SizedBox(height: 24),
-            Text(
-              msg,
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800),
-              textAlign: TextAlign.center,
-            ),
+            Text(msg,
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800),
+                textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(
-              'Please contact your administrator if this issue persists',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
-            ),
+                'Please contact your administrator if this issue persists',
+                style: TextStyle(
+                    fontSize: 14, color: Colors.grey.shade600),
+                textAlign: TextAlign.center),
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -731,10 +827,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.grey.shade700,
                     side: BorderSide(color: Colors.grey.shade300),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    shape:
-                        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -746,10 +842,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                    shape:
-                        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                   ),
                 ),
               ],
@@ -769,21 +865,21 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           children: [
             Container(
               padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(color: Colors.blue.shade50, shape: BoxShape.circle),
-              child:
-                  Icon(Icons.search_off_rounded, size: 56, color: Colors.blue.shade300),
+              decoration: BoxDecoration(
+                  color: Colors.blue.shade50, shape: BoxShape.circle),
+              child: Icon(Icons.search_off_rounded,
+                  size: 56, color: Colors.blue.shade300),
             ),
             const SizedBox(height: 20),
-            Text(
-              'No Matches Found',
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800),
-            ),
+            Text('No Matches Found',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade800)),
             const SizedBox(height: 8),
             Text('Try adjusting your search',
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
+                style: TextStyle(
+                    fontSize: 14, color: Colors.grey.shade600)),
             const SizedBox(height: 20),
             TextButton.icon(
               onPressed: () => setState(() {
@@ -794,7 +890,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               label: const Text('Clear Search'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 12),
               ),
             ),
           ],

@@ -1,4 +1,4 @@
-package com.example.mfiles_app
+package tech.alignsys.app
 
 import android.os.Bundle
 import android.view.WindowManager

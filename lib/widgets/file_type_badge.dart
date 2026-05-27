@@ -11,11 +11,13 @@ import 'package:flutter/material.dart';
 class FileTypeBadge extends StatelessWidget {
   final String extension;
   final double size;
+  final double opacity;
 
   const FileTypeBadge({
     super.key,
     required this.extension,
     this.size = 44,
+    this.opacity = 1.0,
   });
 
   // ─── Image extension detector ─────────────────────────────────────────────
@@ -157,33 +159,39 @@ class FileTypeBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     // ── Image files: flat image placeholder icon ───────────────────────────────
     if (_isImage(extension)) {
-      return SizedBox(
-        width: size,
-        height: size,
-        child: CustomPaint(
-          painter: _FlatImageIconPainter(),
+      return Opacity(
+        opacity: opacity,
+        child: SizedBox(
+          width: size,
+          height: size,
+          child: CustomPaint(
+            painter: _FlatImageIconPainter(),
+          ),
         ),
       );
     }
 
     // ── All other file types: document-page badge ─────────────────────────────
     final style = _styleFor(extension);
-    return SizedBox(
-      width: size,
-      height: size,
-      child: CustomPaint(
-        painter: _DocumentPagePainter(style: style),
-        child: Center(
-          child: Padding(
-            padding: EdgeInsets.only(top: size * 0.18),
-            child: Text(
-              style.label,
-              style: TextStyle(
-                color: style.labelColor,
-                fontSize: style.fontSize * (size / 44),
-                fontWeight: style.fontWeight,
-                height: 1.0,
-                letterSpacing: style.label.length > 1 ? -0.5 : 0,
+    return Opacity(
+      opacity: opacity,
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _DocumentPagePainter(style: style),
+          child: Center(
+            child: Padding(
+              padding: EdgeInsets.only(top: size * 0.18),
+              child: Text(
+                style.label,
+                style: TextStyle(
+                  color: style.labelColor,
+                  fontSize: style.fontSize * (size / 44),
+                  fontWeight: style.fontWeight,
+                  height: 1.0,
+                  letterSpacing: style.label.length > 1 ? -0.5 : 0,
+                ),
               ),
             ),
           ),

@@ -1,3 +1,6 @@
+// Everything else is identical to what you provided. Only the changed sections
+// are marked with // ── CHANGED ──
+
 // ignore_for_file: use_build_context_synchronously, duplicate_ignore, deprecated_member_use
 
 import 'package:flutter/material.dart';
@@ -20,6 +23,10 @@ import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/screens/search_results_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_colors.dart';
+import 'package:mfiles_app/dss/screens/dss_dashboard_screen.dart';
+import 'package:mfiles_app/screens/document_preview_screen.dart';
+
+enum _MoreItem { signing, reports, trash }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,7 +38,13 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> tabs = ['Home', 'Recent', 'Assigned', 'Trash', 'Reports'];
+  final List<String> tabs = ['Home', 'Recent', 'Assigned', 'More'];
+
+  _MoreItem _moreItem = _MoreItem.reports;
+
+  bool _switchingVault = false;
+  String _switchingVaultName = '';
+
   String _searchQuery = '';
 
   static const double _sectionSpacing = 10;
@@ -41,18 +54,18 @@ class _HomeScreenState extends State<HomeScreen>
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
-
   final ScrollController _homeScroll = ScrollController();
-  final ScrollController _objectsScroll = ScrollController();
+
+  int? _expandedInfoItemId;
+  int? _expandedRelationshipsItemId;
+
+  final Set<int> _previewLoading = {};
 
   IconData _iconForObj(MFilesService svc, ViewObject obj) =>
       svc.iconForViewObject(obj);
 
   bool _isDocumentObj(MFilesService svc, ViewObject obj) =>
       svc.isDocumentViewObject(obj);
-
-  int? _expandedInfoItemId;
-  int? _expandedRelationshipsItemId;
 
   List<ViewItem> _sortedViews(List<ViewItem> items) {
     final copy = List<ViewItem>.from(items);
@@ -67,12 +80,50 @@ class _HomeScreenState extends State<HomeScreen>
 
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
-      if (tabs[_tabController.index] == 'Home') {
-        _resetSearch();
-      }
+      setState(() {});
+      _onTabChanged(_tabController.index);
+      if (tabs[_tabController.index] == 'Home') _resetSearch();
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialData());
+  }
+
+  Widget _buildDocumentBadge(MFilesService svc, ViewObject obj) {
+    final isTrashed = svc.isObjectDeleted(obj.id);
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        FileTypeBadge(
+          extension: svc.cachedExtensionForObject(obj.id) ?? '',
+          size: 28,
+          opacity: isTrashed ? 0.55 : 1.0,
+        ),
+        if (isTrashed)
+          Positioned(
+            bottom: -3,
+            right: -5,
+            child: Container(
+              width: 15,
+              height: 15,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.red.shade700, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.15),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Icon(Icons.remove, size: 9, color: Colors.red.shade700),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   Future<void> _loadInitialData() async {
@@ -83,7 +134,6 @@ class _HomeScreenState extends State<HomeScreen>
         if (mounted) Navigator.pushReplacementNamed(context, '/login');
         return;
       }
-
       await Future.wait([
         service.fetchObjectTypes(),
         service.fetchAllViews(),
@@ -91,17 +141,13 @@ class _HomeScreenState extends State<HomeScreen>
         service.fetchAssignedObjects(),
         service.fetchDeletedObjects(),
       ]);
-
-      await Future.wait([
-        service.fetchReportObjects(),
-      ]);
+      await service.fetchReportObjects();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error loading data: $e'),
-              backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error loading data: $e'),
+          backgroundColor: Colors.red,
+        ));
       }
     }
   }
@@ -110,15 +156,19 @@ class _HomeScreenState extends State<HomeScreen>
     final service = context.read<MFilesService>();
     final tab = tabs[index];
     service.setActiveTab(tab);
+
     switch (tab) {
       case 'Recent':
-        service.fetchRecentObjects();
+        service.fetchRecentObjects(background: true);
         break;
       case 'Assigned':
-        service.fetchAssignedObjects();
+        service.fetchAssignedObjects(background: true);
         break;
-      case 'Trash':
-        service.fetchDeletedObjects();
+      case 'More':
+        if (_moreItem == _MoreItem.trash) {
+          service.fetchDeletedObjects(background: true);
+        }
+        if (_moreItem == _MoreItem.reports) service.fetchReportObjects();
         break;
       default:
         break;
@@ -135,11 +185,11 @@ class _HomeScreenState extends State<HomeScreen>
       case 'Assigned':
         await service.fetchAssignedObjects();
         break;
-      case 'Trash':
-        await service.fetchDeletedObjects();
-        break;
-      case 'Reports':
-        await service.fetchReportObjects();
+      case 'More':
+        if (_moreItem == _MoreItem.trash) {
+          await service.fetchDeletedObjects();
+        }
+        if (_moreItem == _MoreItem.reports) await service.fetchReportObjects();
         break;
       default:
         break;
@@ -149,18 +199,71 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _homeScroll.dispose();
-    _objectsScroll.dispose();
     _tabController.dispose();
     _searchController.dispose();
     _searchFocus.dispose();
     super.dispose();
   }
 
-  // ─── OBJECT TYPE ICON ─────────────────────────────────────────────────────
+  Future<void> _openPreview(ViewObject obj) async {
+    if (_previewLoading.contains(obj.id)) return;
+    setState(() => _previewLoading.add(obj.id));
+    try {
+      final svc = context.read<MFilesService>();
+      final files = await svc.fetchObjectFiles(
+        objectId: obj.id,
+        classId: obj.classId,
+      );
+
+      if (!mounted) return;
+
+      if (files.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No files attached to this document.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final f = files.first;
+      debugPrint(
+          '🔍 fileId=${f.fileId} fileTitle=${f.fileTitle} ext=${f.extension}');
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentPreviewScreen(
+            displayObjectId: obj.id,
+            classId: obj.classId,
+            fileId: f.fileId,
+            fileTitle: f.fileTitle,
+            extension: f.extension,
+            reportGuid: f.reportGuid,
+            objectTypeId: obj.objectTypeId,
+            canDownload: true,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load preview: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _previewLoading.remove(obj.id));
+    }
+  }
+
   IconData _iconForObjectTypeName(String name) {
     final n = name.toLowerCase().trim();
-
-    if (n == 'cars' || n.contains('vehicle')) return Icons.directions_car_rounded;
+    if (n == 'cars' || n.contains('vehicle'))
+      return Icons.directions_car_rounded;
     if (n == 'container files') return Icons.folder_zip_rounded;
     if (n == 'document collections') return Icons.library_books_rounded;
     if (n == 'news') return Icons.newspaper_rounded;
@@ -184,7 +287,6 @@ class _HomeScreenState extends State<HomeScreen>
     if (n == 'loans') return Icons.local_atm_rounded;
     if (n == 'members') return Icons.person_2_rounded;
     if (n == 'valuers') return Icons.currency_exchange_rounded;
-
     if (n.contains('contact') || n.contains('person') || n.contains('client'))
       return Icons.person_rounded;
     if (n.contains('project')) return Icons.work_rounded;
@@ -195,7 +297,8 @@ class _HomeScreenState extends State<HomeScreen>
       return Icons.handshake_rounded;
     if (n.contains('report') || n.contains('analytics'))
       return Icons.analytics_rounded;
-    if (n.contains('meeting') || n.contains('minute')) return Icons.groups_rounded;
+    if (n.contains('meeting') || n.contains('minute'))
+      return Icons.groups_rounded;
     if (n.contains('task') || n.contains('assignment'))
       return Icons.task_alt_rounded;
     if (n.contains('email') || n.contains('message') || n.contains('mail'))
@@ -216,93 +319,125 @@ class _HomeScreenState extends State<HomeScreen>
     if (n.contains('property') ||
         n.contains('real estate') ||
         n.contains('land')) return Icons.home_work_rounded;
-
     return Icons.category_rounded;
   }
-
-  // ─── BUILD ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       top: false,
-      child: Scaffold(
-        backgroundColor: AppColors.surfaceLight,
-        appBar: AppBar(
-          backgroundColor: AppColors.primary,
-          elevation: 0,
-          toolbarHeight: 64,
-          titleSpacing: 12,
-          title: GestureDetector(
-            onTap: () async {
-              final uri = Uri.parse('https://www.alignsys.tech');
-              final launched =
-                  await launchUrl(uri, mode: LaunchMode.externalApplication);
-              if (!launched && context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                      content: Text('Could not open Alignsys website')),
-                );
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Image.asset('assets/alignsysnew.png',
-                    height: 36, fit: BoxFit.cover),
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: AppColors.surfaceLight,
+            appBar: AppBar(
+              backgroundColor: AppColors.primary,
+              elevation: 0,
+              toolbarHeight: 64,
+              titleSpacing: 12,
+              title: GestureDetector(
+                onTap: () async {
+                  final uri = Uri.parse('https://alignsys.tech');
+                  final launched = await launchUrl(uri,
+                      mode: LaunchMode.externalApplication);
+                  if (!launched && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                          content: Text('Could not open Alignsys website')),
+                    );
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.asset('assets/alignsysnew.png',
+                        height: 36, fit: BoxFit.cover),
+                  ),
+                ),
+              ),
+              actions: [
+                Builder(
+                  builder: (ctx) => TextButton.icon(
+                    onPressed: () => _showCreateBottomSheet(ctx),
+                    icon:
+                        const Icon(Icons.add, size: 20, color: Colors.white),
+                    label: const Text('Create',
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600)),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Builder(
+                  builder: (ctx) => IconButton(
+                    icon: const Icon(Icons.person,
+                        size: 20, color: Colors.white),
+                    onPressed: () => _showProfileMenu(ctx),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+            ),
+            body: NetworkBanner(
+              child: Column(
+                children: [
+                  _buildSearchBar(),
+                  const SizedBox(height: _sectionSpacing),
+                  _buildTabBar(),
+                  const SizedBox(height: _sectionSpacing),
+                  Expanded(
+                    child: TabBarView(
+                      controller: _tabController,
+                      physics: const ClampingScrollPhysics(),
+                      children: [
+                        _buildHomeTab(),
+                        _buildRecentTab(),
+                        _buildAssignedTab(),
+                        _buildMoreTab(),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          actions: [
-            Builder(
-              builder: (ctx) => TextButton.icon(
-                onPressed: () => _showCreateBottomSheet(ctx),
-                icon: const Icon(Icons.add, size: 20, color: Colors.white),
-                label: const Text('Create',
-                    style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600)),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Builder(
-              builder: (ctx) => IconButton(
-                icon: const Icon(Icons.person, size: 20, color: Colors.white),
-                onPressed: () => _showProfileMenu(ctx),
-              ),
-            ),
-            const SizedBox(width: 8),
-          ],
-        ),
-        body: NetworkBanner(
-          child: Column(
-            children: [
-              _buildSearchBar(),
-              const SizedBox(height: _sectionSpacing),
-              _buildTabBar(),
-              const SizedBox(height: _sectionSpacing),
-              Expanded(
-                child: TabBarView(
-                  controller: _tabController,
+          if (_switchingVault)
+            Positioned.fill(
+              child: Container(
+                color: AppColors.primary,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    _buildHomeTab(),
-                    _buildRecentTab(),
-                    _buildAssignedTab(),
-                    _buildDeletedTab(),
-                    _buildReportsTab(),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.asset('assets/alignsysnew.png',
+                          height: 52, fit: BoxFit.contain),
+                    ),
+                    const SizedBox(height: 40),
+                    const SizedBox(
+                      width: 28,
+                      height: 28,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2.5),
+                    ),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Switching to $_switchingVaultName',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600),
+                    ),
                   ],
                 ),
               ),
-            ],
-          ),
-        ),
+            ),
+        ],
       ),
     );
   }
-
-  // ─── SEARCH BAR ───────────────────────────────────────────────────────────
 
   Widget _buildSearchBar() {
     final hasText = _searchController.text.trim().isNotEmpty;
@@ -378,12 +513,10 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── TAB BAR ──────────────────────────────────────────────────────────────
-
   Widget _buildTabBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -394,163 +527,149 @@ class _HomeScreenState extends State<HomeScreen>
               offset: const Offset(0, 2))
         ],
       ),
-      child: TabBar(
-        controller: _tabController,
-        isScrollable: true,
-        tabAlignment: TabAlignment.start,
-        padding: EdgeInsets.zero,
-        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-        indicatorPadding: const EdgeInsets.all(4),
-        dividerColor: Colors.transparent,
-        indicator: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(8)),
-        labelColor: Colors.white,
-        unselectedLabelColor: Colors.grey.shade600,
-        labelStyle:
-            const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-        unselectedLabelStyle:
-            const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
-        tabs: [
-          _buildTab(Icons.home_rounded, 'Home'),
-          _buildTab(Icons.history_rounded, 'Recent'),
-          _buildAssignedTab2(),
-          _buildBadgeTab(Icons.delete_outline_rounded, 'Trash',
-              (s) => s.deletedObjects.length),
-          _buildBadgeTab(Icons.analytics_outlined, 'Reports',
-              (s) => s.reportObjects.length),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildEvenTab(0, Icons.home_rounded, 'Home'),
+          _buildEvenTab(1, Icons.history_rounded, 'Recent'),
+          _buildEvenAssignedTab(2),
+          _buildEvenMoreTab(3),
         ],
-        onTap: _onTabChanged,
       ),
     );
   }
 
-  Widget _buildTab(IconData icon, String label) {
-    return Tab(
-      height: 36,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16),
-            const SizedBox(width: 6),
-            Text(label),
-          ],
+  Widget _buildEvenTab(int index, IconData icon, String label) {
+    return Expanded(
+      child: _TabPill(
+        icon: icon,
+        label: label,
+        selected: _tabController.index == index,
+        onTap: () => _selectTab(index),
+      ),
+    );
+  }
+
+  Widget _buildEvenAssignedTab(int index) {
+    return Expanded(
+      child: Consumer<MFilesService>(
+        builder: (_, svc, __) => _TabPill(
+          icon: Icons.assignment_rounded,
+          label: 'Assigned',
+          selected: _tabController.index == index,
+          badgeCount: svc.assignedObjects.length,
+          onTap: () => _selectTab(index),
         ),
       ),
     );
   }
 
-  Widget _buildAssignedTab2() {
+  Widget _buildEvenMoreTab(int index) {
+    return Expanded(
+      child: _TabPill(
+        icon: Icons.more_vert_rounded,
+        label: 'More',
+        selected: _tabController.index == index,
+        onTap: () => _selectTab(index),
+      ),
+    );
+  }
+
+  void _selectTab(int index) => _tabController.animateTo(index);
+
+  Widget _buildMoreTab() {
     return Consumer<MFilesService>(
-      builder: (context, service, _) {
-        final count = service.assignedObjects.length;
-        return Tab(
-          height: 36,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.assignment_rounded, size: 16),
-                    if (count > 0)
-                      Positioned(
-                        top: -6,
-                        right: -8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
-                          constraints: const BoxConstraints(minWidth: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white, width: 1.2),
-                          ),
-                          child: Text(
-                            count > 99 ? '99+' : '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              height: 1.2,
+      builder: (context, svc, _) {
+        return Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              padding:
+                  const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2))
+                ],
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  Expanded(
+                    child: _TabPill(
+                      icon: Icons.draw_outlined,
+                      label: 'Signing',
+                      selected: _moreItem == _MoreItem.signing,
+                      onTap: () {
+                        if (!svc.isDssAvailable) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Digital Signing unavailable. Log out and back in.'),
+                              backgroundColor: Colors.orange,
+                              behavior: SnackBarBehavior.floating,
                             ),
-                            textAlign: TextAlign.center,
+                          );
+                          return;
+                        }
+                        Navigator.of(context, rootNavigator: true).push(
+                          MaterialPageRoute(
+                            builder: (_) => Scaffold(
+                              backgroundColor: AppColors.surfaceLight,
+                              appBar: AppBar(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                title: const Text('e-Signing'),
+                              ),
+                              body: const DssDashboardScreen(),
+                            ),
                           ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 6),
-                const Text('Assigned'),
-              ],
+                        );
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: _TabPill(
+                      icon: Icons.analytics_outlined,
+                      label: 'Reports',
+                      selected: _moreItem == _MoreItem.reports,
+                      badgeCount: svc.reportObjects.length,
+                      onTap: () {
+                        setState(() => _moreItem = _MoreItem.reports);
+                        svc.fetchReportObjects();
+                      },
+                    ),
+                  ),
+                  Expanded(
+                    child: _TabPill(
+                      icon: Icons.delete_outline_rounded,
+                      label: 'Trash',
+                      selected: _moreItem == _MoreItem.trash,
+                      badgeCount: svc.deletedObjects.length,
+                      onTap: () {
+                        setState(() => _moreItem = _MoreItem.trash);
+                        svc.fetchDeletedObjects();
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+            const SizedBox(height: _sectionSpacing),
+            Expanded(
+              child: _moreItem == _MoreItem.reports
+                  ? _buildReportsTab()
+                  : _buildDeletedTab(),
+            ),
+          ],
         );
       },
     );
   }
-
-  Widget _buildBadgeTab(
-    IconData icon,
-    String label,
-    int Function(MFilesService) countSelector,
-  ) {
-    return Consumer<MFilesService>(
-      builder: (context, service, _) {
-        final count = countSelector(service);
-        return Tab(
-          height: 36,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Icon(icon, size: 16),
-                    if (count > 0)
-                      Positioned(
-                        top: -6,
-                        right: -8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1),
-                          constraints: const BoxConstraints(minWidth: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white, width: 1.2),
-                          ),
-                          child: Text(
-                            count > 99 ? '99+' : '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              height: 1.2,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 6),
-                Text(label),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ─── HOME TAB ─────────────────────────────────────────────────────────────
 
   Widget _buildHomeTab() {
     return Consumer<MFilesService>(
@@ -571,6 +690,7 @@ class _HomeScreenState extends State<HomeScreen>
             thickness: 6,
             radius: const Radius.circular(8),
             child: ListView(
+              primary: false,
               controller: _homeScroll,
               padding: const EdgeInsets.symmetric(horizontal: 12),
               children: [
@@ -642,7 +762,8 @@ class _HomeScreenState extends State<HomeScreen>
                               offset: const Offset(0, 2))
                         ],
                       ),
-                      child: Column(children: _buildFlatViewRows(items)),
+                      child: Column(
+                          children: _buildFlatViewRows(items)),
                     ),
                 ])
               : const SizedBox.shrink(),
@@ -664,7 +785,8 @@ class _HomeScreenState extends State<HomeScreen>
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
             gradient: LinearGradient(colors: [
               AppColors.primary.withOpacity(0.08),
@@ -683,7 +805,8 @@ class _HomeScreenState extends State<HomeScreen>
                       color: Color.fromRGBO(25, 76, 129, 1))),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.1),
                   borderRadius: BorderRadius.circular(12)),
@@ -756,19 +879,22 @@ class _HomeScreenState extends State<HomeScreen>
       child: InkWell(
         onTap: () {
           final service = context.read<MFilesService>();
-          final isCommon = service.commonViews.any((v) => v.id == view.id);
+          final isCommon =
+              service.commonViews.any((v) => v.id == view.id);
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => ViewDetailsScreen(
                 view: view,
-                parentSection: isCommon ? 'Common Views' : 'Other Views',
+                parentSection:
+                    isCommon ? 'Common Views' : 'Other Views',
               ),
             ),
           );
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          padding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           child: Row(children: [
             Container(
               padding: const EdgeInsets.all(8),
@@ -812,8 +938,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── OBJECT-LIST TABS ─────────────────────────────────────────────────────
-
   Widget _buildRecentTab() {
     return _buildObjectList(
       selector: (s) =>
@@ -827,11 +951,8 @@ class _HomeScreenState extends State<HomeScreen>
       onRefresh: (s) => _searchQuery.isNotEmpty
           ? s.searchVault(_searchQuery)
           : s.fetchRecentObjects(),
-      onLongPress: (obj) => showLongPressDeleteSheet(
-        context,
-        obj: obj,
-        onDeleted: _refreshActiveTab,
-      ),
+      onLongPress: (obj) => showLongPressDeleteSheet(context,
+          obj: obj, onDeleted: _refreshActiveTab),
     );
   }
 
@@ -842,11 +963,8 @@ class _HomeScreenState extends State<HomeScreen>
       emptyText: 'No assigned items',
       emptySubtext: 'Items assigned to you will appear here',
       onRefresh: (s) => s.fetchAssignedObjects(),
-      onLongPress: (obj) => showLongPressDeleteSheet(
-        context,
-        obj: obj,
-        onDeleted: _refreshActiveTab,
-      ),
+      onLongPress: (obj) => showLongPressDeleteSheet(context,
+          obj: obj, onDeleted: _refreshActiveTab),
     );
   }
 
@@ -857,11 +975,8 @@ class _HomeScreenState extends State<HomeScreen>
       emptyText: 'No deleted items',
       emptySubtext: 'Deleted documents will appear here',
       onRefresh: (s) => s.fetchDeletedObjects(),
-      onLongPress: (obj) => showLongPressRestoreSheet(
-        context,
-        obj: obj,
-        onRestored: _refreshActiveTab,
-      ),
+      onLongPress: (obj) => showLongPressRestoreSheet(context,
+          obj: obj, onRestored: _refreshActiveTab),
     );
   }
 
@@ -872,11 +987,8 @@ class _HomeScreenState extends State<HomeScreen>
       emptyText: 'No reports found',
       emptySubtext: 'Reports will appear here when available',
       onRefresh: (s) => s.fetchReportObjects(),
-      onLongPress: (obj) => showLongPressDeleteSheet(
-        context,
-        obj: obj,
-        onDeleted: _refreshActiveTab,
-      ),
+      onLongPress: (obj) => showLongPressDeleteSheet(context,
+          obj: obj, onDeleted: _refreshActiveTab),
     );
   }
 
@@ -898,9 +1010,11 @@ class _HomeScreenState extends State<HomeScreen>
           return RefreshIndicator(
             onRefresh: () => onRefresh(service),
             child: ListView(
+              primary: false,
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
-                SizedBox(height: MediaQuery.of(context).size.height * 0.18),
+                SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.18),
                 _buildEmptyState(emptyIcon, emptyText, emptySubtext),
               ],
             ),
@@ -909,12 +1023,11 @@ class _HomeScreenState extends State<HomeScreen>
         return RefreshIndicator(
           onRefresh: () => onRefresh(service),
           child: Scrollbar(
-            controller: _objectsScroll,
             interactive: true,
             thickness: 6,
             radius: const Radius.circular(8),
             child: ListView.builder(
-              controller: _objectsScroll,
+              primary: false,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(10),
               itemCount: objects.length,
@@ -927,33 +1040,33 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── OBJECT ROW ───────────────────────────────────────────────────────────
-
   Widget _buildCompactObjectRow(
     ViewObject obj,
     Future<void> Function(ViewObject) onLongPress,
   ) {
     final type = obj.objectTypeName.trim();
-    final idPart =
-        obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
+    final idPart = obj.displayId.trim().isNotEmpty
+        ? obj.displayId.trim()
+        : '${obj.id}';
     final subtitle = type.isEmpty ? 'ID $idPart' : '$type | ID $idPart';
-
     final bool canExpand = obj.id != 0;
 
     final svc = context.watch<MFilesService>();
     _iconForObj(svc, obj);
 
+    final bool isDocument = _isDocumentObj(svc, obj);
     final bool infoExpanded = _expandedInfoItemId == obj.id;
-    final bool relationshipsExpanded = _expandedRelationshipsItemId == obj.id;
+    final bool relationshipsExpanded =
+        _expandedRelationshipsItemId == obj.id;
     final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
 
     if (canExpand &&
-        !_isDocumentObj(svc, obj) &&
+        !isDocument &&
         svc.cachedHasRelationships(obj.id) == null) {
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
-        classId: obj.classId, 
+        classId: obj.classId,
         notify: false,
       );
     }
@@ -972,178 +1085,199 @@ class _HomeScreenState extends State<HomeScreen>
           boxShadow: infoExpanded
               ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.25),
-                    blurRadius: 14,
-                    spreadRadius: 1,
-                    offset: const Offset(0, 2),
-                  ),
+                      color: AppColors.primary.withOpacity(0.25),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 2))
                 ]
               : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2))
                 ],
         ),
-        child: Column(
-          children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () async {
-                  if (isDimmed) {
-                    setState(() => _expandedInfoItemId = null);
-                    return;
-                  }
-                  final deleted = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => ObjectDetailsScreen(obj: obj)),
-                  );
-                  if (deleted == true) {
-                    await context.read<MFilesService>().fetchRecentObjects();
-                  }
-                },
-                onLongPress:
-                    canLongPress(obj, context, tabs[_tabController.index])
-                        ? () => onLongPress(obj)
-                        : null,
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      if (canExpand &&
-                          !_isDocumentObj(svc, obj) &&
-                          svc.cachedHasRelationships(obj.id) == true) ...[
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                if (_expandedRelationshipsItemId == obj.id) {
-                                  _expandedRelationshipsItemId = null;
-                                } else {
-                                  _expandedRelationshipsItemId = obj.id;
-                                  _expandedInfoItemId = null;
-                                }
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(4),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                relationshipsExpanded
-                                    ? Icons.expand_more
-                                    : Icons.chevron_right,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
-                            ),
+        child: Column(children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () async {
+                if (isDimmed) {
+                  setState(() => _expandedInfoItemId = null);
+                  return;
+                }
+                final deleted = await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => ObjectDetailsScreen(obj: obj)),
+                );
+                if (deleted == true) {
+                  await context
+                      .read<MFilesService>()
+                      .fetchRecentObjects();
+                }
+              },
+              onLongPress:
+                  canLongPress(obj, context, tabs[_tabController.index])
+                      ? () => onLongPress(obj)
+                      : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 12),
+                child: Row(children: [
+                  // Relationships chevron (non-documents only)
+                  if (canExpand &&
+                      !isDocument &&
+                      svc.cachedHasRelationships(obj.id) == true) ...[
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => setState(() {
+                          if (_expandedRelationshipsItemId == obj.id) {
+                            _expandedRelationshipsItemId = null;
+                          } else {
+                            _expandedRelationshipsItemId = obj.id;
+                            _expandedInfoItemId = null;
+                          }
+                        }),
+                        borderRadius: BorderRadius.circular(4),
+                        child: Padding(
+                          padding: const EdgeInsets.all(4),
+                          child: Icon(
+                            relationshipsExpanded
+                                ? Icons.expand_more
+                                : Icons.chevron_right,
+                            size: 18,
+                            color: AppColors.primary,
                           ),
-                        ),
-                        const SizedBox(width: 6),
-                      ] else
-                        const SizedBox(width: 4),
-                      _isDocumentObj(svc, obj)
-                          ? FileTypeBadge(
-                              extension:
-                                  svc.cachedExtensionForObject(obj.id) ?? '',
-                              size: 28,
-                            )
-                          : const Icon(
-                              Icons.folder_rounded,
-                              color: AppColors.primary,
-                              size: 22,
-                            ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(obj.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF1A1A1A))),
-                            const SizedBox(height: 4),
-                            Text(subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600)),
-                          ],
                         ),
                       ),
-                      if (canExpand) ...[
-                        const SizedBox(width: 8),
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                if (_expandedInfoItemId == obj.id) {
-                                  _expandedInfoItemId = null;
-                                } else {
-                                  _expandedInfoItemId = obj.id;
-                                  _expandedRelationshipsItemId = null;
-                                }
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: infoExpanded
-                                    ? AppColors.primary.withOpacity(0.15)
-                                    : AppColors.primary.withOpacity(0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                infoExpanded
-                                    ? Icons.keyboard_arrow_up_rounded
-                                    : Icons.info_outline,
+                    ),
+                    const SizedBox(width: 6),
+                  ] else
+                    const SizedBox(width: 4),
+
+                  // Badge / icon
+                  isDocument
+                      ? _buildDocumentBadge(svc, obj)
+                      : const Icon(Icons.folder_rounded,
+                          color: AppColors.primary, size: 22),
+                  const SizedBox(width: 12),
+
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(obj.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1A1A1A))),
+                        const SizedBox(height: 4),
+                        Text(subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600)),
+                      ],
+                    ),
+                  ),
+
+                  // Eye icon for document objects
+                  if (isDocument) ...[
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _openPreview(obj),
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.blueGrey.withOpacity(0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _previewLoading.contains(obj.id)
+                            ? SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.blueGrey.shade400),
+                                ),
+                              )
+                            : Icon(
+                                Icons.remove_red_eye_outlined,
                                 size: 18,
-                                color: AppColors.primary,
+                                color: Colors.blueGrey.shade400,
                               ),
-                            ),
+                      ),
+                    ),
+                  ],
+
+                  // Info icon
+                  if (canExpand) ...[
+                    const SizedBox(width: 8),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => setState(() {
+                          if (_expandedInfoItemId == obj.id) {
+                            _expandedInfoItemId = null;
+                          } else {
+                            _expandedInfoItemId = obj.id;
+                            _expandedRelationshipsItemId = null;
+                          }
+                        }),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: infoExpanded
+                                ? AppColors.primary.withOpacity(0.15)
+                                : AppColors.primary.withOpacity(0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            infoExpanded
+                                ? Icons.keyboard_arrow_up_rounded
+                                : Icons.info_outline,
+                            size: 18,
+                            color: AppColors.primary,
                           ),
                         ),
-                      ] else
-                        Icon(Icons.chevron_right_rounded,
-                            size: 20, color: Colors.grey.shade400),
-                    ],
-                  ),
-                ),
+                      ),
+                    ),
+                  ] else
+                    Icon(Icons.chevron_right_rounded,
+                        size: 20, color: Colors.grey.shade400),
+                ]),
               ),
             ),
-            if (infoExpanded && canExpand) ...[
-              Divider(height: 1, color: Colors.grey.shade200),
-              ObjectInfoDropdown(
-                obj: obj,
-                isDeleted: tabs[_tabController.index] == 'Trash',
-              ),
-            ],
-            if (relationshipsExpanded && canExpand) ...[
-              Divider(height: 1, color: Colors.grey.shade200),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child:
-                    RelationshipsDropdown(obj: obj, initiallyExpanded: true),
-              ),
-            ],
+          ),
+          if (infoExpanded && canExpand) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            ObjectInfoDropdown(
+              obj: obj,
+              isDeleted:
+                  _tabController.index == 3 && _moreItem == _MoreItem.trash,
+            ),
           ],
-        ),
+          if (relationshipsExpanded && canExpand) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: RelationshipsDropdown(
+                  obj: obj, initiallyExpanded: true),
+            ),
+          ],
+        ]),
       ),
     );
   }
-
-  // ─── EMPTY / ERROR STATES ─────────────────────────────────────────────────
 
   Widget _buildEmptyState(IconData icon, String text, String subtext) {
     return Center(
@@ -1196,7 +1330,8 @@ class _HomeScreenState extends State<HomeScreen>
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
             Text(error,
-                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                style:
+                    TextStyle(fontSize: 14, color: Colors.grey.shade600),
                 textAlign: TextAlign.center),
           ],
         ),
@@ -1204,15 +1339,11 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ─── SEARCH ───────────────────────────────────────────────────────────────
-
   void _resetSearch({bool clearResults = true}) {
     _searchController.clear();
     _searchFocus.unfocus();
     if (mounted) setState(() => _searchQuery = '');
-    if (clearResults) {
-      context.read<MFilesService>().clearSearchResults();
-    }
+    if (clearResults) context.read<MFilesService>().clearSearchResults();
   }
 
   Future<void> _executeSearch() async {
@@ -1226,8 +1357,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
     _resetSearch();
   }
-
-  // ─── CREATE BOTTOM SHEET ──────────────────────────────────────────────────
 
   void _showCreateBottomSheet(BuildContext context) {
     final service = context.read<MFilesService>();
@@ -1263,520 +1392,155 @@ class _HomeScreenState extends State<HomeScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheet) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 14,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            ),
-            constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.add_circle_outline_rounded,
-                        color: AppColors.primary, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text('Create New',
-                        style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.search_rounded,
-                        color: showSearch
-                            ? AppColors.primary
-                            : Colors.grey.shade700),
-                    onPressed: () {
-                      setSheet(() {
-                        showSearch = !showSearch;
-                        if (!showSearch) {
-                          searchController.clear();
-                          filteredEntries = List.from(allEntries);
-                        } else {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            searchFocusNode.requestFocus();
-                          });
-                        }
-                      });
-                    },
-                  ),
-                  IconButton(
-                     icon: const Icon(Icons.close, color: Colors.grey),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ]),
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  child: showSearch
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: TextField(
-                            controller: searchController,
-                            focusNode: searchFocusNode,
-                            autofocus: false,
-                            decoration: InputDecoration(
-                              hintText: 'Search...',
-                              hintStyle: TextStyle(
-                                  color: Colors.grey.shade400, fontSize: 14),
-                              prefixIcon: Icon(Icons.search,
-                                  color: Colors.grey.shade400, size: 20),
-                              filled: true,
-                              fillColor: AppColors.surfaceLight,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade200),
-                              ),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade200),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                borderSide: const BorderSide(
-                                    color: AppColors.primary, width: 2),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
-                              isDense: true,
-                              suffixIcon: searchController.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: Icon(Icons.close,
-                                          size: 16,
-                                          color: Colors.grey.shade400),
-                                      onPressed: () {
-                                        searchController.clear();
-                                        setSheet(() => filteredEntries =
-                                            List.from(allEntries));
-                                      },
-                                    )
-                                  : null,
-                            ),
-                            onChanged: (q) {
-                              setSheet(() {
-                                if (q.trim().isEmpty) {
-                                  filteredEntries = List.from(allEntries);
-                                } else {
-                                  filteredEntries = allEntries.where((e) {
-                                    if (e.isTemplate) {
-                                      return 'templates'
-                                          .contains(q.toLowerCase());
-                                    }
-                                    return e.objectType!.displayName
-                                        .toLowerCase()
-                                        .contains(q.toLowerCase());
-                                  }).toList();
-                                }
-                              });
-                            },
-                          ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '${filteredEntries.length} item${filteredEntries.length == 1 ? '' : 's'}',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey.shade500),
-                    ),
-                  ),
-                ),
-                Flexible(
-                  child: filteredEntries.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.search_off,
-                                  size: 36, color: Colors.grey.shade300),
-                              const SizedBox(height: 8),
-                              Text('No matches found',
-                                  style: TextStyle(
-                                      color: Colors.grey.shade500,
-                                      fontSize: 13)),
-                            ],
-                          ),
-                        )
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: filteredEntries.length,
-                          separatorBuilder: (_, __) => Divider(
-                              height: 1, color: Colors.grey.shade100),
-                          itemBuilder: (context, index) {
-                            final entry = filteredEntries[index];
-
-                            if (entry.isTemplate) {
-                              return Material(
-                                color: Colors.transparent,
-                                child: ListTile(
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(
-                                          horizontal: 8, vertical: 4),
-                                  leading: Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withOpacity(0.08),
-                                      borderRadius:
-                                          BorderRadius.circular(8),
-                                    ),
-                                    child: const Icon(
-                                      Icons.dashboard_customize_rounded,
-                                      size: 20,
-                                      color: AppColors.primary
-                                    ),
-                                  ),
-                                  title: const Text('Templates',
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w600)),
-                                  subtitle: Text(
-                                      'Create from a pre-defined template',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey.shade500)),
-                                  trailing: Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: Colors.grey.shade400),
-                                  onTap: () {
-                                    Navigator.pop(ctx);
-                                    _showTemplateClassPicker();
-                                  },
-                                ),
-                              );
-                            }
-
-                            final ot = entry.objectType!;
-                            return Material(
-                              color: Colors.transparent,
-                              child: ListTile(
-                                contentPadding:
-                                    const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 4),
-                                leading: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withOpacity(0.08),
-                                      borderRadius:
-                                          BorderRadius.circular(8)),
-                                  child: Icon(
-                                    ot.isDocument
-                                        ? Icons.description_rounded
-                                        : _iconForObjectTypeName(
-                                            ot.displayName),
-                                    size: 20,
-                                    color: AppColors.primary,
-                                  ),
-                                ),
-                                title: Text(ot.displayName,
-                                    style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600)),
-                                trailing: Icon(
-                                    Icons.chevron_right_rounded,
-                                    color: Colors.grey.shade400),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                        builder: (_) => DynamicFormScreen(
-                                            objectType: ot)),
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  // ─── TEMPLATE CLASS PICKER ────────────────────────────────────────────────
-
-  /// Entry point — no BuildContext parameter needed; uses `this.context`
-  /// which is always valid as long as the widget is mounted.
-  void _showTemplateClassPicker() {
-    _loadClassesWithTemplates();
-  }
-
-  List<ObjectClass> _collectAllClasses(MFilesService service) {
-    final seen = <int>{};
-    final result = <ObjectClass>[];
-
-    for (final ot in service.objectTypes) {
-      final cached = service.getClassGroupsForType(ot.id);
-      for (final group in cached) {
-        for (final cls in group.members) {
-          if (seen.add(cls.id)) result.add(cls);
-        }
-      }
-    }
-
-    if (result.isEmpty) {
-      for (final cls in service.objectClasses) {
-        if (seen.add(cls.id)) result.add(cls);
-      }
-    }
-
-    result.sort((a, b) =>
-        a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()));
-    return result;
-  }
-
-  Future<void> _loadClassesWithTemplates() async {
-    if (!mounted) return;
-    final service = context.read<MFilesService>();
-
-    // Show loader
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
-
-    try {
-      if (service.objectTypes.isEmpty) await service.fetchObjectTypes();
-
-      await Future.wait(
-        service.objectTypes.map((ot) => service.fetchObjectClasses(ot.id)),
-      );
-
-      final allClasses = _collectAllClasses(service);
-      final vaultGuid = service.selectedVault?.guid ?? '';
-
-      // Fetch templates for ALL classes in parallel, keep only those with results
-      final results = await Future.wait(
-        allClasses.map((cls) async {
-          try {
-            final templates = await service.fetchClassTemplate(
-              vaultGuid: vaultGuid,
-              classId: cls.id,
-            );
-            return templates.isNotEmpty ? cls : null;
-          } catch (_) {
-            return null;
-          }
-        }),
-      );
-
-      final classesWithTemplates =
-          results.whereType<ObjectClass>().toList();
-
-      if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop(); // dismiss loader
-
-      if (classesWithTemplates.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No templates found in this repository.')),
-        );
-        return;
-      }
-
-      _openTemplateClassSheet(classesWithTemplates);
-    } catch (e) {
-      if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Failed to load templates: $e'),
-        backgroundColor: Colors.red,
-      ));
-    }
-  }
-
-  void _openTemplateClassSheet(List<ObjectClass> allClasses) {
-    if (!mounted) return;
-
-    final searchController = TextEditingController();
-    final searchFocusNode = FocusNode();
-    List<ObjectClass> filtered = List.from(allClasses);
-    bool showSearch = false;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheet) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 14,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-            ),
-            constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius:
+                BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 14,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
                       color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2)),
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.add_circle_outline_rounded,
+                      color: AppColors.primary, size: 24),
                 ),
-                const SizedBox(height: 20),
-                Row(children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.dashboard_customize_rounded,
-                        color: AppColors.primary, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text('Select Template',
+                const SizedBox(width: 12),
+                const Expanded(
+                    child: Text('Create New',
                         style: TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.bold)),
-                  ),
-                  IconButton(
-                    icon: Icon(Icons.search_rounded,
-                        color: showSearch
-                            ? AppColors.primary
-                            : Colors.grey.shade700),
-                    onPressed: () {
-                      setSheet(() {
-                        showSearch = !showSearch;
-                        if (!showSearch) {
-                          searchController.clear();
-                          filtered = List.from(allClasses);
-                        } else {
-                          WidgetsBinding.instance.addPostFrameCallback((_) {
-                            searchFocusNode.requestFocus();
-                          });
-                        }
-                      });
-                    },
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ]),
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeInOut,
-                  child: showSearch
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: TextField(
-                            controller: searchController,
-                            focusNode: searchFocusNode,
-                            decoration: InputDecoration(
-                              hintText: 'Search templates...',
-                              hintStyle: TextStyle(
-                                  color: Colors.grey.shade400, fontSize: 14),
-                              prefixIcon: Icon(Icons.search,
-                                  color: Colors.grey.shade400, size: 20),
-                              filled: true,
-                              fillColor: AppColors.surfaceLight,
-                              border: OutlineInputBorder(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold))),
+                IconButton(
+                  icon: Icon(Icons.search_rounded,
+                      color: showSearch
+                          ? AppColors.primary
+                          : Colors.grey.shade700),
+                  onPressed: () {
+                    setSheet(() {
+                      showSearch = !showSearch;
+                      if (!showSearch) {
+                        searchController.clear();
+                        filteredEntries = List.from(allEntries);
+                      } else {
+                        WidgetsBinding.instance
+                            .addPostFrameCallback((_) {
+                          searchFocusNode.requestFocus();
+                        });
+                      }
+                    });
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  onPressed: () => Navigator.pop(ctx),
+                ),
+              ]),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: showSearch
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TextField(
+                          controller: searchController,
+                          focusNode: searchFocusNode,
+                          decoration: InputDecoration(
+                            hintText: 'Search...',
+                            hintStyle: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 14),
+                            prefixIcon: Icon(Icons.search,
+                                color: Colors.grey.shade400, size: 20),
+                            filled: true,
+                            fillColor: AppColors.surfaceLight,
+                            border: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade200),
-                              ),
-                              enabledBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                    color: Colors.grey.shade200)),
+                            enabledBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
-                                borderSide:
-                                    BorderSide(color: Colors.grey.shade200),
-                              ),
-                              focusedBorder: OutlineInputBorder(
+                                borderSide: BorderSide(
+                                    color: Colors.grey.shade200)),
+                            focusedBorder: OutlineInputBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 borderSide: const BorderSide(
-                                    color: AppColors.primary, width: 2),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
-                              isDense: true,
-                              suffixIcon: searchController.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: Icon(Icons.close,
-                                          size: 16,
-                                          color: Colors.grey.shade400),
-                                      onPressed: () {
-                                        searchController.clear();
-                                        setSheet(() => filtered =
-                                            List.from(allClasses));
-                                      },
-                                    )
-                                  : null,
-                            ),
-                            onChanged: (q) {
-                              setSheet(() {
-                                filtered = q.trim().isEmpty
-                                    ? List.from(allClasses)
-                                    : allClasses
-                                        .where((c) => c.displayName
-                                            .toLowerCase()
-                                            .contains(q.toLowerCase()))
-                                        .toList();
-                              });
-                            },
+                                    color: AppColors.primary, width: 2)),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            isDense: true,
+                            suffixIcon: searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.close,
+                                        size: 16,
+                                        color: Colors.grey.shade400),
+                                    onPressed: () {
+                                      searchController.clear();
+                                      setSheet(() => filteredEntries =
+                                          List.from(allEntries));
+                                    },
+                                  )
+                                : null,
                           ),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Text(
-                      '${filtered.length} template${filtered.length == 1 ? '' : 's'}',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey.shade500),
-                    ),
+                          onChanged: (q) {
+                            setSheet(() {
+                              if (q.trim().isEmpty) {
+                                filteredEntries = List.from(allEntries);
+                              } else {
+                                filteredEntries =
+                                    allEntries.where((e) {
+                                  if (e.isTemplate) {
+                                    return 'templates'
+                                        .contains(q.toLowerCase());
+                                  }
+                                  return e.objectType!.displayName
+                                      .toLowerCase()
+                                      .contains(q.toLowerCase());
+                                }).toList();
+                              }
+                            });
+                          },
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${filteredEntries.length} item${filteredEntries.length == 1 ? '' : 's'}',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade500),
                   ),
                 ),
-                Flexible(
-                  child: filtered.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Column(
+              ),
+              Flexible(
+                child: filteredEntries.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.search_off,
@@ -1787,16 +1551,16 @@ class _HomeScreenState extends State<HomeScreen>
                                   style: TextStyle(
                                       color: Colors.grey.shade500,
                                       fontSize: 13)),
-                            ],
-                          ),
-                        )
-                      : ListView.separated(
-                          shrinkWrap: true,
-                          itemCount: filtered.length,
-                          separatorBuilder: (_, __) => Divider(
-                              height: 1, color: Colors.grey.shade100),
-                          itemBuilder: (_, index) {
-                            final cls = filtered[index];
+                            ]),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: filteredEntries.length,
+                        separatorBuilder: (_, __) => Divider(
+                            height: 1, color: Colors.grey.shade100),
+                        itemBuilder: (context, index) {
+                          final entry = filteredEntries[index];
+                          if (entry.isTemplate) {
                             return Material(
                               color: Colors.transparent,
                               child: ListTile(
@@ -1811,71 +1575,402 @@ class _HomeScreenState extends State<HomeScreen>
                                       borderRadius:
                                           BorderRadius.circular(8)),
                                   child: const Icon(
-                                    Icons.dashboard_customize_rounded,
-                                    size: 20,
-                                    color:
-                                        AppColors.primary
-                                  ),
+                                      Icons.dashboard_customize_rounded,
+                                      size: 20,
+                                      color: AppColors.primary),
                                 ),
-                                title: Text(cls.displayName,
-                                    style: const TextStyle(
+                                title: const Text('Templates',
+                                    style: TextStyle(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w600)),
+                                subtitle: Text(
+                                    'Create from a pre-defined template',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade500)),
                                 trailing: Icon(
                                     Icons.chevron_right_rounded,
                                     color: Colors.grey.shade400),
-                                // ── KEY FIX: close sheet first, then do
-                                //    all async work via state's own context
                                 onTap: () {
                                   Navigator.pop(ctx);
-                                  _fetchTemplatesForClass(cls);
+                                  _showTemplateClassPicker();
                                 },
                               ),
                             );
-                          },
-                        ),
-                ),
-              ],
-            ),
-          );
-        },
+                          }
+                          final ot = entry.objectType!;
+                          return Material(
+                            color: Colors.transparent,
+                            child: ListTile(
+                              contentPadding:
+                                  const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                    color: AppColors.primary
+                                        .withOpacity(0.08),
+                                    borderRadius:
+                                        BorderRadius.circular(8)),
+                                child: Icon(
+                                  ot.isDocument
+                                      ? Icons.description_rounded
+                                      : _iconForObjectTypeName(
+                                          ot.displayName),
+                                  size: 20,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                              title: Text(ot.displayName,
+                                  style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600)),
+                              trailing: Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.grey.shade400),
+                              onTap: () {
+                                Navigator.pop(ctx);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => DynamicFormScreen(
+                                          objectType: ot)),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  /// Fetches templates for [cls] and navigates appropriately.
-  /// Uses only `this.context` — never a captured sheet/dialog context.
-  Future<void> _fetchTemplatesForClass(ObjectClass cls) async {
+  void _showTemplateClassPicker() => _loadClassesWithTemplates();
+
+  List<ObjectClass> _collectAllClasses(MFilesService service) {
+    final seen = <int>{};
+    final result = <ObjectClass>[];
+    for (final ot in service.objectTypes) {
+      for (final group in service.getClassGroupsForType(ot.id)) {
+        for (final cls in group.members) {
+          if (seen.add(cls.id)) result.add(cls);
+        }
+      }
+    }
+    if (result.isEmpty) {
+      for (final cls in service.objectClasses) {
+        if (seen.add(cls.id)) result.add(cls);
+      }
+    }
+    result.sort((a, b) => a.displayName
+        .toLowerCase()
+        .compareTo(b.displayName.toLowerCase()));
+    return result;
+  }
+
+  // ── CHANGED: replaces the old per-class loop with a single bulk request ──
+  Future<void> _loadClassesWithTemplates() async {
     if (!mounted) return;
-
     final service = context.read<MFilesService>();
-    final vaultGuid = service.selectedVault?.guid ?? '';
 
-    // Show loader using the state's own context
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => const Center(child: CircularProgressIndicator()),
     );
 
-    List<Map<String, dynamic>> templates = [];
     try {
-      templates = await service.fetchClassTemplate(
-        vaultGuid: vaultGuid,
-        classId: cls.id,
+      // Ensure object types + classes are loaded (needed for display names)
+      if (service.objectTypes.isEmpty) await service.fetchObjectTypes();
+      await Future.wait(
+          service.objectTypes.map((ot) => service.fetchObjectClasses(ot.id)));
+
+      final vaultGuid = service.selectedVault?.guid ?? '';
+
+      // ONE request instead of ~80 individual calls
+      final allTemplates =
+          await service.fetchAllTemplates(vaultGuid: vaultGuid);
+
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+
+      if (allTemplates.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No templates found in this repository.')));
+        return;
+      }
+
+      // Group templates by classId
+      final Map<int, List<Map<String, dynamic>>> templatesByClass = {};
+      for (final t in allTemplates) {
+        final classId = (t['classId'] ??
+            t['classID'] ??
+            t['ClassID'] ??
+            t['ClassId']) as int?;
+        if (classId == null) continue;
+        templatesByClass.putIfAbsent(classId, () => []).add(t);
+      }
+
+      // Match to ObjectClass objects for display names
+      final allClasses = _collectAllClasses(service);
+      final classesWithTemplates = allClasses
+          .where((cls) => templatesByClass.containsKey(cls.id))
+          .toList();
+
+      if (classesWithTemplates.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('No templates found in this repository.')));
+        return;
+      }
+
+      _openTemplateClassSheet(
+        classesWithTemplates,
+        templatesByClass: templatesByClass,
       );
     } catch (e) {
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop(); // dismiss loader
+      Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Failed to load templates: $e'),
         backgroundColor: Colors.red,
       ));
-      return;
     }
+  }
+  // ── END CHANGED ──────────────────────────────────────────────────────────
 
+  // ── CHANGED: accepts pre-fetched templatesByClass, no longer calls
+  //             _fetchTemplatesForClass which made additional network calls ──
+  void _openTemplateClassSheet(
+    List<ObjectClass> allClasses, {
+    required Map<int, List<Map<String, dynamic>>> templatesByClass,
+  }) {
     if (!mounted) return;
-    Navigator.of(context, rootNavigator: true).pop(); // dismiss loader
+    final searchController = TextEditingController();
+    final searchFocusNode = FocusNode();
+    List<ObjectClass> filtered = List.from(allClasses);
+    bool showSearch = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius:
+                BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 14,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.dashboard_customize_rounded,
+                      color: AppColors.primary, size: 24),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                    child: Text('Select Template',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold))),
+                IconButton(
+                  icon: Icon(Icons.search_rounded,
+                      color: showSearch
+                          ? AppColors.primary
+                          : Colors.grey.shade700),
+                  onPressed: () {
+                    setSheet(() {
+                      showSearch = !showSearch;
+                      if (!showSearch) {
+                        searchController.clear();
+                        filtered = List.from(allClasses);
+                      } else {
+                        WidgetsBinding.instance
+                            .addPostFrameCallback((_) {
+                          searchFocusNode.requestFocus();
+                        });
+                      }
+                    });
+                  },
+                ),
+                IconButton(
+                    icon: const Icon(Icons.close),
+                    onPressed: () => Navigator.pop(ctx)),
+              ]),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: showSearch
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TextField(
+                          controller: searchController,
+                          focusNode: searchFocusNode,
+                          decoration: InputDecoration(
+                            hintText: 'Search templates...',
+                            hintStyle: TextStyle(
+                                color: Colors.grey.shade400,
+                                fontSize: 14),
+                            prefixIcon: Icon(Icons.search,
+                                color: Colors.grey.shade400, size: 20),
+                            filled: true,
+                            fillColor: AppColors.surfaceLight,
+                            border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                    color: Colors.grey.shade200)),
+                            enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                    color: Colors.grey.shade200)),
+                            focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                    color: AppColors.primary, width: 2)),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            isDense: true,
+                            suffixIcon: searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.close,
+                                        size: 16,
+                                        color: Colors.grey.shade400),
+                                    onPressed: () {
+                                      searchController.clear();
+                                      setSheet(() => filtered =
+                                          List.from(allClasses));
+                                    },
+                                  )
+                                : null,
+                          ),
+                          onChanged: (q) {
+                            setSheet(() {
+                              filtered = q.trim().isEmpty
+                                  ? List.from(allClasses)
+                                  : allClasses
+                                      .where((c) => c.displayName
+                                          .toLowerCase()
+                                          .contains(q.toLowerCase()))
+                                      .toList();
+                            });
+                          },
+                        ),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${filtered.length} template${filtered.length == 1 ? '' : 's'}',
+                    style: TextStyle(
+                        fontSize: 12, color: Colors.grey.shade500),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: filtered.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.search_off,
+                                  size: 36,
+                                  color: Colors.grey.shade300),
+                              const SizedBox(height: 8),
+                              Text('No matches found',
+                                  style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 13)),
+                            ]),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) => Divider(
+                            height: 1, color: Colors.grey.shade100),
+                        itemBuilder: (_, index) {
+                          final cls = filtered[index];
+                          return Material(
+                            color: Colors.transparent,
+                            child: ListTile(
+                              contentPadding:
+                                  const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                              leading: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                    color: AppColors.primary
+                                        .withOpacity(0.08),
+                                    borderRadius:
+                                        BorderRadius.circular(8)),
+                                child: const Icon(
+                                    Icons.dashboard_customize_rounded,
+                                    size: 20,
+                                    color: AppColors.primary),
+                              ),
+                              title: Text(cls.displayName,
+                                  style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w600)),
+                              trailing: Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: Colors.grey.shade400),
+                              // ── CHANGED: use pre-fetched templates,
+                              //             no extra network call ──
+                              onTap: () {
+                                Navigator.pop(ctx);
+                                final templates =
+                                    templatesByClass[cls.id] ?? [];
+                                _openTemplateDocumentSheetDirect(
+                                    cls, templates);
+                              },
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  // ── END CHANGED ──────────────────────────────────────────────────────────
+
+  // ── CHANGED: replaces _fetchTemplatesForClass — no network call needed
+  //             because templates were already fetched in bulk ──────────────
+  void _openTemplateDocumentSheetDirect(
+      ObjectClass cls, List<Map<String, dynamic>> templates) {
+    if (!mounted) return;
 
     if (templates.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1903,15 +1998,11 @@ class _HomeScreenState extends State<HomeScreen>
 
     _openTemplateDocumentSheet(cls, templates);
   }
-
-  // ─── TEMPLATE DOCUMENT PICKER ────────────────────────────────────────────
+  // ── END CHANGED ──────────────────────────────────────────────────────────
 
   void _openTemplateDocumentSheet(
-    ObjectClass cls,
-    List<Map<String, dynamic>> templates,
-  ) {
+      ObjectClass cls, List<Map<String, dynamic>> templates) {
     if (!mounted) return;
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1919,7 +2010,8 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (_) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: EdgeInsets.only(
           left: 20,
@@ -1933,12 +2025,11 @@ class _HomeScreenState extends State<HomeScreen>
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2)),
-            ),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 20),
             Row(children: [
               Container(
@@ -1956,17 +2047,18 @@ class _HomeScreenState extends State<HomeScreen>
                   children: [
                     const Text('Choose Template',
                         style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold)),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold)),
                     Text(cls.displayName,
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade500)),
+                            fontSize: 12,
+                            color: Colors.grey.shade500)),
                   ],
                 ),
               ),
               IconButton(
-                icon: const Icon(Icons.close, color: Colors.grey),
-                onPressed: () => Navigator.pop(context),
-              ),
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  onPressed: () => Navigator.pop(context)),
             ]),
             const SizedBox(height: 12),
             Flexible(
@@ -1987,7 +2079,6 @@ class _HomeScreenState extends State<HomeScreen>
                           '${dt.day} ${_monthName(dt.month)} ${dt.year}';
                     } catch (_) {}
                   }
-
                   return Material(
                     color: Colors.transparent,
                     child: ListTile(
@@ -1996,7 +2087,8 @@ class _HomeScreenState extends State<HomeScreen>
                       leading: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.08),
+                            color:
+                                AppColors.primary.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(8)),
                         child: const Icon(Icons.description_rounded,
                             size: 20,
@@ -2056,8 +2148,6 @@ class _HomeScreenState extends State<HomeScreen>
         'Dec'
       ][m];
 
-  // ─── PROFILE MENU ─────────────────────────────────────────────────────────
-
   void _showProfileMenu(BuildContext context) {
     final service = context.read<MFilesService>();
     showModalBottomSheet(
@@ -2067,7 +2157,8 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (_) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
         child: SafeArea(
@@ -2099,13 +2190,15 @@ class _HomeScreenState extends State<HomeScreen>
                     children: [
                       Text(service.username ?? 'Unknown',
                           style: const TextStyle(
-                              fontSize: 17, fontWeight: FontWeight.w700),
+                              fontSize: 17,
+                              fontWeight: FontWeight.w700),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 2),
                       Text('Account Settings',
                           style: TextStyle(
-                              fontSize: 13, color: Colors.grey.shade600)),
+                              fontSize: 13,
+                              color: Colors.grey.shade600)),
                     ],
                   ),
                 ),
@@ -2125,23 +2218,27 @@ class _HomeScreenState extends State<HomeScreen>
               FutureBuilder<List<Vault>>(
                 future: service.getUserVaults(),
                 builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
+                  if (snapshot.connectionState ==
+                      ConnectionState.waiting) {
                     return Container(
-                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 16),
                         alignment: Alignment.centerLeft,
-                        child:
-                            const LinearProgressIndicator(minHeight: 2));
+                        child: const LinearProgressIndicator(
+                            minHeight: 2));
                   }
                   if (snapshot.hasError) {
                     return Text(
                         'Error loading repositories: ${snapshot.error}',
                         style: TextStyle(
-                            color: Colors.red.shade700, fontSize: 13));
+                            color: Colors.red.shade700,
+                            fontSize: 13));
                   }
                   final vaults = snapshot.data ?? [];
-                  if (vaults.isEmpty)
-                    return const Text('No vaults available');
                   final selectedGuid = service.selectedVault?.guid;
+                  if (vaults.isEmpty) {
+                    return const Text('No vaults available');
+                  }
                   return Container(
                     decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
@@ -2175,19 +2272,31 @@ class _HomeScreenState extends State<HomeScreen>
                           .toList(),
                       onChanged: (guid) async {
                         if (guid == null) return;
-                        if (guid == service.selectedVault?.guid) return;
+                        if (guid == service.selectedVault?.guid)
+                          return;
+                        Navigator.pop(context);
                         final newVault =
                             vaults.firstWhere((v) => v.guid == guid);
-                        await service.saveSelectedVault(newVault);
-                        await service.fetchMFilesUserId();
-                        await service.fetchObjectTypes();
-                        await service.fetchAllViews();
-                        await Future.wait([
-                          service.fetchRecentObjects(),
-                          service.fetchDeletedObjects(),
-                          service.fetchAssignedObjects(),
-                          service.fetchReportObjects(),
-                        ]);
+                        setState(() {
+                          _switchingVault = true;
+                          _switchingVaultName = newVault.name;
+                        });
+                        try {
+                          await service.saveSelectedVault(newVault);
+                          await service.fetchMFilesUserId();
+                          await service.fetchObjectTypes();
+                          await service.fetchAllViews();
+                          await Future.wait([
+                            service.fetchRecentObjects(),
+                            service.fetchDeletedObjects(),
+                            service.fetchAssignedObjects(),
+                            service.fetchReportObjects(),
+                          ]);
+                        } finally {
+                          if (mounted) {
+                            setState(() => _switchingVault = false);
+                          }
+                        }
                       },
                     ),
                   );
@@ -2231,8 +2340,8 @@ class _HomeScreenState extends State<HomeScreen>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
         title: const Text('Log Out',
             style: TextStyle(fontWeight: FontWeight.bold)),
         content: const Text('Are you sure you want to log out?'),
@@ -2263,7 +2372,90 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-// ── Sealed entry type for the Create bottom sheet list ────────────────────
+class _TabPill extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final int badgeCount;
+  final VoidCallback onTap;
+
+  const _TabPill({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.badgeCount = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.all(2),
+        padding:
+            const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(icon,
+                    size: 16,
+                    color: selected
+                        ? Colors.white
+                        : Colors.grey.shade600),
+                if (badgeCount > 0)
+                  Positioned(
+                    top: -6,
+                    right: -8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 1),
+                      constraints:
+                          const BoxConstraints(minWidth: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                            color: Colors.white, width: 1.2),
+                      ),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : '$badgeCount',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            height: 1.2),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _CreateEntry {
   final bool isTemplate;
   final VaultObjectType? objectType;

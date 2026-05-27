@@ -1,11 +1,13 @@
 // ignore_for_file: deprecated_member_use
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/widgets/lookup_field.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
+
 class TemplateFormScreen extends StatefulWidget {
   final int classId;
   final String className;
@@ -42,6 +44,9 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   final Map<int, dynamic> _values = {};
   final Map<int, List<dynamic>> _selectedLookupItems = {};
 
+  // ── FIX 3: track boolean field states separately ──
+  final Map<int, bool?> _boolValues = {};
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +62,8 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   bool _isReadOnly(Map<String, dynamic> prop) {
     final id = prop['propId'] as int;
     final isAutomatic = prop['isAutomatic'] as bool? ?? false;
-    final canEdit = prop['userPermission']?['editPermission'] as bool? ?? true;
+    final canEdit =
+        prop['userPermission']?['editPermission'] as bool? ?? true;
     return isAutomatic || _systemPropIds.contains(id) || !canEdit;
   }
 
@@ -68,7 +74,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   Future<void> _loadProps() async {
     final service = context.read<MFilesService>();
     final vaultGuid = service.selectedVault?.guid ?? '';
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
 
     try {
       final data = await service.fetchClassTemplateProps(
@@ -91,8 +100,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             break;
           case 'MFDatatypeInteger':
             _controllers[id] = TextEditingController(
-              text: value.isNotEmpty && int.tryParse(value.split('.').first) != null
-                  ? value.split('.').first : '',
+              text: value.isNotEmpty &&
+                      int.tryParse(value.split('.').first) != null
+                  ? value.split('.').first
+                  : '',
+            );
+            break;
+          // ── FIX 1a: handle Floating like text ──
+          case 'MFDatatypeFloating':
+            _controllers[id] = TextEditingController(
+              text: value.isNotEmpty && double.tryParse(value) != null
+                  ? value
+                  : '',
             );
             break;
           case 'MFDatatypeDate':
@@ -102,34 +121,122 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           case 'MFDatatypeMultiSelectLookup':
             _values[id] = null;
             break;
+          // ── FIX 1b: handle Boolean ──
+          case 'MFDatatypeBoolean':
+            _boolValues[id] = null; // null = not set
+            break;
           default:
             _controllers[id] = TextEditingController(text: value);
             break;
         }
       }
 
-      setState(() { _props = data; _loading = false; });
+      setState(() {
+        _props = data;
+        _loading = false;
+      });
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
     }
   }
 
   String? _normaliseDateValue(String raw) {
     if (raw.isEmpty) return null;
-    if (RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(raw)) return raw.substring(0, 10);
+    if (RegExp(r'^\d{4}-\d{2}-\d{2}').hasMatch(raw)) {
+      return raw.substring(0, 10);
+    }
     try {
       final parts = raw.split('/');
       if (parts.length == 3) {
         final m = int.parse(parts[0]);
         final d = int.parse(parts[1]);
         final y = int.parse(parts[2].split(' ')[0]);
-        return '${y.toString().padLeft(4,'0')}-${m.toString().padLeft(2,'0')}-${d.toString().padLeft(2,'0')}';
+        return '${y.toString().padLeft(4, '0')}-'
+            '${m.toString().padLeft(2, '0')}-'
+            '${d.toString().padLeft(2, '0')}';
       }
     } catch (_) {}
     return null;
   }
 
+  // The backend deserializes Properties[n].value as System.String regardless
+  // of the property type — it handles conversion server-side.  Every value
+  // must therefore arrive as a JSON string.
+  //
+  // Encoding rules agreed with the backend:
+  //   Text / MultiLine  → plain string
+  //   Integer           → "42"
+  //   Floating          → "5.0"   (decimal point always present)
+  //   Date              → "yyyy-MM-dd"
+  //   Lookup            → "64"    (single id as string)
+  //   MultiSelectLookup → "2,19"  (comma-separated ids, no spaces)
+  //   Boolean           → "true" | "false"
+  Map<String, dynamic> _buildPropEntry({
+    required int id,
+    required String type,
+    required dynamic rawValue,
+    required bool isRequired,
+    required Map<String, dynamic> prop,
+  }) {
+    String stringValue;
+
+    switch (type) {
+      case 'MFDatatypeInteger':
+        stringValue = (int.tryParse(rawValue.toString()) ?? 0).toString();
+        break;
+      case 'MFDatatypeFloating':
+        final d = double.tryParse(rawValue.toString()) ?? 0.0;
+        // Always include decimal point so the backend recognises it as numeric
+        stringValue = d.toString().contains('.') ? d.toString() : '$d.0';
+        break;
+      case 'MFDatatypeDate':
+        // Already "yyyy-MM-dd" coming in
+        stringValue = rawValue.toString();
+        break;
+      case 'MFDatatypeLookup':
+        final intId = rawValue is int
+            ? rawValue
+            : int.tryParse(rawValue.toString()) ?? 0;
+        stringValue = intId.toString();
+        break;
+      case 'MFDatatypeMultiSelectLookup':
+        if (rawValue is List) {
+          stringValue = rawValue
+              .map((e) => e is int ? e : int.tryParse('$e') ?? 0)
+              .join(',');
+        } else {
+          stringValue = rawValue.toString();
+        }
+        break;
+      case 'MFDatatypeBoolean':
+        if (rawValue is bool) {
+          stringValue = rawValue.toString(); // "true" / "false"
+        } else {
+          final s = rawValue.toString().toLowerCase().trim();
+          stringValue =
+              (s == 'true' || s == 'yes' || s == '1') ? 'true' : 'false';
+        }
+        break;
+      default:
+        stringValue = rawValue.toString();
+    }
+
+    return {
+      'propId': id,
+      'propertytype': type,
+      'value': stringValue, // always a String
+      'isRequired': isRequired,
+      'isHidden': prop['isHidden'] ?? false,
+      'isAutomatic': prop['isAutomatic'] ?? false,
+      'title': prop['title'] ?? '',
+    };
+  }
+
   Future<void> _submit() async {
+    // Validation
     for (final prop in _props) {
       if (!_isVisible(prop) || _isReadOnly(prop)) continue;
       final required = prop['isRequired'] as bool? ?? false;
@@ -145,11 +252,14 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         isEmpty = val == null;
       } else if (type == 'MFDatatypeMultiSelectLookup') {
         isEmpty = val == null || (val is List && val.isEmpty);
+      } else if (type == 'MFDatatypeBoolean') {
+        isEmpty = _boolValues[id] == null;
       } else {
         isEmpty = val == null || val.toString().trim().isEmpty;
       }
       if (isEmpty) {
-        _showSnack('Required field "${prop['title']}" is missing', isError: true);
+        _showSnack('Required field "${prop['title']}" is missing',
+            isError: true);
         return;
       }
     }
@@ -160,49 +270,81 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
     try {
       final propsPayload = <Map<String, dynamic>>[];
+
       for (final prop in _props) {
         final id = prop['propId'] as int;
         final type = prop['propertytype'] as String? ?? '';
-        (prop['value'] ?? '').toString();
         final isRequired = prop['isRequired'] as bool? ?? false;
-        String resolvedValue;
 
-        if (_isReadOnly(prop)) {
-          continue;
-        } else if (type == 'MFDatatypeText' || type == 'MFDatatypeMultiLineText' || type == 'MFDatatypeInteger') {
-          resolvedValue = _controllers[id]?.text.trim() ?? '';
-          if (resolvedValue.isEmpty && !isRequired) continue;
+        if (_isReadOnly(prop)) continue;
+
+        dynamic rawValue;
+
+        if (type == 'MFDatatypeText' ||
+            type == 'MFDatatypeMultiLineText' ||
+            type == 'MFDatatypeInteger' ||
+            type == 'MFDatatypeFloating') {
+          rawValue = _controllers[id]?.text.trim() ?? '';
+          if ((rawValue as String).isEmpty && !isRequired) continue;
         } else if (type == 'MFDatatypeLookup') {
-          final val = _values[id];
-          if (val == null) { if (!isRequired) continue; resolvedValue = ''; }
-          else resolvedValue = val.toString();
+          rawValue = _values[id];
+          if (rawValue == null) {
+            if (!isRequired) continue;
+            rawValue = 0;
+          }
         } else if (type == 'MFDatatypeMultiSelectLookup') {
-          final val = _values[id];
-          if (val is List && val.isNotEmpty) resolvedValue = val.join(',');
-          else { if (!isRequired) continue; resolvedValue = ''; }
+          rawValue = _values[id];
+          if (rawValue == null ||
+              (rawValue is List && rawValue.isEmpty)) {
+            if (!isRequired) continue;
+            rawValue = <int>[];
+          }
         } else if (type == 'MFDatatypeDate') {
-          resolvedValue = (_values[id] ?? '').toString();
-          if (resolvedValue.isEmpty && !isRequired) continue;
+          rawValue = _values[id] ?? '';
+          if ((rawValue as String).isEmpty && !isRequired) continue;
+        } else if (type == 'MFDatatypeBoolean') {
+          // ── FIX 1f: use _boolValues for booleans ──
+          final bv = _boolValues[id];
+          if (bv == null && !isRequired) continue;
+          rawValue = bv ?? false;
         } else {
-          resolvedValue = (_values[id] ?? _controllers[id]?.text ?? '').toString();
-          if (resolvedValue.isEmpty && !isRequired) continue;
+          rawValue = _values[id] ?? _controllers[id]?.text ?? '';
+          if (rawValue.toString().isEmpty && !isRequired) continue;
         }
 
-        propsPayload.add({
-          'propId': id, 'propertytype': type, 'value': resolvedValue,
-          'isRequired': isRequired, 'isHidden': prop['isHidden'] ?? false,
-          'isAutomatic': prop['isAutomatic'] ?? false, 'title': prop['title'] ?? '',
-        });
+        propsPayload.add(_buildPropEntry(
+          id: id,
+          type: type,
+          rawValue: rawValue,
+          isRequired: isRequired,
+          prop: prop,
+        ));
+      }
+
+      // Debug log
+      if (kDebugMode) {
+        debugPrint('📤 Template payload props:');
+        for (final p in propsPayload) {
+          debugPrint(
+              '   ${p['title']}(${p['propertytype']}) = '
+              '${p['value']} [${p['value'].runtimeType}]');
+        }
       }
 
       final payload = {
-        'VaultGuid': vaultGuid, 'ClassID': widget.classId,
-        'ObjectId': widget.templateObjectId, 'UserID': service.currentUserId,
+        'VaultGuid': vaultGuid,
+        'ClassID': widget.classId,
+        'ObjectId': widget.templateObjectId,
+        'UserID': service.currentUserId,
         'Properties': propsPayload,
+        'mfilesCreate': true,
       };
 
       await service.createObjectFromTemplate(payload);
-      if (mounted) { _showSnack('Created successfully from template!'); Navigator.pop(context, true); }
+      if (mounted) {
+        _showSnack('Created successfully from template!');
+        Navigator.pop(context, true);
+      }
     } catch (e) {
       setState(() => _submitting = false);
       if (mounted) _showSnack('Error: $e', isError: true);
@@ -213,12 +355,20 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Row(children: [
-        Icon(isError ? Icons.error_outline : Icons.check_circle_outline, color: Colors.white, size: 18),
-        const SizedBox(width: 8), Expanded(child: Text(message)),
+        Icon(
+            isError
+                ? Icons.error_outline
+                : Icons.check_circle_outline,
+            color: Colors.white,
+            size: 18),
+        const SizedBox(width: 8),
+        Expanded(child: Text(message)),
       ]),
-      backgroundColor: isError ? Colors.red.shade600 : Colors.green.shade600,
+      backgroundColor:
+          isError ? Colors.red.shade600 : Colors.green.shade600,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       margin: const EdgeInsets.all(16),
       duration: Duration(seconds: isError ? 4 : 2),
     ));
@@ -229,17 +379,27 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     DateTime initial;
     try {
       initial = existing != null && existing.toString().isNotEmpty
-          ? _apiDateFmt.parse(existing.toString()) : DateTime.now();
-    } catch (_) { initial = DateTime.now(); }
+          ? _apiDateFmt.parse(existing.toString())
+          : DateTime.now();
+    } catch (_) {
+      initial = DateTime.now();
+    }
     final date = await showDatePicker(
-      context: context, initialDate: initial,
-      firstDate: DateTime(1900), lastDate: DateTime(2200),
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2200),
       builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(colorScheme: Theme.of(ctx).colorScheme.copyWith(primary: _primaryBlue)),
+        data: Theme.of(ctx).copyWith(
+            colorScheme: Theme.of(ctx)
+                .colorScheme
+                .copyWith(primary: _primaryBlue)),
         child: child!,
       ),
     );
-    if (date != null) setState(() => _values[propId] = _apiDateFmt.format(date));
+    if (date != null) {
+      setState(() => _values[propId] = _apiDateFmt.format(date));
+    }
   }
 
   @override
@@ -249,57 +409,106 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(widget.templateTitle, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-          Text(widget.className, style: const TextStyle(fontSize: 12, color: Colors.white70)),
-        ]),
+        title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(widget.templateTitle,
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w600)),
+              Text(widget.className,
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white70)),
+            ]),
       ),
-      body: _loading ? const Center(child: CircularProgressIndicator())
-          : _error != null ? _buildError() : _buildForm(),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? _buildError()
+              : _buildForm(),
     );
   }
 
   Widget _buildForm() {
-    final editableProps = _props.where((p) => _isVisible(p) && !_isReadOnly(p)).toList();
+    final editableProps =
+        _props.where((p) => _isVisible(p) && !_isReadOnly(p)).toList();
     if (editableProps.isEmpty) {
-      return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.info_outline, size: 40, color: Colors.grey.shade400), const SizedBox(height: 16),
-        Text('No editable fields for this template.', style: TextStyle(fontSize: 15, color: Colors.grey.shade600), textAlign: TextAlign.center),
-      ])));
+      return Center(
+          child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.info_outline,
+                    size: 40, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text('No editable fields for this template.',
+                    style: TextStyle(
+                        fontSize: 15, color: Colors.grey.shade600),
+                    textAlign: TextAlign.center),
+              ])));
     }
 
     return ListView(
       padding: const EdgeInsets.all(16),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      keyboardDismissBehavior:
+          ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
-        _sectionHeader('Fill in Details', subtitle: 'These fields will be reflected in the document.'),
+        _sectionHeader('Fill in Details',
+            subtitle:
+                'These fields will be reflected in the document.'),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white, borderRadius: BorderRadius.circular(14),
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: const Color(0xFFE7EAF0)),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 14, offset: const Offset(0, 6))],
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6))
+            ],
           ),
           padding: const EdgeInsets.all(16),
           child: Column(
-            children: List.generate(editableProps.length * 2 - 1, (i) {
-              if (i.isOdd) return const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Divider(height: 1, thickness: 1, color: Color(0xFFE2E8F0)));
+            children: List.generate(editableProps.length * 2 - 1,
+                (i) {
+              if (i.isOdd) {
+                return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Color(0xFFE2E8F0)));
+              }
               return _buildEditableField(editableProps[i ~/ 2]);
             }),
           ),
         ),
         const SizedBox(height: 28),
         SizedBox(
-          width: double.infinity, height: 52,
+          width: double.infinity,
+          height: 52,
           child: ElevatedButton.icon(
             onPressed: _submitting ? null : _submit,
             icon: _submitting
-                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2.5, valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white)))
                 : const Icon(Icons.check_circle_rounded, size: 20),
-            label: Text(_submitting ? 'Creating...' : 'Create from Template', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            label: Text(
+                _submitting
+                    ? 'Creating...'
+                    : 'Create from Template',
+                style: const TextStyle(
+                    fontSize: 16, fontWeight: FontWeight.w700)),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryBlue, foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              backgroundColor: _primaryBlue,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
               elevation: _submitting ? 0 : 2,
             ),
           ),
@@ -314,88 +523,191 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     final title = prop['title'] as String? ?? 'Field $id';
     final type = prop['propertytype'] as String? ?? '';
     final required = prop['isRequired'] as bool? ?? false;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: RichText(text: TextSpan(
-          text: title,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
-          children: required ? const [TextSpan(text: ' *', style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800))] : [],
-        )),
-      ),
-      _buildInputForType(id, type, title, required),
-    ]);
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: RichText(
+                text: TextSpan(
+              text: title,
+              style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475569)),
+              children: required
+                  ? const [
+                      TextSpan(
+                          text: ' *',
+                          style: TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w800))
+                    ]
+                  : [],
+            )),
+          ),
+          _buildInputForType(id, type, title, required),
+        ]);
   }
 
-  Widget _buildInputForType(int id, String type, String label, bool required) {
+  Widget _buildInputForType(
+      int id, String type, String label, bool required) {
     switch (type) {
       case 'MFDatatypeText':
       case 'MFDatatypeMultiLineText':
-        final ctrl = _controllers.putIfAbsent(id, () => TextEditingController());
+        final ctrl =
+            _controllers.putIfAbsent(id, () => TextEditingController());
         return TextField(
-          controller: ctrl, maxLines: type == 'MFDatatypeMultiLineText' ? 4 : 1,
+          controller: ctrl,
+          maxLines: type == 'MFDatatypeMultiLineText' ? 4 : 1,
           onChanged: (_) => setState(() {}),
-          decoration: _textDeco(hint: 'Enter ${label.toLowerCase()}...', filled: ctrl.text.trim().isNotEmpty),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF111827)),
+          decoration: _textDeco(
+              hint: 'Enter ${label.toLowerCase()}...',
+              filled: ctrl.text.trim().isNotEmpty),
+          style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF111827)),
         );
 
       case 'MFDatatypeInteger':
-        final ctrl = _controllers.putIfAbsent(id, () => TextEditingController());
+        final ctrl =
+            _controllers.putIfAbsent(id, () => TextEditingController());
         return TextField(
-          controller: ctrl, keyboardType: TextInputType.number,
+          controller: ctrl,
+          keyboardType: TextInputType.number,
           onChanged: (_) => setState(() {}),
-          decoration: _textDeco(hint: 'Enter number...', filled: ctrl.text.trim().isNotEmpty),
-          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF111827)),
+          decoration: _textDeco(
+              hint: 'Enter number...',
+              filled: ctrl.text.trim().isNotEmpty),
+          style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF111827)),
+        );
+
+      // ── FIX 2a: Floating type gets a decimal keyboard ──
+      case 'MFDatatypeFloating':
+        final ctrl =
+            _controllers.putIfAbsent(id, () => TextEditingController());
+        return TextField(
+          controller: ctrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: (_) => setState(() {}),
+          decoration: _textDeco(
+              hint: 'Enter amount...',
+              filled: ctrl.text.trim().isNotEmpty),
+          style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF111827)),
         );
 
       case 'MFDatatypeDate':
         final val = _values[id];
         final has = val != null && val.toString().isNotEmpty;
         String display = 'Tap to select date';
-        if (has) { try { display = _uiDateFmt.format(_apiDateFmt.parse(val.toString())); } catch (_) { display = val.toString(); } }
+        if (has) {
+          try {
+            display =
+                _uiDateFmt.format(_apiDateFmt.parse(val.toString()));
+          } catch (_) {
+            display = val.toString();
+          }
+        }
         return GestureDetector(
           onTap: () => _pickDate(id),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
-              color: has ? _filledFill : AppColors.surfaceLight, borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: has ? _filledBorder : Colors.grey.shade200, width: has ? 1.5 : 1),
+              color: has ? _filledFill : AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: has ? _filledBorder : Colors.grey.shade200,
+                  width: has ? 1.5 : 1),
             ),
             child: Row(children: [
-              Container(padding: const EdgeInsets.all(5), decoration: BoxDecoration(color: has ? _primaryBlue.withOpacity(0.1) : Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
-                child: Icon(Icons.calendar_today_rounded, size: 16, color: has ? _primaryBlue : AppColors.surfaceLight)),
+              Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                      color: has
+                          ? _primaryBlue.withOpacity(0.1)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(6)),
+                  child: Icon(Icons.calendar_today_rounded,
+                      size: 16,
+                      color: has ? _primaryBlue : Colors.grey.shade400)),
               const SizedBox(width: 10),
-              Expanded(child: Text(display, style: TextStyle(fontSize: 14, fontWeight: has ? FontWeight.w500 : FontWeight.w400, color: has ? const Color(0xFF111827) : AppColors.surfaceLight))),
-              has ? const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18) : Icon(Icons.keyboard_arrow_down, color: AppColors.surfaceLight, size: 20),
+              Expanded(
+                  child: Text(display,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight:
+                              has ? FontWeight.w500 : FontWeight.w400,
+                          color: has
+                              ? const Color(0xFF111827)
+                              : Colors.grey.shade400))),
+              has
+                  ? const Icon(Icons.check_circle_rounded,
+                      color: _filledBorder, size: 18)
+                  : Icon(Icons.keyboard_arrow_down,
+                      color: Colors.grey.shade400, size: 20),
             ]),
           ),
         );
 
+      // ── FIX 2b: Boolean gets a proper toggle ──
+      case 'MFDatatypeBoolean':
+        final bv = _boolValues[id];
+        return _buildBooleanField(id, bv, required);
+
       case 'MFDatatypeLookup':
         final hasValue = _values[id] != null;
         return _lookupShell(
-          label: label, required: required, hasValue: hasValue, isSingleSelect: true,
+          label: label,
+          required: required,
+          hasValue: hasValue,
+          isSingleSelect: true,
           field: LookupField(
-            title: label, propertyId: id, isMultiSelect: false,
-            preSelectedIds: hasValue ? [_values[id] as int] : [],
+            title: label,
+            propertyId: id,
+            isMultiSelect: false,
+            preSelectedIds:
+                hasValue ? [_values[id] as int] : [],
             onSelected: (items) => setState(() {
-              if (items.isNotEmpty) { _values[id] = items.first.id; _selectedLookupItems[id] = items; }
-              else { _values[id] = null; _selectedLookupItems.remove(id); }
+              if (items.isNotEmpty) {
+                _values[id] = items.first.id;
+                _selectedLookupItems[id] = items;
+              } else {
+                _values[id] = null;
+                _selectedLookupItems.remove(id);
+              }
             }),
           ),
         );
 
       case 'MFDatatypeMultiSelectLookup':
         final selectedItems = _selectedLookupItems[id] ?? [];
-        final selectedIds = (_values[id] is List) ? (_values[id] as List).cast<int>() : <int>[];
+        final selectedIds = (_values[id] is List)
+            ? (_values[id] as List).cast<int>()
+            : <int>[];
         return _lookupShell(
-          label: label, required: required, hasValue: selectedIds.isNotEmpty,
-          selectedTexts: selectedItems.map((e) => e.displayValue.toString()).toList(),
-          selectedItems: selectedItems, propertyId: id,
+          label: label,
+          required: required,
+          hasValue: selectedIds.isNotEmpty,
+          selectedTexts: selectedItems
+              .map((e) => e.displayValue.toString())
+              .toList(),
+          selectedItems: selectedItems,
+          propertyId: id,
           field: LookupField(
             key: ValueKey(selectedIds.join(',')),
-            title: label, propertyId: id, isMultiSelect: true, preSelectedIds: selectedIds,
+            title: label,
+            propertyId: id,
+            isMultiSelect: true,
+            preSelectedIds: selectedIds,
             onSelected: (items) => setState(() {
               _values[id] = items.map((i) => i.id).toList();
               _selectedLookupItems[id] = items;
@@ -404,92 +716,262 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         );
 
       default:
-        final ctrl = _controllers.putIfAbsent(id, () => TextEditingController());
+        final ctrl =
+            _controllers.putIfAbsent(id, () => TextEditingController());
         return TextField(
-          controller: ctrl, onChanged: (_) => setState(() {}),
-          decoration: _textDeco(hint: 'Enter value...', filled: ctrl.text.trim().isNotEmpty),
-          style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
+          controller: ctrl,
+          onChanged: (_) => setState(() {}),
+          decoration: _textDeco(
+              hint: 'Enter value...',
+              filled: ctrl.text.trim().isNotEmpty),
+          style: const TextStyle(
+              fontSize: 14, color: Color(0xFF111827)),
         );
     }
   }
 
-  InputDecoration _textDeco({required String hint, required bool filled}) {
-    return InputDecoration(
-      hintText: hint, hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
-      filled: true, fillColor: filled ? _filledFill : AppColors.surfaceLight, isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: filled ? _filledBorder : Colors.grey.shade200, width: filled ? 1.5 : 1)),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: Colors.grey.shade200)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _primaryBlue, width: 2)),
-      suffixIcon: filled ? const Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18) : null,
+  // Segmented-button style boolean — no trailing tick, just the chosen
+  // option gets a filled pill.
+  Widget _buildBooleanField(int id, bool? current, bool required) {
+    Widget pill(String label, bool value) {
+      final selected = current == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _boolValues[id] = value),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            margin: const EdgeInsets.all(4),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: selected ? _primaryBlue : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : Colors.grey.shade600,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.surfaceLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          pill('Yes', true),
+          Container(width: 1, height: 36, color: Colors.grey.shade200),
+          pill('No', false),
+        ],
+      ),
     );
   }
 
+  InputDecoration _textDeco(
+      {required String hint, required bool filled}) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle:
+          TextStyle(color: Colors.grey.shade400, fontSize: 13),
+      filled: true,
+      fillColor: filled ? _filledFill : AppColors.surfaceLight,
+      isDense: true,
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(
+              color: filled ? _filledBorder : Colors.grey.shade200,
+              width: filled ? 1.5 : 1)),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: BorderSide(color: Colors.grey.shade200)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide:
+              const BorderSide(color: _primaryBlue, width: 2)),
+      suffixIcon: filled
+          ? const Icon(Icons.check_circle_rounded,
+              color: _filledBorder, size: 18)
+          : null,
+    );
+  }
+
+  // ── FIX 3: chip Row inside Wrap now uses Flexible so it can't overflow ──
   Widget _lookupShell({
-    required String label, required bool required, required bool hasValue, required Widget field,
-    bool isSingleSelect = false, List<String>? selectedTexts, List<dynamic>? selectedItems, int? propertyId,
+    required String label,
+    required bool required,
+    required bool hasValue,
+    required Widget field,
+    bool isSingleSelect = false,
+    List<String>? selectedTexts,
+    List<dynamic>? selectedItems,
+    int? propertyId,
   }) {
-    final showMulti = selectedTexts != null && selectedTexts.isNotEmpty;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        decoration: BoxDecoration(
-          color: hasValue ? _filledFill : AppColors.surfaceLight, borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: hasValue ? _filledBorder : Colors.grey.shade200, width: hasValue ? 1.5 : 1),
-        ),
-        child: Row(children: [
-          Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: field)),
-          if (hasValue) const Padding(padding: EdgeInsets.only(right: 12), child: Icon(Icons.check_circle_rounded, color: _filledBorder, size: 18)),
-        ]),
-      ),
-      if (showMulti) ...[
-        const SizedBox(height: 10),
-        Wrap(spacing: 6, runSpacing: 6, children: List.generate(selectedTexts.length, (index) {
-          return Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(color: const Color(0xFFEFF6FF), borderRadius: BorderRadius.circular(999), border: Border.all(color: const Color(0xFFBFDBFE))),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Text(selectedTexts[index], style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: Color(0xFF1E40AF))),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: () {
-                  if (propertyId == null || selectedItems == null) return;
-                  setState(() {
-                    final newItems = List<dynamic>.from(selectedItems)..removeAt(index);
-                    _selectedLookupItems[propertyId] = newItems;
-                    _values[propertyId] = newItems.map((i) => i.id).toList();
-                  });
-                },
-                child: Container(width: 16, height: 16, decoration: BoxDecoration(color: const Color(0xFF3B82F6).withOpacity(0.2), shape: BoxShape.circle), child: const Icon(Icons.close, size: 10, color: Color(0xFF1E40AF))),
-              ),
+    final showMulti =
+        selectedTexts != null && selectedTexts.isNotEmpty;
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            decoration: BoxDecoration(
+              color:
+                  hasValue ? _filledFill : AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: hasValue
+                      ? _filledBorder
+                      : Colors.grey.shade200,
+                  width: hasValue ? 1.5 : 1),
+            ),
+            child: Row(children: [
+              Expanded(
+                  child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12),
+                      child: field)),
+              if (hasValue)
+                const Padding(
+                    padding: EdgeInsets.only(right: 12),
+                    child: Icon(Icons.check_circle_rounded,
+                        color: _filledBorder, size: 18)),
             ]),
-          );
-        })),
-      ],
-      if (required && !hasValue) Padding(
-        padding: const EdgeInsets.only(top: 6),
-        child: Row(children: [Icon(Icons.error_outline, size: 14, color: Colors.red.shade600), const SizedBox(width: 4), Text('This field is required', style: TextStyle(color: Colors.red.shade600, fontSize: 12))]),
-      ),
-    ]);
+          ),
+          if (showMulti) ...[
+            const SizedBox(height: 10),
+            Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children:
+                    List.generate(selectedTexts.length, (index) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                            color: const Color(0xFFBFDBFE))),
+                    // ── FIX 3: Flexible + min size prevents overflow ──
+                    child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              selectedTexts[index],
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF1E40AF)),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            onTap: () {
+                              if (propertyId == null ||
+                                  selectedItems == null) return;
+                              setState(() {
+                                final newItems =
+                                    List<dynamic>.from(selectedItems)
+                                      ..removeAt(index);
+                                _selectedLookupItems[propertyId] =
+                                    newItems;
+                                _values[propertyId] =
+                                    newItems.map((i) => i.id).toList();
+                              });
+                            },
+                            child: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                    color: const Color(0xFF3B82F6)
+                                        .withOpacity(0.2),
+                                    shape: BoxShape.circle),
+                                child: const Icon(Icons.close,
+                                    size: 10,
+                                    color: Color(0xFF1E40AF))),
+                          ),
+                        ]),
+                  );
+                })),
+          ],
+          if (required && !hasValue)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(children: [
+                Icon(Icons.error_outline,
+                    size: 14, color: Colors.red.shade600),
+                const SizedBox(width: 4),
+                Text('This field is required',
+                    style: TextStyle(
+                        color: Colors.red.shade600, fontSize: 12))
+              ]),
+            ),
+        ]);
   }
 
   Widget _sectionHeader(String title, {String? subtitle}) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF0F172A))),
-      if (subtitle != null) ...[const SizedBox(height: 3), Text(subtitle, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Color(0xFF64748B)))],
+      Text(title,
+          style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A))),
+      if (subtitle != null) ...[
+        const SizedBox(height: 3),
+        Text(subtitle,
+            style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B)))
+      ],
     ]);
   }
 
   Widget _buildError() {
-    return Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.error_outline_rounded, size: 48, color: Colors.red.shade400), const SizedBox(height: 16),
-      const Text('Failed to load template', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)), const SizedBox(height: 8),
-      Text(_error!, style: TextStyle(fontSize: 13, color: Colors.grey.shade600), textAlign: TextAlign.center), const SizedBox(height: 20),
-      ElevatedButton(
-        style: ElevatedButton.styleFrom(backgroundColor: _primaryBlue, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-        onPressed: () { setState(() { _loading = true; _error = null; }); _loadProps(); },
-        child: const Text('Retry'),
-      ),
-    ])));
+    return Center(
+        child: Padding(
+            padding: const EdgeInsets.all(32),
+            child:
+                Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.error_outline_rounded,
+                  size: 48, color: Colors.red.shade400),
+              const SizedBox(height: 16),
+              const Text('Failed to load template',
+                  style: TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 8),
+              Text(_error!,
+                  style: TextStyle(
+                      fontSize: 13, color: Colors.grey.shade600),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _primaryBlue,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10))),
+                onPressed: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _loadProps();
+                },
+                child: const Text('Retry'),
+              ),
+            ])));
   }
 }

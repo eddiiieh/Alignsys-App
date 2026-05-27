@@ -7,6 +7,9 @@ import 'services/mfiles_service.dart';
 import 'services/network_service.dart';
 import 'theme/app_colors.dart';
 
+import 'dss/services/dss_auth_service.dart';
+import 'dss/services/dss_api_service.dart';
+
 void main() {
   runApp(const MainApp());
 }
@@ -20,6 +23,15 @@ Widget build(BuildContext context) {
     providers: [
       ChangeNotifierProvider(create: (_) => MFilesService()),
       ChangeNotifierProvider(create: (_) => NetworkService()),
+      // DSS API wired to MFilesService tokens via ProxyProvider
+      ProxyProvider<MFilesService, DssApiService>(
+        update: (_, mfiles, __) {
+          final auth = DssAuthService()
+            ..accessToken  = mfiles.dssAccessToken
+            ..refreshToken = mfiles.dssRefreshToken;
+          return DssApiService(authService: auth);
+        },
+      ),
     ],
     child: MaterialApp(
       debugShowCheckedModeBanner: false,

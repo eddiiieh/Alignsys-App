@@ -17,6 +17,10 @@ import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
+
+// ─── ADD THIS IMPORT (adjust path to wherever your preview screen lives) ───
+import 'document_preview_screen.dart';
+
 class ViewItemsScreen extends StatefulWidget {
   final String title;
   final int parentViewId;
@@ -47,6 +51,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   late List<ViewContentItem> _items;
 
   final ScrollController _itemsScroll = ScrollController();
+
+  final Set<int> _previewLoading = {};
 
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
@@ -128,6 +134,65 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     });
   }
 
+  // ─── NEW: navigate to the document preview screen ───────────────────────
+  Future<void> _openPreview(ViewContentItem item) async {
+  if (!_tryClaimIconTap()) return;
+  if (_previewLoading.contains(item.id)) return;
+
+  setState(() => _previewLoading.add(item.id));
+  try {
+    final svc = context.read<MFilesService>();
+    final files = await svc.fetchObjectFiles(
+      objectId: item.id,
+      classId: item.classId,
+    );
+
+    if (!mounted) return;
+
+    if (files.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No files attached to this document.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final f = files.first;
+    final displayIdInt =
+        int.tryParse(item.displayId?.trim() ?? '') ?? item.id;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DocumentPreviewScreen(
+          displayObjectId: displayIdInt,
+          classId: item.classId,
+          fileId: f.fileId,
+          fileTitle: f.fileTitle,
+          extension: f.extension,
+          reportGuid: f.reportGuid,
+          objectTypeId: item.objectTypeId,
+          canDownload: true,
+        ),
+      ),
+    );
+  } catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Failed to load preview: $e'),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  } finally {
+    if (mounted) setState(() => _previewLoading.remove(item.id));
+  }
+}
+  // ────────────────────────────────────────────────────────────────────────
+
   String? _subtitleLabel(ViewContentItem item) {
     if (item.isObject) {
       final idPart = (item.displayId ?? '').trim().isNotEmpty
@@ -180,6 +245,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
     final bool isObject = item.isObject && item.id > 0;
     final bool hasRelationships = isObject && item.objectTypeId > 0 && item.classId > 0;
+
+    // ─── NEW: only show the eye icon for document-type objects ──────────
+    final bool isDocument = isObject && svc.isDocumentContentItem(item);
+    // ────────────────────────────────────────────────────────────────────
 
     if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -257,9 +326,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                       child: Row(
                         children: [
-                          // ✅ Relationships chevron — GestureDetector with opaque hit-test
-                          // so the gesture is fully consumed here and never reaches the row.
-                          // NEW
+                          // ✅ Relationships chevron
                           if (hasRelationships && svc.cachedHasRelationships(item.id) == true) ...[
                             GestureDetector(
                               behavior: HitTestBehavior.opaque,
@@ -283,12 +350,16 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           (item.isObject && svc.isDocumentContentItem(item))
                               ? FileTypeBadge(
                                   extension: svc.cachedExtensionForObject(item.id) ?? '',
-                                  size: 28,
+                                  size: 38,
                                 )
-                              : const Icon(
-                                  Icons.folder_rounded,
-                                  color: AppColors.primary,
-                                  size: 22,
+                              : Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.folder_rounded, color: AppColors.primary, size: 20),
                                 ),
 
                           const SizedBox(width: 10),
@@ -318,10 +389,41 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                             ),
                           ),
 
-                          // ✅ Info icon — GestureDetector with opaque hit-test
-                          // consumes the gesture before it can bubble to the row InkWell.
+                          // ─── NEW: Eye / preview icon (documents only) ────────────
+                          if (isDocument) ...[
+                            const SizedBox(width: 6),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: () => _openPreview(item),
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blueGrey.withOpacity(0.08),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: _previewLoading.contains(item.id)  // ← add spinner
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor: AlwaysStoppedAnimation<Color>(
+                                            Colors.blueGrey.shade400),
+                                      ),
+                                    )
+                                  :Icon(
+                                  Icons.remove_red_eye_outlined,
+                                  size: 18,
+                                  color: Colors.blueGrey.shade400,
+                                ),
+                              ),
+                            ),
+                          ],
+                          // ─────────────────────────────────────────────────────────
+
+                          // ✅ Info icon
                           if (isObject) ...[
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 6),
                             GestureDetector(
                               behavior: HitTestBehavior.opaque,
                               onTap: () {
@@ -346,7 +448,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                               ),
                             ),
                           ] else
-                            Icon(Icons.chevron_right, size: 18, color: AppColors.surfaceLight),
+                            Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey.shade400)
                         ],
                       ),
                     ),
@@ -368,7 +470,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
               ),
             ),
           ),
-          if (!isLast) Divider(height: 1, thickness: 1, color: Colors.grey.shade100),
+          if (!isLast) Divider(height: 0.5, thickness: 0.5, color: Colors.grey.shade100),
         ],
       );
   }
@@ -525,11 +627,12 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.grey.shade100, width: 0.5),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 10,
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 12,
                                 offset: const Offset(0, 2),
                               ),
                             ],

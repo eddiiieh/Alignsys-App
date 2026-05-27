@@ -1,5 +1,4 @@
 // ignore_for_file: deprecated_member_use
-
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -36,7 +35,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   final Map<int, dynamic> _formValues = {};
   final Map<int, List<dynamic>> _selectedLookupItems = {};
 
-  File? _selectedFile;
+  PlatformFile? _selectedFile;
   String? _selectedFileName;
 
   ObjectClass? _selectedClass;
@@ -374,13 +373,18 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   }
 
   Future<void> _pickFile() async {
-    final result = await FilePicker.platform.pickFiles();
-    if (result == null) return;
+    final result = await FilePicker.pickFiles(
+      type: FileType.any,
+    );
 
-    setState(() {
-      _selectedFile = File(result.files.single.path!);
-      _selectedFileName = result.files.single.name;
-    });
+    if (result != null && result.files.isNotEmpty) {
+      final file = result.files.first;
+
+      setState(() {
+        _selectedFile = file;
+        _selectedFileName = file.name;
+      });
+    }
   }
 
   DateTime _safeParseDateOnly(String yyyyMmDd) => DateTime.parse('${yyyyMmDd}T00:00:00');
@@ -1078,13 +1082,17 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       }
     }
 
-    String? uploadId;
+    String? uploadId; 
     if (_currentObjectType.isDocument) {
       if (_selectedFile == null) {
         _showSnackBar('Please select a file for document objects', isError: true);
         return;
       }
-      uploadId = await service.uploadFile(_selectedFile!);
+
+      final file = File(_selectedFile!.path!);
+
+      uploadId = await service.uploadFile(file);
+
       if (uploadId == null) {
         _showSnackBar('File upload failed', isError: true);
         return;
