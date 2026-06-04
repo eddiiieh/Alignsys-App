@@ -1,6 +1,3 @@
-// Everything else is identical to what you provided. Only the changed sections
-// are marked with // ── CHANGED ──
-
 // ignore_for_file: use_build_context_synchronously, duplicate_ignore, deprecated_member_use
 
 import 'package:flutter/material.dart';
@@ -23,10 +20,7 @@ import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/screens/search_results_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_colors.dart';
-import 'package:mfiles_app/dss/screens/dss_dashboard_screen.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
-
-enum _MoreItem { signing, reports, trash }
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -38,9 +32,10 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final List<String> tabs = ['Home', 'Recent', 'Assigned', 'More'];
 
-  _MoreItem _moreItem = _MoreItem.reports;
+  // Tabs: Home | Recent | Assigned | Trash | Reports
+  // (Signing moved to FAB)
+  final List<String> tabs = ['Home', 'Recent', 'Assigned', 'Trash', 'Reports'];
 
   bool _switchingVault = false;
   String _switchingVaultName = '';
@@ -164,11 +159,11 @@ class _HomeScreenState extends State<HomeScreen>
       case 'Assigned':
         service.fetchAssignedObjects(background: true);
         break;
-      case 'More':
-        if (_moreItem == _MoreItem.trash) {
-          service.fetchDeletedObjects(background: true);
-        }
-        if (_moreItem == _MoreItem.reports) service.fetchReportObjects();
+      case 'Trash':
+        service.fetchDeletedObjects(background: true);
+        break;
+      case 'Reports':
+        service.fetchReportObjects();
         break;
       default:
         break;
@@ -185,11 +180,11 @@ class _HomeScreenState extends State<HomeScreen>
       case 'Assigned':
         await service.fetchAssignedObjects();
         break;
-      case 'More':
-        if (_moreItem == _MoreItem.trash) {
-          await service.fetchDeletedObjects();
-        }
-        if (_moreItem == _MoreItem.reports) await service.fetchReportObjects();
+      case 'Trash':
+        await service.fetchDeletedObjects();
+        break;
+      case 'Reports':
+        await service.fetchReportObjects();
         break;
       default:
         break;
@@ -330,6 +325,36 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           Scaffold(
             backgroundColor: AppColors.surfaceLight,
+            // ── DSS e-Signing FAB ──────────────────────────────────────────
+            // NEW
+            floatingActionButton: AnimatedBuilder(
+              animation: _tabController,
+              builder: (_, __) {
+                final onHomeTab = _tabController.index == 0;
+                return AnimatedSlide(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeInOut,
+                  offset: onHomeTab ? Offset.zero : const Offset(0, 2.5),
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 180),
+                    opacity: onHomeTab ? 1.0 : 0.0,
+                    child: Builder(
+                      builder: (ctx) => FloatingActionButton.extended(
+                        onPressed: onHomeTab ? () => _showCreateBottomSheet(ctx) : null,
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        elevation: 4,
+                        icon: const Icon(Icons.add_rounded, size: 22),
+                        label: const Text(
+                          'Create',
+                          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
             appBar: AppBar(
               backgroundColor: AppColors.primary,
               elevation: 0,
@@ -357,27 +382,51 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
               actions: [
-                Builder(
-                  builder: (ctx) => TextButton.icon(
-                    onPressed: () => _showCreateBottomSheet(ctx),
-                    icon:
-                        const Icon(Icons.add, size: 20, color: Colors.white),
-                    label: const Text('Create',
-                        style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600)),
-                  ),
+                Consumer<MFilesService>(
+                  builder: (ctx, svc, _) {
+                    final vaultName = svc.selectedVault?.name ?? '';
+                    final display = vaultName.length > 18
+                        ? '${vaultName.substring(0, 18)}…'
+                        : vaultName;
+                    return GestureDetector(
+                      onTap: () => _showVaultSwitcher(ctx),
+                      child: Container(
+                        margin: const EdgeInsets.symmetric(vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.white.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.storage_rounded, size: 13, color: Colors.white),
+                            const SizedBox(width: 5),
+                            Text(
+                              display.isEmpty ? 'Vault' : display,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(Icons.expand_more_rounded, size: 14, color: Colors.white),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
                 Builder(
                   builder: (ctx) => IconButton(
-                    icon: const Icon(Icons.person,
-                        size: 20, color: Colors.white),
+                    icon: const Icon(Icons.person_rounded, size: 20, color: Colors.white),
                     onPressed: () => _showProfileMenu(ctx),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 4),
               ],
             ),
             body: NetworkBanner(
@@ -395,7 +444,8 @@ class _HomeScreenState extends State<HomeScreen>
                         _buildHomeTab(),
                         _buildRecentTab(),
                         _buildAssignedTab(),
-                        _buildMoreTab(),
+                        _buildDeletedTab(),
+                        _buildReportsTab(),
                       ],
                     ),
                   ),
@@ -403,6 +453,7 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
+          // ── Vault-switching overlay ──────────────────────────────────────
           if (_switchingVault)
             Positioned.fill(
               child: Container(
@@ -438,6 +489,8 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
+
+  // ── Search bar ────────────────────────────────────────────────────────────
 
   Widget _buildSearchBar() {
     final hasText = _searchController.text.trim().isNotEmpty;
@@ -513,10 +566,12 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ── Tab bar ───────────────────────────────────────────────────────────────
+
   Widget _buildTabBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 12),
-      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
+      padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -527,149 +582,165 @@ class _HomeScreenState extends State<HomeScreen>
               offset: const Offset(0, 2))
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildEvenTab(0, Icons.home_rounded, 'Home'),
-          _buildEvenTab(1, Icons.history_rounded, 'Recent'),
-          _buildEvenAssignedTab(2),
-          _buildEvenMoreTab(3),
+      child: TabBar(
+        controller: _tabController,
+        isScrollable: true,
+        tabAlignment: TabAlignment.start,
+        padding: EdgeInsets.zero,
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        indicatorPadding: const EdgeInsets.all(4),
+        dividerColor: Colors.transparent,
+        indicator: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(8)),
+        labelColor: Colors.white,
+        unselectedLabelColor: Colors.grey.shade600,
+        labelStyle:
+            const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        unselectedLabelStyle:
+            const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+        tabs: [
+          _buildTab(Icons.home_rounded, 'Home'),
+          _buildTab(Icons.history_rounded, 'Recent'),
+          _buildAssignedTab2(),
+          _buildBadgeTab(Icons.delete_outline_rounded, 'Trash',
+              (s) => s.deletedObjects.length),
+          _buildBadgeTab(Icons.analytics_outlined, 'Reports',
+              (s) => s.reportObjects.length),
         ],
+        onTap: _onTabChanged,
       ),
     );
   }
 
-  Widget _buildEvenTab(int index, IconData icon, String label) {
-    return Expanded(
-      child: _TabPill(
-        icon: icon,
-        label: label,
-        selected: _tabController.index == index,
-        onTap: () => _selectTab(index),
-      ),
-    );
-  }
-
-  Widget _buildEvenAssignedTab(int index) {
-    return Expanded(
-      child: Consumer<MFilesService>(
-        builder: (_, svc, __) => _TabPill(
-          icon: Icons.assignment_rounded,
-          label: 'Assigned',
-          selected: _tabController.index == index,
-          badgeCount: svc.assignedObjects.length,
-          onTap: () => _selectTab(index),
+  Widget _buildTab(IconData icon, String label) {
+    return Tab(
+      height: 36,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 16),
+            const SizedBox(width: 6),
+            Text(label),
+          ],
         ),
       ),
     );
   }
 
-  Widget _buildEvenMoreTab(int index) {
-    return Expanded(
-      child: _TabPill(
-        icon: Icons.more_vert_rounded,
-        label: 'More',
-        selected: _tabController.index == index,
-        onTap: () => _selectTab(index),
-      ),
-    );
-  }
-
-  void _selectTab(int index) => _tabController.animateTo(index);
-
-  Widget _buildMoreTab() {
+  Widget _buildAssignedTab2() {
     return Consumer<MFilesService>(
-      builder: (context, svc, _) {
-        return Column(
-          children: [
-            Container(
-              margin: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-              padding:
-                  const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2))
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  Expanded(
-                    child: _TabPill(
-                      icon: Icons.draw_outlined,
-                      label: 'Signing',
-                      selected: _moreItem == _MoreItem.signing,
-                      onTap: () {
-                        if (!svc.isDssAvailable) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text(
-                                  'Digital Signing unavailable. Log out and back in.'),
-                              backgroundColor: Colors.orange,
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                          return;
-                        }
-                        Navigator.of(context, rootNavigator: true).push(
-                          MaterialPageRoute(
-                            builder: (_) => Scaffold(
-                              backgroundColor: AppColors.surfaceLight,
-                              appBar: AppBar(
-                                backgroundColor: AppColors.primary,
-                                foregroundColor: Colors.white,
-                                title: const Text('e-Signing'),
-                              ),
-                              body: const DssDashboardScreen(),
-                            ),
+      builder: (context, service, _) {
+        final count = service.assignedObjects.length;
+        return Tab(
+          height: 36,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.assignment_rounded, size: 16),
+                    if (count > 0)
+                      Positioned(
+                        top: -6,
+                        right: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          constraints: const BoxConstraints(minWidth: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                                Border.all(color: Colors.white, width: 1.2),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    child: _TabPill(
-                      icon: Icons.analytics_outlined,
-                      label: 'Reports',
-                      selected: _moreItem == _MoreItem.reports,
-                      badgeCount: svc.reportObjects.length,
-                      onTap: () {
-                        setState(() => _moreItem = _MoreItem.reports);
-                        svc.fetchReportObjects();
-                      },
-                    ),
-                  ),
-                  Expanded(
-                    child: _TabPill(
-                      icon: Icons.delete_outline_rounded,
-                      label: 'Trash',
-                      selected: _moreItem == _MoreItem.trash,
-                      badgeCount: svc.deletedObjects.length,
-                      onTap: () {
-                        setState(() => _moreItem = _MoreItem.trash);
-                        svc.fetchDeletedObjects();
-                      },
-                    ),
-                  ),
-                ],
-              ),
+                          child: Text(
+                            count > 99 ? '99+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 6),
+                const Text('Assigned'),
+              ],
             ),
-            const SizedBox(height: _sectionSpacing),
-            Expanded(
-              child: _moreItem == _MoreItem.reports
-                  ? _buildReportsTab()
-                  : _buildDeletedTab(),
-            ),
-          ],
+          ),
         );
       },
     );
   }
+
+  Widget _buildBadgeTab(
+    IconData icon,
+    String label,
+    int Function(MFilesService) countSelector,
+  ) {
+    return Consumer<MFilesService>(
+      builder: (context, service, _) {
+        final count = countSelector(service);
+        return Tab(
+          height: 36,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(icon, size: 16),
+                    if (count > 0)
+                      Positioned(
+                        top: -6,
+                        right: -8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1),
+                          constraints: const BoxConstraints(minWidth: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red,
+                            borderRadius: BorderRadius.circular(8),
+                            border:
+                                Border.all(color: Colors.white, width: 1.2),
+                          ),
+                          child: Text(
+                            count > 99 ? '99+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(width: 6),
+                Text(label),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Tab content ───────────────────────────────────────────────────────────
 
   Widget _buildHomeTab() {
     return Consumer<MFilesService>(
@@ -715,7 +786,8 @@ class _HomeScreenState extends State<HomeScreen>
                   emptyText: 'No views available',
                   leadingIcon: Icons.folder_rounded,
                 ),
-                const SizedBox(height: 16),
+                // Extra bottom padding so FAB doesn't overlap last row
+                const SizedBox(height: 80),
               ],
             ),
           ),
@@ -938,6 +1010,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ── Object-list tabs ──────────────────────────────────────────────────────
+
   Widget _buildRecentTab() {
     return _buildObjectList(
       selector: (s) =>
@@ -1027,7 +1101,7 @@ class _HomeScreenState extends State<HomeScreen>
             thickness: 6,
             radius: const Radius.circular(8),
             child: ListView.builder(
-              primary: false,
+              primary: true,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(10),
               itemCount: objects.length,
@@ -1039,6 +1113,8 @@ class _HomeScreenState extends State<HomeScreen>
       },
     );
   }
+
+  // ── Object row ────────────────────────────────────────────────────────────
 
   Widget _buildCompactObjectRow(
     ViewObject obj,
@@ -1070,6 +1146,9 @@ class _HomeScreenState extends State<HomeScreen>
         notify: false,
       );
     }
+
+    // isDeleted check: current tab is Trash (index 3)
+    final bool isTrashTab = _tabController.index == 3;
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
@@ -1262,8 +1341,7 @@ class _HomeScreenState extends State<HomeScreen>
             Divider(height: 1, color: Colors.grey.shade200),
             ObjectInfoDropdown(
               obj: obj,
-              isDeleted:
-                  _tabController.index == 3 && _moreItem == _MoreItem.trash,
+              isDeleted: isTrashTab,
             ),
           ],
           if (relationshipsExpanded && canExpand) ...[
@@ -1278,6 +1356,8 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
+
+  // ── Empty / error states ──────────────────────────────────────────────────
 
   Widget _buildEmptyState(IconData icon, String text, String subtext) {
     return Center(
@@ -1339,6 +1419,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ── Search ────────────────────────────────────────────────────────────────
+
   void _resetSearch({bool clearResults = true}) {
     _searchController.clear();
     _searchFocus.unfocus();
@@ -1357,6 +1439,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
     _resetSearch();
   }
+
+  // ── Create bottom sheet ───────────────────────────────────────────────────
 
   void _showCreateBottomSheet(BuildContext context) {
     final service = context.read<MFilesService>();
@@ -1649,6 +1733,8 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ── Template class picker ─────────────────────────────────────────────────
+
   void _showTemplateClassPicker() => _loadClassesWithTemplates();
 
   List<ObjectClass> _collectAllClasses(MFilesService service) {
@@ -1672,7 +1758,6 @@ class _HomeScreenState extends State<HomeScreen>
     return result;
   }
 
-  // ── CHANGED: replaces the old per-class loop with a single bulk request ──
   Future<void> _loadClassesWithTemplates() async {
     if (!mounted) return;
     final service = context.read<MFilesService>();
@@ -1684,14 +1769,12 @@ class _HomeScreenState extends State<HomeScreen>
     );
 
     try {
-      // Ensure object types + classes are loaded (needed for display names)
       if (service.objectTypes.isEmpty) await service.fetchObjectTypes();
       await Future.wait(
           service.objectTypes.map((ot) => service.fetchObjectClasses(ot.id)));
 
       final vaultGuid = service.selectedVault?.guid ?? '';
 
-      // ONE request instead of ~80 individual calls
       final allTemplates =
           await service.fetchAllTemplates(vaultGuid: vaultGuid);
 
@@ -1704,7 +1787,6 @@ class _HomeScreenState extends State<HomeScreen>
         return;
       }
 
-      // Group templates by classId
       final Map<int, List<Map<String, dynamic>>> templatesByClass = {};
       for (final t in allTemplates) {
         final classId = (t['classId'] ??
@@ -1715,7 +1797,6 @@ class _HomeScreenState extends State<HomeScreen>
         templatesByClass.putIfAbsent(classId, () => []).add(t);
       }
 
-      // Match to ObjectClass objects for display names
       final allClasses = _collectAllClasses(service);
       final classesWithTemplates = allClasses
           .where((cls) => templatesByClass.containsKey(cls.id))
@@ -1740,10 +1821,7 @@ class _HomeScreenState extends State<HomeScreen>
       ));
     }
   }
-  // ── END CHANGED ──────────────────────────────────────────────────────────
 
-  // ── CHANGED: accepts pre-fetched templatesByClass, no longer calls
-  //             _fetchTemplatesForClass which made additional network calls ──
   void _openTemplateClassSheet(
     List<ObjectClass> allClasses, {
     required Map<int, List<Map<String, dynamic>>> templatesByClass,
@@ -1944,8 +2022,6 @@ class _HomeScreenState extends State<HomeScreen>
                               trailing: Icon(
                                   Icons.chevron_right_rounded,
                                   color: Colors.grey.shade400),
-                              // ── CHANGED: use pre-fetched templates,
-                              //             no extra network call ──
                               onTap: () {
                                 Navigator.pop(ctx);
                                 final templates =
@@ -1964,10 +2040,7 @@ class _HomeScreenState extends State<HomeScreen>
       ),
     );
   }
-  // ── END CHANGED ──────────────────────────────────────────────────────────
 
-  // ── CHANGED: replaces _fetchTemplatesForClass — no network call needed
-  //             because templates were already fetched in bulk ──────────────
   void _openTemplateDocumentSheetDirect(
       ObjectClass cls, List<Map<String, dynamic>> templates) {
     if (!mounted) return;
@@ -1998,7 +2071,6 @@ class _HomeScreenState extends State<HomeScreen>
 
     _openTemplateDocumentSheet(cls, templates);
   }
-  // ── END CHANGED ──────────────────────────────────────────────────────────
 
   void _openTemplateDocumentSheet(
       ObjectClass cls, List<Map<String, dynamic>> templates) {
@@ -2148,6 +2220,232 @@ class _HomeScreenState extends State<HomeScreen>
         'Dec'
       ][m];
 
+  // ── Vault switcher ─────────────────────────────────────────────────────────
+  void _showVaultSwitcher(BuildContext context) {
+  final service = context.read<MFilesService>();
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) => Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle bar
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Header
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.10),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.storage_rounded,
+                    color: AppColors.primary, size: 22),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Switch Repository',
+                      style: TextStyle(
+                          fontSize: 17, fontWeight: FontWeight.w700),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Select a vault to work in',
+                      style: TextStyle(
+                          fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.close, color: Colors.grey.shade500),
+                onPressed: () => Navigator.pop(context),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ]),
+            const SizedBox(height: 20),
+            Divider(height: 1, color: Colors.grey.shade100),
+            const SizedBox(height: 12),
+            // Vault list
+            FutureBuilder<List<Vault>>(
+              future: service.getUserVaults(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Text(
+                      'Error loading repositories: ${snapshot.error}',
+                      style: TextStyle(
+                          color: Colors.red.shade700, fontSize: 13),
+                    ),
+                  );
+                }
+                final vaults = snapshot.data ?? [];
+                if (vaults.isEmpty) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        'No repositories available',
+                        style: TextStyle(
+                            color: Colors.grey.shade500, fontSize: 13),
+                      ),
+                    ),
+                  );
+                }
+                final selectedGuid = service.selectedVault?.guid;
+                return Column(
+                  children: vaults.map((v) {
+                    final isSelected = v.guid == selectedGuid;
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: isSelected
+                            ? null
+                            : () async {
+                                Navigator.pop(context);
+                                setState(() {
+                                  _switchingVault = true;
+                                  _switchingVaultName = v.name;
+                                });
+                                try {
+                                  await service.saveSelectedVault(v);
+                                  await service.fetchMFilesUserId();
+                                  await service.fetchObjectTypes();
+                                  await service.fetchAllViews();
+                                  await Future.wait([
+                                    service.fetchRecentObjects(),
+                                    service.fetchDeletedObjects(),
+                                    service.fetchAssignedObjects(),
+                                    service.fetchReportObjects(),
+                                  ]);
+                                } finally {
+                                  if (mounted) {
+                                    setState(() => _switchingVault = false);
+                                  }
+                                }
+                              },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.primary.withOpacity(0.06)
+                                : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.primary.withOpacity(0.3)
+                                  : Colors.grey.shade200,
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(children: [
+                            Container(
+                              width: 36,
+                              height: 36,
+                              decoration: BoxDecoration(
+                                color: isSelected
+                                    ? AppColors.primary.withOpacity(0.12)
+                                    : Colors.grey.shade100,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  Icons.storage_rounded,
+                                  size: 17,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : Colors.grey.shade500,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                v.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? AppColors.primary
+                                      : const Color(0xFF1E293B),
+                                ),
+                              ),
+                            ),
+                            if (isSelected)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.10),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: const Text(
+                                  'Active',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              )
+                            else
+                              Icon(Icons.chevron_right_rounded,
+                                  size: 18, color: Colors.grey.shade400),
+                          ]),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+  // ── Profile menu ──────────────────────────────────────────────────────────
   void _showProfileMenu(BuildContext context) {
     final service = context.read<MFilesService>();
     showModalBottomSheet(
@@ -2157,178 +2455,233 @@ class _HomeScreenState extends State<HomeScreen>
       builder: (_) => Container(
         decoration: const BoxDecoration(
           color: Colors.white,
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
         child: SafeArea(
           top: false,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Handle bar
               Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2))),
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
               const SizedBox(height: 20),
+
+              // ── User header ──────────────────────────────────────────────
               Row(children: [
                 Container(
-                  width: 52,
-                  height: 52,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(16)),
-                  child: const Icon(Icons.person_rounded,
-                      color: Color(0xFF0A1541), size: 28),
+                    color: AppColors.primary.withOpacity(0.10),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Center(
+                    child: Icon(Icons.person_rounded,
+                        color: AppColors.primary, size: 24),
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(service.username ?? 'Unknown',
-                          style: const TextStyle(
-                              fontSize: 17,
-                              fontWeight: FontWeight.w700),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                      Text(
+                        service.username ?? 'Unknown',
+                        style: const TextStyle(
+                            fontSize: 16, fontWeight: FontWeight.w700),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                       const SizedBox(height: 2),
-                      Text('Account Settings',
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade600)),
+                      Text(
+                        service.userEmail ?? 'No email on file',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ],
                   ),
                 ),
+                IconButton(
+                  icon: Icon(Icons.close, color: Colors.grey.shade500),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
               ]),
+
               const SizedBox(height: 20),
-              Divider(height: 1, color: Colors.grey.shade200),
-              const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Current Repository',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.grey.shade700)),
-              ),
-              const SizedBox(height: 10),
-              FutureBuilder<List<Vault>>(
-                future: service.getUserVaults(),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState ==
-                      ConnectionState.waiting) {
-                    return Container(
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 16),
-                        alignment: Alignment.centerLeft,
-                        child: const LinearProgressIndicator(
-                            minHeight: 2));
-                  }
-                  if (snapshot.hasError) {
-                    return Text(
-                        'Error loading repositories: ${snapshot.error}',
-                        style: TextStyle(
-                            color: Colors.red.shade700,
-                            fontSize: 13));
-                  }
-                  final vaults = snapshot.data ?? [];
-                  final selectedGuid = service.selectedVault?.guid;
-                  if (vaults.isEmpty) {
-                    return const Text('No vaults available');
-                  }
-                  return Container(
-                    decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 2))
-                        ]),
-                    child: DropdownButtonFormField<String>(
-                      value: selectedGuid,
-                      isExpanded: true,
-                      decoration: InputDecoration(
-                        filled: true,
-                        fillColor: AppColors.surfaceLight,
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none),
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                      ),
-                      items: vaults
-                          .map((v) => DropdownMenuItem<String>(
-                                value: v.guid,
-                                child: Text(v.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w500)),
-                              ))
-                          .toList(),
-                      onChanged: (guid) async {
-                        if (guid == null) return;
-                        if (guid == service.selectedVault?.guid)
-                          return;
-                        Navigator.pop(context);
-                        final newVault =
-                            vaults.firstWhere((v) => v.guid == guid);
-                        setState(() {
-                          _switchingVault = true;
-                          _switchingVaultName = newVault.name;
-                        });
-                        try {
-                          await service.saveSelectedVault(newVault);
-                          await service.fetchMFilesUserId();
-                          await service.fetchObjectTypes();
-                          await service.fetchAllViews();
-                          await Future.wait([
-                            service.fetchRecentObjects(),
-                            service.fetchDeletedObjects(),
-                            service.fetchAssignedObjects(),
-                            service.fetchReportObjects(),
-                          ]);
-                        } finally {
-                          if (mounted) {
-                            setState(() => _switchingVault = false);
-                          }
-                        }
-                      },
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 20),
-              Divider(height: 1, color: Colors.grey.shade200),
+              Divider(height: 1, color: Colors.grey.shade100),
               const SizedBox(height: 12),
+              
+              // ── Active vault display ───────────────────────────────────
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppColors.primary.withOpacity(0.2),
+                      width: 1.5),
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Center(
+                      child: Icon(Icons.storage_rounded,
+                          size: 16, color: AppColors.primary),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      service.selectedVault?.name ?? 'No vault selected',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: const Text(
+                      'Active',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ]),
+              ),
+
+              const SizedBox(height: 8),
+
+              // ── Switch repository shortcut ───────────────────────────────
               Material(
                 color: Colors.transparent,
-                child: ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showVaultSwitcher(context);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
                     decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(8)),
-                    child: const Icon(Icons.logout_rounded,
-                        color: Colors.red, size: 20),
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Icon(Icons.swap_horiz_rounded,
+                              size: 16, color: Colors.grey.shade600),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Switch repository',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded,
+                          size: 18, color: Colors.grey.shade400),
+                    ]),
                   ),
-                  title: const Text('Log Out',
-                      style: TextStyle(
-                          color: Colors.red,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15)),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+              Divider(height: 1, color: Colors.grey.shade100),
+              const SizedBox(height: 8),
+
+              // ── Log out ──────────────────────────────────────────────────
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
                   onTap: () {
                     Navigator.pop(context);
                     _handleLogout(context);
                   },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade100),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Icon(Icons.logout_rounded,
+                              size: 16, color: Colors.red.shade600),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Log out',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red.shade700,
+                          ),
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded,
+                          size: 18, color: Colors.red.shade300),
+                    ]),
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
+
+              const SizedBox(height: 4),
             ],
           ),
         ),
@@ -2372,89 +2725,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 }
 
-class _TabPill extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final int badgeCount;
-  final VoidCallback onTap;
-
-  const _TabPill({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-    this.badgeCount = 0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        margin: const EdgeInsets.all(2),
-        padding:
-            const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Icon(icon,
-                    size: 16,
-                    color: selected
-                        ? Colors.white
-                        : Colors.grey.shade600),
-                if (badgeCount > 0)
-                  Positioned(
-                    top: -6,
-                    right: -8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 1),
-                      constraints:
-                          const BoxConstraints(minWidth: 16),
-                      decoration: BoxDecoration(
-                        color: Colors.red,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                            color: Colors.white, width: 1.2),
-                      ),
-                      child: Text(
-                        badgeCount > 99 ? '99+' : '$badgeCount',
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            height: 1.2),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(width: 5),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: selected ? Colors.white : Colors.grey.shade600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// ── Create entry type ─────────────────────────────────────────────────────────
 
 class _CreateEntry {
   final bool isTemplate;

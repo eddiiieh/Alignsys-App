@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/screens/document_preview_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
@@ -32,10 +33,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   String _lastQuery = '';
   List<ViewObject> _results = [];
   String? _errorMessage;
-  bool _isWarming = false; // ← new state for background warming
+  bool _isWarming = false;
 
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
+
+  final Set<int> _previewLoading = {};
 
   final ScrollController _scrollController = ScrollController();
 
@@ -45,7 +48,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     _controller = TextEditingController(text: widget.initialQuery);
     _focusNode = FocusNode();
 
-    // Kick off the initial query immediately
     if (widget.initialQuery.trim().isNotEmpty) {
       _lastQuery = widget.initialQuery.trim();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -81,7 +83,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       return;
     }
 
-    // Show a subtle "typing…" indicator immediately
     if (trimmed != _lastQuery) {
       setState(() => _isSearching = true);
     }
@@ -90,7 +91,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       if (trimmed != _lastQuery) {
         _runSearch(trimmed);
       } else {
-        // Same query — stop spinner
         if (mounted) setState(() => _isSearching = false);
       }
     });
@@ -102,7 +102,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     setState(() {
       _isSearching = true;
-      _isWarming = false; // ← new state
+      _isWarming = false;
       _errorMessage = null;
       _lastQuery = query;
     });
@@ -113,7 +113,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
       final results = List<ViewObject>.from(svc.searchResults);
 
-      // Sort by title relevance immediately
       final q = query.toLowerCase();
       results.sort((a, b) {
         final aTitle = a.title.toLowerCase();
@@ -123,24 +122,22 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         return aScore.compareTo(bScore);
       });
 
-      // Show results immediately
       setState(() {
         _results = results;
         _hasSearched = true;
         _isSearching = false;
-        _isWarming = true; // ← still fetching in background
+        _isWarming = true;
         _expandedInfoItemId = null;
         _expandedRelationshipsItemId = null;
       });
 
-      // Warm in background
       await Future.wait([
         svc.warmExtensionsForObjects(results),
         svc.warmRelationshipsForObjects(results),
       ]);
 
       if (!mounted) return;
-      setState(() => _isWarming = false); // ← done
+      setState(() => _isWarming = false);
 
     } catch (e) {
       if (!mounted) return;
@@ -150,6 +147,59 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         _errorMessage = e.toString();
         _hasSearched = true;
       });
+    }
+  }
+
+  Future<void> _openPreview(ViewObject obj) async {
+    if (_previewLoading.contains(obj.id)) return;
+    setState(() => _previewLoading.add(obj.id));
+    try {
+      final svc = context.read<MFilesService>();
+      final files = await svc.fetchObjectFiles(
+        objectId: obj.id,
+        classId: obj.classId,
+      );
+
+      if (!mounted) return;
+
+      if (files.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No files attached to this document.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final f = files.first;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => DocumentPreviewScreen(
+            displayObjectId: obj.id,
+            classId: obj.classId,
+            fileId: f.fileId,
+            fileTitle: f.fileTitle,
+            extension: f.extension,
+            reportGuid: f.reportGuid,
+            objectTypeId: obj.objectTypeId,
+            canDownload: true,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to load preview: $e'),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _previewLoading.remove(obj.id));
     }
   }
 
@@ -219,11 +269,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     );
   }
 
-  /// Thin bar below the AppBar showing query context + result count / spinner
   Widget _buildStatusBar() {
     final query = _controller.text.trim();
 
-    // Nothing typed yet
     if (query.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -234,7 +282,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          // Query chip
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
@@ -259,7 +306,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           ),
           const SizedBox(width: 10),
 
-          // Spinner or result count
           if (_isSearching)
             Row(
               children: [
@@ -281,25 +327,25 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               ],
             )
           else if (_isWarming)
-          Row(
-            children: [
-              SizedBox(
-                width: 13,
-                height: 13,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Colors.orange.withOpacity(0.7),
+            Row(
+              children: [
+                SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      Colors.orange.withOpacity(0.7),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Loading more results…',
-                style: TextStyle(fontSize: 12, color: Colors.orange.shade600),
-              ),
-            ],
-          )
+                const SizedBox(width: 8),
+                Text(
+                  'Loading more results…',
+                  style: TextStyle(fontSize: 12, color: Colors.orange.shade600),
+                ),
+              ],
+            )
           else if (_hasSearched)
             Text(
               _errorMessage != null
@@ -321,27 +367,22 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget _buildBody() {
     final query = _controller.text.trim();
 
-    // Idle — nothing typed
     if (query.isEmpty) {
       return _buildIdleState();
     }
 
-    // Searching (first load — no previous results)
     if (_isSearching && _results.isEmpty) {
       return _buildLoadingState(query);
     }
 
-    // Error
     if (_errorMessage != null) {
       return _buildErrorState(_errorMessage!);
     }
 
-    // Has results (possibly still refreshing in background)
     if (_results.isNotEmpty) {
       return _buildResultsList();
     }
 
-    // No results
     if (_hasSearched && !_isSearching) {
       return _buildEmptyState(query);
     }
@@ -392,7 +433,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget _buildLoadingState(String query) {
     return Column(
       children: [
-        // Animated shimmer rows
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(12),
@@ -514,7 +554,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
     final bool hasRelationships = svc.cachedHasRelationships(obj.id) == true;
 
-    // Warm cache passively
+    // Resolve extension for document rows
+    final String? ext = isDoc ? svc.cachedExtensionForObject(obj.id) : null;
+
     if (canExpand && !isDoc && svc.cachedHasRelationships(obj.id) == null) {
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
@@ -608,7 +650,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                       // Icon
                       isDoc
                           ? FileTypeBadge(
-                              extension: svc.cachedExtensionForObject(obj.id) ?? '',
+                              extension: ext ?? '',
                               size: 28,
                             )
                           : const Icon(
@@ -640,7 +682,38 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                         ),
                       ),
 
-                      // Info button
+                      // Eye icon (documents only)
+                      if (isDoc) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _openPreview(obj),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.withOpacity(0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child: _previewLoading.contains(obj.id)
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.blueGrey.shade400),
+                                    ),
+                                  )
+                                : Icon(
+                                    Icons.remove_red_eye_outlined,
+                                    size: 18,
+                                    color: Colors.blueGrey.shade400,
+                                  ),
+                          ),
+                        ),
+                      ],
+
+                      // Info icon (all expandable objects)
                       if (canExpand) ...[
                         const SizedBox(width: 8),
                         Material(
@@ -703,7 +776,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 }
 
-// ─── Highlights matching query text in result titles ─────────────────────────
+// Highlights matching query text in result titles
 
 class _HighlightedText extends StatelessWidget {
   final String text;
@@ -760,7 +833,7 @@ class _HighlightedText extends StatelessWidget {
   }
 }
 
-// ─── Shimmer placeholder row ──────────────────────────────────────────────────
+// Shimmer placeholder row
 
 class _ShimmerRow extends StatefulWidget {
   final int delay;
@@ -816,7 +889,6 @@ class _ShimmerRowState extends State<_ShimmerRow>
         ),
         child: Row(
           children: [
-            // Icon placeholder
             Container(
               width: 28,
               height: 28,
@@ -830,7 +902,6 @@ class _ShimmerRowState extends State<_ShimmerRow>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Title placeholder
                   FractionallySizedBox(
                     widthFactor: 0.55 + (_anim.value * 0.1),
                     child: Container(
@@ -842,7 +913,6 @@ class _ShimmerRowState extends State<_ShimmerRow>
                     ),
                   ),
                   const SizedBox(height: 7),
-                  // Subtitle placeholder
                   FractionallySizedBox(
                     widthFactor: 0.35,
                     child: Container(
@@ -857,7 +927,6 @@ class _ShimmerRowState extends State<_ShimmerRow>
               ),
             ),
             const SizedBox(width: 8),
-            // Info button placeholder
             Container(
               width: 34,
               height: 34,

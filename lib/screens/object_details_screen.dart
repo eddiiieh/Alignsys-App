@@ -109,15 +109,19 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       widget.obj.classTypeName.trim().toLowerCase() == 'assignment';
 
   @override
-  void initState() {
-    super.initState();
-    _title = widget.obj.title;
-    _commentsFuture = _loadComments();
-    _future = _loadProps();
-    _filesFuture = _loadFiles();
-    _workflowFuture = _loadWorkflow();
-    _workflowsFuture = _loadWorkflowsForThisObject();
-    _commentFocusNode.addListener(() {
+void initState() {
+  super.initState();
+  _title = widget.obj.title;
+
+  // Initialise with empty futures so FutureBuilders don't crash before
+  // the first frame — then load everything safely after the frame is done.
+  _commentsFuture = Future.value([]);
+  _future = Future.value([]);
+  _filesFuture = Future.value([]);
+  _workflowFuture = Future.value(null);
+  _workflowsFuture = Future.value([]);
+
+  _commentFocusNode.addListener(() {
     if (mounted) {
       setState(() => _commentInputFocused = _commentFocusNode.hasFocus);
       if (_commentFocusNode.hasFocus) {
@@ -145,6 +149,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         _currentUserInitials = parts.length >= 2
             ? '${parts.first[0]}${parts[1][0]}'.toUpperCase()
             : name.substring(0, name.length.clamp(0, 2)).toUpperCase();
+
+        // Now safe to start loading — frame is fully built
+        _commentsFuture = _loadComments();
+        _future = _loadProps();
+        _filesFuture = _loadFiles();
+        _workflowFuture = _loadWorkflow();
+        _workflowsFuture = _loadWorkflowsForThisObject();
       });
     });
   }
@@ -542,7 +553,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   // e-SIGN ─ SEND FOR SIGNING DIALOG
   // ─────────────────────────────────────────────────────────────────────────
-
   Future<void> _showSendForSigningDialog(ObjectFile file) async {
     await showDialog(
       context: context,
@@ -659,6 +669,141 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         ),
       );
     }
+  }
+
+  void _showESignOptions(ObjectFile file) {
+    final busy = _saving || _downloading || _changingWorkflow || _eSigning;
+    if (busy) return;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.draw_rounded, color: AppColors.primary, size: 22),
+                ),
+                const SizedBox(width: 12),
+                const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('e-Sign options',
+                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+                    SizedBox(height: 2),
+                    Text('Choose a signing action',
+                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                  ],
+                ),
+              ]),
+              const SizedBox(height: 20),
+              // Sign myself
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _selfSign(file);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.05),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.10),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.draw_outlined, size: 18, color: AppColors.primary),
+                      ),
+                      const SizedBox(width: 14),
+                      const Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('Sign myself',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          SizedBox(height: 2),
+                          Text('Sign this document with your own signature',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
+                        ]),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+                    ]),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              // Send for signing
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showSendForSigningDialog(file);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Row(children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(Icons.send_rounded, size: 18, color: Colors.grey.shade600),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          const Text('Send for signing',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                          const SizedBox(height: 2),
+                          Text('Request signatures from others via email',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                        ]),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+                    ]),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1545,6 +1690,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     final obj = widget.obj;
     return Scaffold(
       backgroundColor: AppColors.surfaceLight,
+      floatingActionButton: FutureBuilder<List<ObjectFile>>(
+        future: _filesFuture,
+        builder: (context, snap) {
+          final svc = context.watch<MFilesService>();
+          final firstFile = (snap.data?.isNotEmpty ?? false) ? snap.data!.first : null;
+          if (firstFile == null || !svc.isDssAvailable) return const SizedBox.shrink();
+          return _ESignFab(
+            onTap: () => _showESignOptions(firstFile),
+            isBusy: _eSigning,
+          );
+        },
+      ),
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -2532,7 +2689,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                             const Duration(seconds: 4),
                                       ));
                                     } else if (action == 'convert_pdf') {
-                                      setState(() => _downloading = false);
+                                      _downloading = false;
+                                      setState(() {});
                                       await _convertToPdf(obj, f);
                                     }
                                   } catch (e) {
@@ -4174,5 +4332,64 @@ class _PropVm {
         : (m['displayValue'] ?? '');
 
     return _PropVm(id: id, name: name, datatype: datatype, value: value);
+  }
+}
+
+class _ESignFab extends StatefulWidget {
+  final VoidCallback onTap;
+  final bool isBusy;
+  const _ESignFab({required this.onTap, required this.isBusy});
+
+  @override
+  State<_ESignFab> createState() => _ESignFabState();
+}
+
+class _ESignFabState extends State<_ESignFab>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _scale = Tween<double>(begin: 1.0, end: 1.06).animate(
+      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scale,
+      child: FloatingActionButton.extended(
+        onPressed: widget.isBusy ? null : widget.onTap,
+        backgroundColor: widget.isBusy ? Colors.grey.shade400 : AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 4,
+        icon: widget.isBusy
+            ? const SizedBox(
+                width: 18, height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : const Icon(Icons.draw_outlined, size: 20),
+        label: const Text(
+          'e-Sign',
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+      ),
+    );
   }
 }

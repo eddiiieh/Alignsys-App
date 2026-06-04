@@ -201,10 +201,9 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  /// Logs into DSS using the same credentials, stores tokens + user info.
   Future<void> _loginToDss(String email, String password) async {
     try {
-      print('🔐 Attempting DSS login for: $email');
+      debugPrint('🔐 Attempting DSS login for: $email');
 
       final response = await http.post(
         Uri.parse('https://dssauth.alignsys.tech/api/token/'),
@@ -212,11 +211,12 @@ class MFilesService extends ChangeNotifier {
         body: json.encode({'email': email, 'password': password}),
       );
 
-      print('📡 DSS login response status: ${response.statusCode}');
+      debugPrint('📡 DSS login response status: ${response.statusCode}');
 
       if (response.statusCode != 200) {
-        print(
-            '⚠️ DSS login failed: ${response.statusCode} — DSS features will be unavailable');
+        debugPrint('❌ DSS login FAILED: ${response.statusCode}');
+        debugPrint('❌ DSS response body: ${response.body}');
+        debugPrint('❌ DSS response headers: ${response.headers}');
         return;
       }
 
@@ -225,8 +225,7 @@ class MFilesService extends ChangeNotifier {
       final refresh = data['refresh'] as String?;
 
       if (access == null || access.isEmpty) {
-        print(
-            '⚠️ DSS login returned no token — DSS features will be unavailable');
+        debugPrint('❌ DSS login returned no token');
         return;
       }
 
@@ -235,36 +234,79 @@ class MFilesService extends ChangeNotifier {
 
       final payload = _decodeJwtPayload(access);
       if (payload != null) {
-        final id =
-            payload['user_id'] ?? payload['userId'] ?? payload['sub'];
-        dssUserId =
-            id is int ? id : int.tryParse('${id ?? ''}');
-
-        final company =
-            payload['companyid'] ?? payload['companyId'];
+        final id = payload['user_id'] ?? payload['userId'] ?? payload['sub'];
+        dssUserId = id is int ? id : int.tryParse('${id ?? ''}');
+        final company = payload['companyid'] ?? payload['companyId'];
         dssCompanyId = company?.toString();
-
-        print(
-            '✅ DSS login successful — dssUserId: $dssUserId, companyId: $dssCompanyId');
+        debugPrint('✅ DSS login successful — dssUserId: $dssUserId, companyId: $dssCompanyId');
       }
 
-      // Persist DSS tokens
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('dss_access_token', access);
-      if (refresh != null) {
-        await prefs.setString('dss_refresh_token', refresh);
-      }
-      if (dssUserId != null) {
-        await prefs.setInt('dss_user_id', dssUserId!);
-      }
-      if (dssCompanyId != null) {
-        await prefs.setString('dss_company_id', dssCompanyId!);
-      }
+      if (refresh != null) await prefs.setString('dss_refresh_token', refresh);
+      if (dssUserId != null) await prefs.setInt('dss_user_id', dssUserId!);
+      if (dssCompanyId != null) await prefs.setString('dss_company_id', dssCompanyId!);
 
       notifyListeners();
-    } catch (e) {
-      // DSS failure must never break EDMS login
-      print('⚠️ DSS login exception (non-fatal): $e');
+    } catch (e, stack) {
+      debugPrint('❌ DSS login EXCEPTION: $e');
+      debugPrint('❌ Stack: $stack');
+    }
+  }
+
+  Future<bool> _refreshDssToken() async {
+    if (dssRefreshToken == null || dssRefreshToken!.isEmpty) {
+      debugPrint('⚠️ No DSS refresh token available');
+      return false;
+    }
+
+    try {
+      debugPrint('🔄 Refreshing DSS access token...');
+
+      final response = await http.post(
+        Uri.parse('https://dssauth.alignsys.tech/api/token/refresh/'),
+        headers: const {'Content-Type': 'application/json'},
+        body: json.encode({'refresh': dssRefreshToken}),
+      );
+
+      debugPrint('📡 DSS token refresh status: ${response.statusCode}');
+
+      if (response.statusCode != 200) {
+        debugPrint('❌ DSS token refresh failed: ${response.statusCode} ${response.body}');
+        return false;
+      }
+
+      final data = json.decode(response.body);
+      final newAccess = data['access'] as String?;
+
+      if (newAccess == null || newAccess.isEmpty) {
+        debugPrint('❌ DSS token refresh returned no access token');
+        return false;
+      }
+
+      dssAccessToken = newAccess;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('dss_access_token', newAccess);
+
+      // Re-extract userId and companyId from the new token
+      final payload = _decodeJwtPayload(newAccess);
+      if (payload != null) {
+        final id = payload['user_id'] ?? payload['userId'] ?? payload['sub'];
+        dssUserId = id is int ? id : int.tryParse('${id ?? ''}');
+        final company = payload['companyid'] ?? payload['companyId'];
+        dssCompanyId = company?.toString();
+        if (dssUserId != null) await prefs.setInt('dss_user_id', dssUserId!);
+        if (dssCompanyId != null) await prefs.setString('dss_company_id', dssCompanyId!);
+      }
+
+      debugPrint('✅ DSS token refreshed — dssUserId: $dssUserId');
+      notifyListeners();
+      return true;
+    } catch (e, stack) {
+      debugPrint('❌ DSS token refresh EXCEPTION: $e');
+      debugPrint('❌ Stack: $stack');
+      return false;
     }
   }
 
@@ -425,6 +467,26 @@ class MFilesService extends ChangeNotifier {
     dssRefreshToken = prefs.getString('dss_refresh_token');
     dssUserId = prefs.getInt('dss_user_id');
     dssCompanyId = prefs.getString('dss_company_id');
+
+    if (dssAccessToken != null) {
+      final payload = _decodeJwtPayload(dssAccessToken!);
+      final exp = payload?['exp'];
+      if (exp != null) {
+        final expiry = DateTime.fromMillisecondsSinceEpoch((exp as int) * 1000);
+        if (DateTime.now().isAfter(expiry)) {
+          debugPrint('⚠️ DSS access token expired — attempting refresh');
+          dssAccessToken = null; // clear it optimistically
+          final refreshed = await _refreshDssToken();
+          if (!refreshed) {
+            debugPrint('❌ DSS refresh failed — DSS will be unavailable until next login');
+          }
+        } else {
+          debugPrint('✅ DSS access token is valid until $expiry');
+        }
+      } else {
+        debugPrint('⚠️ No exp claim in DSS token, treating as valid');
+      }
+    }
 
     print(
         '   dssAccessToken: ${dssAccessToken != null ? "present" : "null"}');
@@ -1908,8 +1970,20 @@ class MFilesService extends ChangeNotifier {
           'ConvertToPdf failed: ${resp.statusCode} ${resp.body}');
     }
 
-    final decoded = jsonDecode(resp.body);
-    if (decoded is Map<String, dynamic>) return decoded;
+    // API may return a plain success string instead of JSON
+    final raw = resp.body.trim();
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
+    } catch (_) {
+      // Not JSON — check if it's a plain success message
+      final lower = raw.toLowerCase();
+      if (lower.contains('success') ||
+          lower.contains('replaced') ||
+          lower.contains('converted')) {
+        return {'success': true};
+      }
+    }
 
     throw Exception(
         'ConvertToPdf unexpected response: ${resp.body}');
@@ -2797,18 +2871,92 @@ class MFilesService extends ChangeNotifier {
       throw Exception('Session not ready');
     }
 
-    final url =
-        Uri.parse('$baseUrl/api/Templates/ObjectCreation');
+    final url = Uri.parse('$baseUrl/api/Templates/ObjectCreation');
+
+    debugPrint('📤 createObjectFromTemplate URL: $url');
+    debugPrint('📤 Payload keys: ${payload.keys.toList()}');
+    debugPrint('📤 VaultGuid: ${payload['VaultGuid']}');
+    debugPrint('📤 ClassID: ${payload['ClassID']}');
+    debugPrint('📤 ObjectId (template): ${payload['ObjectId']}');
+    debugPrint('📤 UserID: ${payload['UserID']}');
+    debugPrint('📤 mfilesCreate: ${payload['mfilesCreate']}');
+    final props = payload['Properties'] as List?;
+    debugPrint('📤 Properties count: ${props?.length ?? 0}');
+    if (props != null) {
+      for (final p in props) {
+        debugPrint(
+          '   prop → id=${p['propId']} '
+          'type=${p['propertytype']} '
+          'value="${p['value']}" '
+          'title="${p['title']}"',
+        );
+      }
+    }
+    debugPrint('📤 Full JSON body: ${jsonEncode(payload)}');
 
     final resp = await _authenticatedRequest(
       () => http.post(url,
           headers: _authHeaders, body: jsonEncode(payload)),
     );
 
-    if (resp.statusCode == 200 || resp.statusCode == 201) return;
+    debugPrint('📨 createObjectFromTemplate status: ${resp.statusCode}');
+    debugPrint('📨 createObjectFromTemplate body: ${resp.body}');
 
-    throw Exception(
-        'createObjectFromTemplate failed: ${resp.statusCode} ${resp.body}');
+    if (resp.statusCode != 200 && resp.statusCode != 201) {
+      throw Exception(
+          'createObjectFromTemplate failed: ${resp.statusCode} ${resp.body}');
+    }
+
+    // ── Parse the new object's ID from the response and patch properties ──
+    // The creation endpoint copies the template file but doesn't apply the
+    // submitted Properties array to the new object. We do a follow-up
+    // UpdateObjectProps call with the same props to write them properly.
+    if (props == null || props.isEmpty) return;
+
+    int? newObjectId;
+    try {
+      final decoded = jsonDecode(resp.body);
+      if (decoded is Map) {
+        final raw = decoded['objID'] ??
+            decoded['objectId'] ??
+            decoded['ObjectId'] ??
+            decoded['id'] ??
+            decoded['Id'];
+        if (raw != null) {
+          newObjectId = raw is int ? raw : int.tryParse('$raw');
+        }
+      }
+    } catch (_) {}
+
+    if (newObjectId == null || newObjectId <= 0) {
+      debugPrint('⚠️ Could not parse new object ID — skipping property patch');
+      return;
+    }
+
+    debugPrint('✅ New object ID: $newObjectId — patching ${props.length} props');
+
+    // Convert the template payload props into the format updateObjectProps expects
+    final patchProps = props.map<Map<String, dynamic>>((p) => {
+      'id': p['propId'],
+      'value': p['value'].toString(),
+      'datatype': (p['propertytype'] as String)
+          .replaceAll('MFDataType', 'MFDatatype'),
+    }).toList();
+
+    final classId = payload['ClassID'] as int? ?? 0;
+
+    final ok = await updateObjectProps(
+      objectId: newObjectId,
+      objectTypeId: 0, // document object type
+      classId: classId,
+      props: patchProps,
+    );
+
+    if (ok) {
+      debugPrint('✅ Property patch succeeded for object $newObjectId');
+    } else {
+      debugPrint('⚠️ Property patch failed: $error');
+    }
   }
 
   Future<List<Map<String, dynamic>>> fetchClassTemplateProps({

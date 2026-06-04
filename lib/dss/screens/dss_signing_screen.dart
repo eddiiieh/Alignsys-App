@@ -75,16 +75,20 @@ class _DssSigningScreenState extends State<DssSigningScreen> {
         },
         onPageFinished: (_) async {
           await _controller.runJavaScript(reInjectJs);
-          if (mounted) setState(() {
+          if (mounted) {
+            setState(() {
             _loading = false;
             _hasError = false;
           });
+          }
         },
         onWebResourceError: (_) {
-          if (mounted) setState(() {
+          if (mounted) {
+            setState(() {
             _loading = false;
             _hasError = true;
           });
+          }
         },
       ))
       ..loadHtmlString(shimHtml, baseUrl: widget.signingUrl);
