@@ -53,7 +53,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
 
     // Missing identity payload: just show a small message (no header if nested)
     final missingIdentity =
-        widget.obj.id == 0 || widget.obj.objectTypeId == 0 || widget.obj.classId == 0;
+        widget.obj.id == 0 || widget.obj.classId == 0;
 
     if (missingIdentity) {
       return Padding(

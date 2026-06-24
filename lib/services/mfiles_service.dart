@@ -1716,7 +1716,7 @@ class MFilesService extends ChangeNotifier {
     required int classId,
     required bool notify,
   }) async {
-    if (objectId <= 0 || objectTypeId <= 0 || classId <= 0) return;
+    if (objectId <= 0 || classId <= 0) return;
     if (_hasRelationshipsCache.containsKey(objectId)) return;
     if (_relInFlight.contains(objectId)) return;
 
@@ -1746,7 +1746,6 @@ class MFilesService extends ChangeNotifier {
     final todo = items
         .where((it) =>
             it.objectId > 0 &&
-            it.objectTypeId > 0 &&
             it.classId > 0 &&
             !_hasRelationshipsCache.containsKey(it.objectId) &&
             !_relInFlight.contains(it.objectId))
@@ -1794,7 +1793,6 @@ class MFilesService extends ChangeNotifier {
     final items = objects
         .where((o) =>
             o.id > 0 &&
-            o.objectTypeId > 0 &&
             o.classId > 0)
         .toList();
 
@@ -1815,7 +1813,6 @@ class MFilesService extends ChangeNotifier {
         .where((it) =>
             it.isObject &&
             it.id > 0 &&
-            it.objectTypeId > 0 &&
             it.classId > 0)
         .map((it) => (
               objectId: it.id,

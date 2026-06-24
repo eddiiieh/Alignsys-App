@@ -1269,7 +1269,6 @@ class _HomeScreenState extends State<HomeScreen>
 
 
   // ── Object row ────────────────────────────────────────────────────────────
-
   Widget _buildCompactObjectRow(
     ViewObject obj,
     Future<void> Function(ViewObject) onLongPress,
@@ -1279,21 +1278,28 @@ class _HomeScreenState extends State<HomeScreen>
         ? obj.displayId.trim()
         : '${obj.id}';
     final subtitle = type.isEmpty ? 'ID $idPart' : '$type | ID $idPart';
-    final bool canExpand = obj.id != 0;
 
     final svc = context.watch<MFilesService>();
     _iconForObj(svc, obj);
 
     final bool isDocument = _isDocumentObj(svc, obj);
     final bool isMultiFileObj = svc.isMultiFile(
-    objectTypeId: obj.objectTypeId, isSingleFile: obj.isSingleFile);
-    final bool infoExpanded = _expandedInfoItemId == obj.id;
-    final bool relationshipsExpanded =
-        _expandedRelationshipsItemId == obj.id;
-    final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+        objectTypeId: obj.objectTypeId, isSingleFile: obj.isSingleFile);
 
-    if (canExpand &&
-        svc.cachedHasRelationships(obj.id) == null) {
+    // isDeleted check: effective tab resolves to 'Trash' even when nested
+    // inside the More tab.
+    final bool isTrashTab = _effectiveTabName == 'Trash';
+
+    // On the Trash tab there's nothing to expand — no relationships, no
+    // info dropdown. Just identify the item and offer Restore.
+    final bool canExpand = obj.id != 0 && !isTrashTab;
+
+    final bool infoExpanded = canExpand && _expandedInfoItemId == obj.id;
+    final bool relationshipsExpanded =
+        canExpand && _expandedRelationshipsItemId == obj.id;
+    final bool isDimmed = canExpand && _expandedInfoItemId != null && !infoExpanded;
+
+    if (canExpand && svc.cachedHasRelationships(obj.id) == null) {
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
@@ -1301,10 +1307,6 @@ class _HomeScreenState extends State<HomeScreen>
         notify: false,
       );
     }
-
-    // isDeleted check: effective tab resolves to 'Trash' even when nested
-    // inside the More tab.
-    final bool isTrashTab = _effectiveTabName == 'Trash';
 
     return AnimatedOpacity(
       duration: const Duration(milliseconds: 200),
@@ -1348,20 +1350,17 @@ class _HomeScreenState extends State<HomeScreen>
                       builder: (_) => ObjectDetailsScreen(obj: obj)),
                 );
                 if (deleted == true) {
-                  await context
-                      .read<MFilesService>()
-                      .fetchRecentObjects();
+                  await context.read<MFilesService>().fetchRecentObjects();
                 }
               },
-              onLongPress:
-                  canLongPress(obj, context, _effectiveTabName)
-                      ? () => onLongPress(obj)
-                      : null,
+              onLongPress: canLongPress(obj, context, _effectiveTabName)
+                  ? () => onLongPress(obj)
+                  : null,
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 16, vertical: 12),
                 child: Row(children: [
-                  // Relationships chevron (non-documents only)
+                  // Relationships chevron (non-trash only)
                   if (canExpand &&
                       svc.cachedHasRelationships(obj.id) == true) ...[
                     Material(
@@ -1423,93 +1422,135 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
 
-                  // Eye icon for document objects
-                  if (isDocument) ...[
-                    const SizedBox(width: 6),
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => _openPreview(obj),
-                      child: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blueGrey.withOpacity(0.08),
-                          shape: BoxShape.circle,
-                        ),
-                        child: _previewLoading.contains(obj.id)
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.blueGrey.shade400),
-                                ),
-                              )
-                            : Icon(
-                                Icons.remove_red_eye_outlined,
-                                size: 18,
-                                color: Colors.blueGrey.shade400,
-                              ),
-                      ),
-                    ),
-                  ],
-
-                  // Info icon
-                  if (canExpand) ...[
+                  if (isTrashTab) ...[
                     const SizedBox(width: 8),
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () => setState(() {
-                          if (_expandedInfoItemId == obj.id) {
-                            _expandedInfoItemId = null;
-                          } else {
-                            _expandedInfoItemId = obj.id;
-                            _expandedRelationshipsItemId = null;
-                          }
-                        }),
-                        borderRadius: BorderRadius.circular(20),
+                    _buildRestoreButton(obj, onLongPress),
+                  ] else ...[
+                    // Eye icon for document objects
+                    if (isDocument) ...[
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _openPreview(obj),
                         child: Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: infoExpanded
-                                ? AppColors.primary.withOpacity(0.15)
-                                : AppColors.primary.withOpacity(0.08),
+                            color: Colors.blueGrey.withOpacity(0.08),
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(
-                            infoExpanded
-                                ? Icons.keyboard_arrow_up_rounded
-                                : Icons.info_outline,
-                            size: 18,
-                            color: AppColors.primary,
+                          child: _previewLoading.contains(obj.id)
+                              ? SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.blueGrey.shade400),
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.remove_red_eye_outlined,
+                                  size: 18,
+                                  color: Colors.blueGrey.shade400,
+                                ),
+                        ),
+                      ),
+                    ],
+
+                    // Info icon
+                    if (canExpand) ...[
+                      const SizedBox(width: 8),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => setState(() {
+                            if (_expandedInfoItemId == obj.id) {
+                              _expandedInfoItemId = null;
+                            } else {
+                              _expandedInfoItemId = obj.id;
+                              _expandedRelationshipsItemId = null;
+                            }
+                          }),
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: infoExpanded
+                                  ? AppColors.primary.withOpacity(0.15)
+                                  : AppColors.primary.withOpacity(0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              infoExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.info_outline,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ] else
-                    Icon(Icons.chevron_right_rounded,
-                        size: 20, color: Colors.grey.shade400),
+                    ] else
+                      Icon(Icons.chevron_right_rounded,
+                          size: 20, color: Colors.grey.shade400),
+                  ],
                 ]),
               ),
             ),
           ),
           if (infoExpanded && canExpand) ...[
             Divider(height: 1, color: Colors.grey.shade200),
-            ObjectInfoDropdown(
-              obj: obj,
-              isDeleted: isTrashTab,
-            ),
+            ObjectInfoDropdown(obj: obj, isDeleted: isTrashTab),
           ],
           if (relationshipsExpanded && canExpand) ...[
             Divider(height: 1, color: Colors.grey.shade200),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: RelationshipsDropdown(
-                  obj: obj, initiallyExpanded: true),
+                key: ValueKey('rel_${obj.id}'),
+                obj: obj,
+                initiallyExpanded: true,
+              ),
             ),
           ],
         ]),
+      ),
+    );
+  }
+
+  // New: clear, tappable Restore pill for the Trash tab.
+  Widget _buildRestoreButton(
+    ViewObject obj,
+    Future<void> Function(ViewObject) onRestore,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onRestore(obj),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.restore_rounded, size: 16, color: AppColors.primary),
+              const SizedBox(width: 6),
+              Text(
+                'Restore',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

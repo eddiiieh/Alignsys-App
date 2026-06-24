@@ -317,8 +317,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     final svc = context.watch<MFilesService>();
 
     final bool isObject = item.isObject && item.id > 0;
-    final bool hasRelationships =
-        isObject && item.objectTypeId > 0 && item.classId > 0;
+    final bool hasRelationships = isObject && item.classId > 0;
     final bool canDelete = isObject;
     final bool isDocument = isObject && svc.isDocumentContentItem(item);
 
@@ -559,7 +558,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     Divider(height: 1, color: Colors.grey.shade200),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      child: RelationshipsDropdown(obj: asViewObj!),
+                      child: RelationshipsDropdown(
+                        key: ValueKey('rel_${item.id}'),
+                        obj: asViewObj!,
+                      ),
                     ),
                   ],
                 ],

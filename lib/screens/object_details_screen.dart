@@ -311,6 +311,7 @@ void initState() {
   bool _isMultiLookup(_PropVm p) => p.datatype == 'MFDatatypeMultiSelectLookup';
   bool _isDate(_PropVm p) => p.datatype == 'MFDatatypeDate';
   bool _isTimestamp(_PropVm p) => p.datatype == 'MFDatatypeTimestamp';
+  bool _isBoolean(_PropVm p) => p.datatype == 'MFDatatypeBoolean';
 
 
   List<int> _selectedIdsForLookup(_PropVm p, {required bool isMulti}) {
@@ -4187,6 +4188,120 @@ Widget _buildCommentList(List<ObjectComment> comments) {
     // ── Date and timestamp fields ─────────────────────────────────────────────
     final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
     final currentText = _valueToText(rawCurrent);
+
+    // -- Boolean fields --
+    if (_isBoolean(p)) {
+      // Normalise whatever the server sends to a proper bool
+      bool currentBool = false;
+      final raw = _dirty[p.id]?.editedValue ?? p.value;
+      if (raw is bool) {
+        currentBool = raw;
+      } else if (raw is String) {
+        currentBool = raw.toLowerCase() == 'true' || raw == '1';
+      } else if (raw is num) {
+        currentBool = raw != 0;
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: (_saving || _downloading || _changingWorkflow)
+                ? null
+                : () async {
+                    // Toggle the value, mark dirty, auto-save
+                    final newVal = !currentBool;
+                    setState(() {
+                      _dirty[p.id] = p.copyWith(editedValue: newVal);
+                      _editingPropId = p.id;
+                    });
+                    await _saveField(p);
+                  },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: currentBool
+                    ? AppColors.primary.withOpacity(0.06)
+                    : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: currentBool
+                      ? AppColors.primary.withOpacity(0.35)
+                      : Colors.grey.shade200,
+                ),
+              ),
+              child: Row(
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 36,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      color: currentBool
+                          ? AppColors.primary
+                          : Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: AnimatedAlign(
+                      duration: const Duration(milliseconds: 150),
+                      alignment: currentBool
+                          ? Alignment.centerRight
+                          : Alignment.centerLeft,
+                      child: Container(
+                        margin: const EdgeInsets.all(2),
+                        width: 16,
+                        height: 16,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    currentBool ? 'Yes' : 'No',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w500,
+                      color: currentBool
+                          ? AppColors.primary
+                          : Colors.grey.shade600,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (_saving && _editingPropId == p.id)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  else
+                    Icon(
+                      Icons.swap_horiz_rounded,
+                      size: 16,
+                      color: (_saving || _downloading || _changingWorkflow)
+                          ? Colors.grey.shade300
+                          : Colors.grey.shade400,
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     // -- Date and timestamp fields --
     if (_isDate(p) || _isTimestamp(p)) {
