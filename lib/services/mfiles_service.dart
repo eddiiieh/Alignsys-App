@@ -25,6 +25,18 @@ import '../models/vault_object_type.dart';
 import '../models/view_item.dart';
 import '../models/view_object.dart';
 
+import '../navigation/app_navigator.dart';
+
+/// Result of [MFilesService.createObject]. [objectId] is parsed from the
+/// server's response when possible so callers (e.g. the quick-create flow
+/// launched from a lookup field's "+" button) can auto-select the new
+/// object without an extra round-trip.
+class ObjectCreationResult {
+  final bool success;
+  final int? objectId;
+
+  const ObjectCreationResult({required this.success, this.objectId});
+}
 class MFilesService extends ChangeNotifier {
   // Auth
   String? accessToken;
@@ -33,6 +45,10 @@ class MFilesService extends ChangeNotifier {
   String? fullname;
   int? userId;
   int? mfilesUserId;
+
+  // Set when we forcibly log the user out due to an expired/broken session,
+  // so the login screen can show a friendly one-time message.
+  bool sessionExpired = false;
 
   // DSS (if we end up needing to store these here for any reason)
   String? dssAccessToken;
@@ -82,6 +98,12 @@ class MFilesService extends ChangeNotifier {
   // Loading/Error
   bool isLoading = false;
   String? error;
+
+  // View-specific errors
+  String? viewsError;
+  String? recentError;
+  String? assignedError;
+  String? deletedError;
 
   bool isAdmin = false;
 
@@ -398,29 +420,59 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
+  /// True if this response indicates the session needs to be re-established —
+  /// either the JWT is dead (401), or the M-Files vault session behind the
+  /// backend has gone stale (400 "vault is offline" / 0x80040061), which is
+  /// the case users currently "fix" by manually logging out and back in.
+  bool _looksLikeSessionExpired(http.Response response) {
+    if (response.statusCode == 401) return true;
+    final body = response.body.toLowerCase();
+    if (response.statusCode == 400 &&
+        (body.contains('vault is offline') ||
+            body.contains('0x80040061'))) {
+      return true;
+    }
+    return false;
+  }
+
   Future<http.Response> _authenticatedRequest(
     Future<http.Response> Function() request, {
     bool retryOnAuthFailure = true,
   }) async {
     http.Response response = await request();
 
-    if (response.statusCode == 401 &&
-        retryOnAuthFailure &&
-        refreshToken != null) {
-      print('🔄 Got 401, attempting to refresh token...');
+    if (_looksLikeSessionExpired(response) && retryOnAuthFailure) {
+      print(
+          '🔄 Session looks expired (status=${response.statusCode}), attempting to refresh token...');
 
-      final refreshed = await refreshAccessToken();
+      final refreshed =
+          (refreshToken != null) && await refreshAccessToken();
 
       if (refreshed) {
         print('♻️ Retrying original request with new token...');
         response = await request();
-      } else {
-        print('❌ Token refresh failed - logging out');
-        await logout();
+        // If the retry succeeded, we're done. If it's STILL failing after a
+        // successful JWT refresh, the problem is the backend's M-Files vault
+        // session, not our token — refreshing the JWT again won't fix that.
+        if (!_looksLikeSessionExpired(response)) {
+          return response;
+        }
       }
+
+      print('❌ Could not recover session — logging out and redirecting to login');
+      await _forceLogoutAndRedirect();
     }
 
     return response;
+  }
+
+  Future<void> _forceLogoutAndRedirect() async {
+    sessionExpired = true;
+    await logout();
+    navigatorKey.currentState?.pushNamedAndRemoveUntil(
+      '/login',
+      (route) => false,
+    );
   }
 
   Future<bool> tryAutoLogin() async {
@@ -509,7 +561,7 @@ class MFilesService extends ChangeNotifier {
 
     // Restore relationship dots so they appear instantly on next launch
     _loadRelationshipsCacheFromPrefs(); // fire-and-forget
-
+    _loadCheckoutCacheFromPrefs(); 
     return hasTokens;
   }
 
@@ -562,7 +614,7 @@ class MFilesService extends ChangeNotifier {
     clearExtensionCache();
     clearClassPropertiesCache();
     clearRelationshipsCache();
-
+    clearCheckoutCache();
     clearFileCache();
     clearViewCache();
 
@@ -896,9 +948,21 @@ class MFilesService extends ChangeNotifier {
 
       final response =
           await http.get(url, headers: _authHeadersNoJson);
+      
+      debugPrint('📋 ClassProps raw [${response.statusCode}] (${response.body.length} chars): ${response.body}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
+
+        // Print each prop individually so nothing gets cut off
+        debugPrint('📋 Total props from API: ${data.length}');
+        for (int i = 0; i < data.length; i++) {
+          final p = data[i];
+          debugPrint('📋 prop[$i]: id=${p['propId']} title="${p['title']}" '
+              'type=${p['propertytype']} required=${p['isRequired']} '
+              'hidden=${p['isHidden']} automatic=${p['isAutomatic']}');
+        }
+
         final props =
             data.map((e) => ClassProperty.fromJson(e)).toList();
 
@@ -963,6 +1027,7 @@ class MFilesService extends ChangeNotifier {
             data.map((e) => ViewObject.fromJson(e)).toList();
         warmExtensionsForObjects(searchResults);
         warmRelationshipsForObjects(searchResults);
+        syncCheckoutStateForObjects(searchResults);
         notifyListeners();
       } else {
         _setError('Search failed: ${response.statusCode}');
@@ -1043,14 +1108,112 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  Future<bool> createObject(ObjectCreationRequest request) async {
+  /// Adds a new item to a plain (non-object-type) M-Files value list.
+  ///
+  ///   POST /api/ValuelistInstance/AddValuelistItem
+  ///   body: { vaultGuid, userID, valuelistID, name }
+  ///
+  /// [valueListId] is the lookup property's `typeId` — for non-object-type
+  /// lookups (ClassProperty.objectTypeVL == false) that field holds the
+  /// value list's own ID rather than an object type ID. If items end up
+  /// in the wrong list during testing, flag it and I'll dig further.
+  Future<LookupItem?> addValueListItem({
+    required int valueListId,
+    required String name,
+  }) async {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
+      _setError('Session not ready');
+      return null;
+    }
+
+    try {
+      final url =
+          Uri.parse('$baseUrl/api/ValuelistInstance/AddValuelistItem');
+
+      final body = {
+        'vaultGuid': vaultGuidWithBraces,
+        'userID': mfilesUserId,
+        'valuelistID': valueListId,
+        'name': name,
+      };
+
+      if (kDebugMode) {
+        debugPrint('🚀 AddValuelistItem URL: $url');
+        debugPrint('📦 Body: ${jsonEncode(body)}');
+      }
+
+      final resp = await _authenticatedRequest(
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
+      );
+
+      if (kDebugMode) {
+        debugPrint('📨 AddValuelistItem status: ${resp.statusCode}');
+        debugPrint('📨 AddValuelistItem body: ${resp.body}');
+      }
+
+      if (resp.statusCode != 200 && resp.statusCode != 201) {
+        _setError('Failed to add value: ${resp.statusCode} ${resp.body}');
+        return null;
+      }
+
+      final newId = _extractCreatedValueListItemId(resp.body);
+      if (newId == null) {
+        _setError('Value added, but its ID could not be parsed');
+        return null;
+      }
+
+      return LookupItem(id: newId, displayValue: name);
+    } catch (e) {
+      _setError('Error adding value: $e');
+      return null;
+    }
+  }
+
+  /// Best-effort parse of the new value list item's ID from
+  /// AddValuelistItem's response body. Share a raw response body if this
+  /// consistently returns null and I'll tighten the key matching.
+  int? _extractCreatedValueListItemId(String responseBody) {
+    try {
+      final decoded = jsonDecode(responseBody);
+
+      if (decoded is num) return decoded.toInt();
+
+      if (decoded is Map) {
+        final raw = decoded['id'] ??
+            decoded['Id'] ??
+            decoded['itemId'] ??
+            decoded['ItemId'] ??
+            decoded['itemID'] ??
+            decoded['ItemID'] ??
+            decoded['valueListItemId'] ??
+            decoded['ValueListItemId'] ??
+            decoded['value'] ??
+            decoded['Value'];
+        if (raw != null) {
+          return raw is int ? raw : int.tryParse('$raw');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Could not parse added value list item id: $e');
+    }
+    return null;
+  }
+
+  Future<ObjectCreationResult> createObject(
+      ObjectCreationRequest request) async {
     _setLoading(true);
     _setError(null);
 
     try {
-      if (selectedVault == null) return false;
-      if (accessToken == null) return false;
-      if (mfilesUserId == null) return false;
+      if (selectedVault == null) {
+        return const ObjectCreationResult(success: false);
+      }
+      if (accessToken == null) {
+        return const ObjectCreationResult(success: false);
+      }
+      if (mfilesUserId == null) {
+        return const ObjectCreationResult(success: false);
+      }
 
       final url =
           Uri.parse('$baseUrl/api/objectinstance/ObjectCreation');
@@ -1074,30 +1237,69 @@ class MFilesService extends ChangeNotifier {
       );
 
       if (response.statusCode == 200 ||
-          response.statusCode == 201) return true;
+          response.statusCode == 201) {
+        final newId = _extractCreatedObjectId(response.body);
+        return ObjectCreationResult(success: true, objectId: newId);
+      }
 
       _setError(
           'Server returned ${response.statusCode}: ${response.body}');
-      return false;
+      return const ObjectCreationResult(success: false);
     } catch (e) {
       _setError('Error creating object: $e');
-      return false;
+      return const ObjectCreationResult(success: false);
     } finally {
       _setLoading(false);
     }
   }
 
+  /// Best-effort parse of the newly created object's ID from
+  /// ObjectCreation's response body. Tries the same key variants seen
+  /// elsewhere in the backend's responses (see createObjectFromTemplate).
+  /// If this consistently returns null on your backend, share a raw
+  /// response body and I'll tighten the key matching.
+  int? _extractCreatedObjectId(String responseBody) {
+    try {
+      final decoded = jsonDecode(responseBody);
+
+      if (decoded is num) return decoded.toInt();
+
+      if (decoded is Map) {
+        final raw = decoded['objID'] ??
+            decoded['ObjID'] ??
+            decoded['objectId'] ??
+            decoded['ObjectId'] ??
+            decoded['objectID'] ??
+            decoded['ObjectID'] ??
+            decoded['id'] ??
+            decoded['Id'];
+        if (raw != null) {
+          return raw is int ? raw : int.tryParse('$raw');
+        }
+      }
+    } catch (e) {
+      debugPrint('⚠️ Could not parse created object id: $e');
+    }
+    return null;
+  }
+
   Future<void> fetchAllViews() async {
     if (accessToken == null) {
-      _setError('Not logged in (missing accessToken)');
+      const msg = 'Not logged in (missing accessToken)';
+      viewsError = msg;
+      _setError(msg);
       return;
     }
     if (selectedVault == null) {
-      _setError('No vault selected');
+      const msg = 'No vault selected';
+      viewsError = msg;
+      _setError(msg);
       return;
     }
     if (mfilesUserId == null) {
-      _setError('M-Files user not resolved');
+      const msg = 'M-Files user not resolved';
+      viewsError = msg;
+      _setError(msg);
       return;
     }
 
@@ -1107,133 +1309,102 @@ class MFilesService extends ChangeNotifier {
     try {
       final url = Uri.parse(
           '$baseUrl/api/Views/GetViews/$vaultGuidWithBraces/$mfilesUserId');
-
       final response = await _authenticatedRequest(
         () => http.get(url, headers: _authHeadersNoJson),
       );
 
-      if (kDebugMode) {
-        debugPrint('VIEWS status=${response.statusCode}');
-        debugPrint('VIEWS body=${response.body}');
-      }
-
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
-
         if (decoded is Map<String, dynamic>) {
-          final common = (decoded['commonViews'] ??
-                  decoded['CommonViews'] ??
-                  decoded['common_views']) as List? ??
-              [];
-          final other = (decoded['otherViews'] ??
-                  decoded['OtherViews'] ??
-                  decoded['other_views']) as List? ??
-              [];
-
-          commonViews =
-              common.map((e) => ViewItem.fromJson(e)).toList();
-          otherViews =
-              other.map((e) => ViewItem.fromJson(e)).toList();
+          final common = (decoded['commonViews'] ?? decoded['CommonViews'] ?? decoded['common_views']) as List? ?? [];
+          final other = (decoded['otherViews'] ?? decoded['OtherViews'] ?? decoded['other_views']) as List? ?? [];
+          commonViews = common.map((e) => ViewItem.fromJson(e)).toList();
+          otherViews = other.map((e) => ViewItem.fromJson(e)).toList();
           allViews = [...commonViews, ...otherViews];
+          viewsError = null;
           notifyListeners();
         } else {
-          _setError(
-              'Unexpected views response shape: ${decoded.runtimeType}');
+          final msg = 'Unexpected views response shape: ${decoded.runtimeType}';
+          viewsError = msg;
+          _setError(msg);
         }
       } else {
-        _setError(
-            'Failed to fetch views: ${response.statusCode} ${response.body}');
+        final msg = 'Failed to fetch views: ${response.statusCode} ${response.body}';
+        viewsError = msg;
+        _setError(msg);
       }
     } catch (e) {
-      _setError('Error fetching views: $e');
+      final msg = 'Error fetching views: $e';
+      viewsError = msg;
+      _setError(msg);
     } finally {
       _setLoading(false);
     }
   }
 
   Future<void> fetchRecentObjects({bool background = false}) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return;
-
-    // If we already have data and this is a background refresh,
-    // don't show the loading spinner
-    if (!background) {
-      _setLoading(true);
-    }
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
+    if (!background) _setLoading(true);
     _setError(null);
 
     try {
-      final url = Uri.parse(
-          '$baseUrl/api/Views/GetRecent/$vaultGuidWithBraces/$mfilesUserId');
-
-      final response = await _authenticatedRequest(
-        () => http.get(url, headers: _authHeadersNoJson),
-      );
+      final url = Uri.parse('$baseUrl/api/Views/GetRecent/$vaultGuidWithBraces/$mfilesUserId');
+      final response = await _authenticatedRequest(() => http.get(url, headers: _authHeadersNoJson));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        final fetched = data
-            .map((e) => ViewObject.fromJson(e as Map<String, dynamic>))
-            .toList();
-
+        final fetched = data.map((e) => ViewObject.fromJson(e as Map<String, dynamic>)).toList();
         fetched.sort((a, b) {
-          final ad = a.lastModifiedUtc ??
-              DateTime.fromMillisecondsSinceEpoch(0);
-          final bd = b.lastModifiedUtc ??
-              DateTime.fromMillisecondsSinceEpoch(0);
+          final ad = a.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bd = b.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
           return bd.compareTo(ad);
         });
-
         recentObjects = fetched;
+        recentError = null;
         warmExtensionsForObjects(recentObjects);
         warmRelationshipsForObjects(recentObjects);
+        syncCheckoutStateForObjects(recentObjects);
         notifyListeners();
       } else {
-        if (!background) {
-          _setError('Failed to fetch recent objects: ${response.statusCode}');
-        }
+        final msg = 'Failed to fetch recent objects: ${response.statusCode}';
+        recentError = msg;
+        if (!background) _setError(msg);
       }
     } catch (e) {
-      if (!background) _setError('Error fetching recent objects: $e');
+      final msg = 'Error fetching recent objects: $e';
+      recentError = msg;
+      if (!background) _setError(msg);
     } finally {
       if (!background) _setLoading(false);
     }
   }
 
   Future<void> fetchAssignedObjects({bool background = false}) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return;
-
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
     if (!background) _setLoading(true);
     _setError(null);
 
     try {
-      final url = Uri.parse(
-          '$baseUrl/api/Views/GetAssigned/$vaultGuidWithBraces/$mfilesUserId');
-
-      final response = await _authenticatedRequest(
-        () => http.get(url, headers: _authHeadersNoJson),
-      );
+      final url = Uri.parse('$baseUrl/api/Views/GetAssigned/$vaultGuidWithBraces/$mfilesUserId');
+      final response = await _authenticatedRequest(() => http.get(url, headers: _authHeadersNoJson));
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        assignedObjects = data
-            .whereType<Map<String, dynamic>>()
-            .map((e) => ViewObject.fromJson(e))
-            .toList();
-
+        assignedObjects = data.whereType<Map<String, dynamic>>().map((e) => ViewObject.fromJson(e)).toList();
+        assignedError = null;
         warmExtensionsForObjects(assignedObjects);
         warmRelationshipsForObjects(assignedObjects);
+        syncCheckoutStateForObjects(assignedObjects);
         notifyListeners();
       } else {
-        if (!background) {
-          _setError('Failed to fetch assigned objects: ${response.statusCode}');
-        }
+        final msg = 'Failed to fetch assigned objects: ${response.statusCode}';
+        assignedError = msg;
+        if (!background) _setError(msg);
       }
     } catch (e) {
-      if (!background) _setError('Error fetching assigned objects: $e');
+      final msg = 'Error fetching assigned objects: $e';
+      assignedError = msg;
+      if (!background) _setError(msg);
     } finally {
       if (!background) _setLoading(false);
     }
@@ -1624,8 +1795,7 @@ class MFilesService extends ChangeNotifier {
         .where((o) =>
             o.id > 0 &&
             o.objectTypeId > 0 &&
-            o.classId > 0 &&
-            !isDocumentViewObject(o))
+            o.classId > 0)
         .toList();
 
     final futures = items.map((o) =>
@@ -1646,8 +1816,7 @@ class MFilesService extends ChangeNotifier {
             it.isObject &&
             it.id > 0 &&
             it.objectTypeId > 0 &&
-            it.classId > 0 &&
-            !isDocumentContentItem(it))
+            it.classId > 0)
         .map((it) => (
               objectId: it.id,
               objectTypeId: it.objectTypeId,
@@ -1663,6 +1832,106 @@ class MFilesService extends ChangeNotifier {
     _clearRelationshipsCacheFromPrefs(); // fire-and-forget
     if (kDebugMode) {
       debugPrint('🧹 Cleared relationships presence cache');
+    }
+  }
+
+  // ==================== CHECKOUT STATE (local, best-effort) ====================
+  // The backend has no endpoint to query checkout status — Checkout/UndoCheckout
+  // are the only two operations exposed. We track locally, per-session and
+  // persisted, which objects *we* believe we checked out. This can drift from
+  // the true M-Files state (e.g. someone else checks it in via desktop client),
+  // in which case the next Checkout/UndoCheckout call will simply fail and we
+  // surface that error — we never claim to know the authoritative state.
+
+  final Set<int> _checkedOutObjectIds = {};
+
+  bool isCheckedOutLocally(int objectId) =>
+      _checkedOutObjectIds.contains(objectId);
+
+  Future<void> _loadCheckoutCacheFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys =
+          prefs.getKeys().where((k) => k.startsWith('checkout_')).toList();
+      for (final key in keys) {
+        final id = int.tryParse(key.substring(9));
+        if (id != null && (prefs.getBool(key) ?? false)) {
+          _checkedOutObjectIds.add(id);
+        }
+      }
+      if (_checkedOutObjectIds.isNotEmpty) notifyListeners();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ Failed to load checkout cache from prefs: $e');
+      }
+    }
+  }
+
+  void _saveCheckoutToPrefs(int objectId, bool checkedOut) {
+    SharedPreferences.getInstance().then((prefs) {
+      if (checkedOut) {
+        prefs.setBool('checkout_$objectId', true);
+      } else {
+        prefs.remove('checkout_$objectId');
+      }
+    }).catchError((_) {});
+  }
+
+  Future<void> _clearCheckoutCacheFromPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys =
+          prefs.getKeys().where((k) => k.startsWith('checkout_')).toList();
+      for (final key in keys) {
+        await prefs.remove(key);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('⚠️ Failed to clear checkout cache from prefs: $e');
+      }
+    }
+  }
+
+  void clearCheckoutCache() {
+    _checkedOutObjectIds.clear();
+    _clearCheckoutCacheFromPrefs(); // fire-and-forget
+    if (kDebugMode) {
+      debugPrint('🧹 Cleared local checkout cache');
+    }
+  }
+
+  /// Reconciles the local checkout cache with server-reported truth. The
+  /// backend exposes no standalone "query checkout status" endpoint, but
+  /// object payloads DO carry isCheckedOut — so we use that whenever it's
+  /// available rather than relying solely on what this app instance
+  /// remembers locally. Fixes the badge/button not reflecting checkout
+  /// state from a previous session, another device, or the web platform.
+  void syncCheckoutStateFromServer(int objectId, bool isCheckedOutOnServer) {
+    final trackedLocally = _checkedOutObjectIds.contains(objectId);
+    if (isCheckedOutOnServer == trackedLocally) return;
+
+    if (isCheckedOutOnServer) {
+      _checkedOutObjectIds.add(objectId);
+    } else {
+      _checkedOutObjectIds.remove(objectId);
+    }
+    _saveCheckoutToPrefs(objectId, isCheckedOutOnServer);
+    notifyListeners();
+  }
+
+  /// Batch version, following the same pattern as warmExtensionsForObjects —
+  /// call whenever a list of ViewObjects loads, so list badges are correct.
+  void syncCheckoutStateForObjects(List<ViewObject> objects) {
+    for (final o in objects) {
+      syncCheckoutStateFromServer(o.id, o.isCheckedOut);
+    }
+  }
+
+  /// Same, for raw ViewContentItem lists (View screens).
+  void syncCheckoutStateForItems(List<ViewContentItem> items) {
+    for (final it in items) {
+      if (it.id <= 0) continue;
+      syncCheckoutStateFromServer(it.id, it.isCheckedOut);
     }
   }
 
@@ -2036,7 +2305,9 @@ class MFilesService extends ChangeNotifier {
         '$baseUrl/api/ObjectDeletion/GetDeletedObject/$vaultGuidWithBraces/$mfilesUserId',
       );
 
-      final resp = await http.get(url, headers: _authHeadersNoJson);
+      final resp = await _authenticatedRequest(
+        () => http.get(url, headers: _authHeadersNoJson),
+      );
 
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body) as List;
@@ -2044,18 +2315,21 @@ class MFilesService extends ChangeNotifier {
             .whereType<Map<String, dynamic>>()
             .map((e) => ViewObject.fromJson(e))
             .toList();
-
+        deletedError = null;
         warmExtensionsForObjects(deletedObjects);
         warmRelationshipsForObjects(deletedObjects);
+        syncCheckoutStateForObjects(deletedObjects);
         notifyListeners();
         return;
       }
 
-      if (!background) {
-        _setError('Failed to fetch deleted objects: ${resp.statusCode} ${resp.body}');
-      }
+      final msg = 'Failed to fetch deleted objects: ${resp.statusCode} ${resp.body}';
+      deletedError = msg;
+      if (!background) _setError(msg);
     } catch (e) {
-      if (!background) _setError('Error fetching deleted objects: $e');
+      final msg = 'Error fetching deleted objects: $e';
+      deletedError = msg;
+      if (!background) _setError(msg);
     } finally {
       if (!background) _setLoading(false);
     }
@@ -2169,6 +2443,7 @@ class MFilesService extends ChangeNotifier {
         .map(ViewContentItem.fromJson)
         .toList();
     warmRelationshipsForItems(items);
+    syncCheckoutStateForItems(items);
     return items;
   }
 
@@ -2254,6 +2529,119 @@ class MFilesService extends ChangeNotifier {
     }
 
     return true;
+  }
+
+  // ==================== CHECKOUT / UNDO CHECKOUT ====================
+
+  /// Checks out an object so only the current user can edit it.
+  ///
+  ///   POST /api/ObjectCheckout/Checkout
+  ///   body: { objecttypeid, objectid, vaultGuid, userID }
+  ///
+  /// On success, the object is marked checked-out in the LOCAL cache only —
+  /// see the note above [_checkedOutObjectIds]. Response body is plain text
+  /// ("Object successfully checked out"), not JSON, so we only check the
+  /// status code.
+  Future<bool> checkoutObject({
+    required int objectId,
+    required int objectTypeId,
+  }) async {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
+      _setError('Session not ready');
+      return false;
+    }
+
+    try {
+      final url = Uri.parse('$baseUrl/api/ObjectCheckout/Checkout');
+
+      final body = {
+        "objecttypeid": objectTypeId,
+        "objectid": objectId,
+        "vaultGuid": vaultGuidWithBraces,
+        "userID": mfilesUserId,
+      };
+
+      if (kDebugMode) {
+        debugPrint('🚀 Checkout URL: $url');
+        debugPrint('📦 Body: ${jsonEncode(body)}');
+      }
+
+      final resp = await _authenticatedRequest(
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
+      );
+
+      if (kDebugMode) {
+        debugPrint('📨 Checkout status: ${resp.statusCode}');
+        debugPrint('📨 Checkout body: ${resp.body}');
+      }
+
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        _checkedOutObjectIds.add(objectId);
+        _saveCheckoutToPrefs(objectId, true);
+        notifyListeners();
+        return true;
+      }
+
+      _setError('Checkout failed: ${resp.statusCode} ${resp.body}');
+      return false;
+    } catch (e) {
+      _setError('Error checking out object: $e');
+      return false;
+    }
+  }
+
+  /// Undoes a checkout, releasing the lock on the object.
+  ///
+  ///   POST /api/ObjectCheckout/UndoCheckout
+  ///   body: { objecttypeid, objectid, vaultGuid, userID }
+  ///
+  /// Response body is plain text ("Object has been checked in"), not JSON.
+  Future<bool> undoCheckoutObject({
+    required int objectId,
+    required int objectTypeId,
+  }) async {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
+      _setError('Session not ready');
+      return false;
+    }
+
+    try {
+      final url = Uri.parse('$baseUrl/api/ObjectCheckout/UndoCheckout');
+
+      final body = {
+        "objecttypeid": objectTypeId,
+        "objectid": objectId,
+        "vaultGuid": vaultGuidWithBraces,
+        "userID": mfilesUserId,
+      };
+
+      if (kDebugMode) {
+        debugPrint('🚀 UndoCheckout URL: $url');
+        debugPrint('📦 Body: ${jsonEncode(body)}');
+      }
+
+      final resp = await _authenticatedRequest(
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
+      );
+
+      if (kDebugMode) {
+        debugPrint('📨 UndoCheckout status: ${resp.statusCode}');
+        debugPrint('📨 UndoCheckout body: ${resp.body}');
+      }
+
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        _checkedOutObjectIds.remove(objectId);
+        _saveCheckoutToPrefs(objectId, false);
+        notifyListeners();
+        return true;
+      }
+
+      _setError('Undo checkout failed: ${resp.statusCode} ${resp.body}');
+      return false;
+    } catch (e) {
+      _setError('Error undoing checkout: $e');
+      return false;
+    }
   }
 
   // -------------------- Delete & Undelete object --------------------
@@ -2678,12 +3066,21 @@ class MFilesService extends ChangeNotifier {
     objectTypes = [];
     searchResults = [];
 
+    // ── Clear stale per-tab errors so they don't leak into the new vault ──
+    viewsError = null;
+    recentError = null;
+    assignedError = null;
+    deletedError = null;
+
     clearClassPropertiesCache();
     clearExtensionCache();
     clearRelationshipsCache();
 
     clearFileCache();
     clearViewCache();
+
+    _classesByObjectType.clear();
+    objectClasses.clear();
 
     notifyListeners();
   }

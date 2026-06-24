@@ -15,6 +15,9 @@ class ViewContentItem {
   final String? propId;
   final String? propDatatype;
   final bool isSingleFile;          // ← ADD
+  final bool isCheckedOut;            // ← ADD
+  final int? checkoutUserId;          // ← ADD
+  final String? checkoutUsername;
 
   ViewContentItem({
     required this.type,
@@ -32,6 +35,9 @@ class ViewContentItem {
     required this.propId,
     required this.propDatatype,
     required this.isSingleFile,     // ← ADD
+    required this.isCheckedOut,     // ← ADD
+    required this.checkoutUserId,   // ← ADD
+    required this.checkoutUsername, // ← ADD
   });
 
   bool get isObject => type == 'MFFolderContentItemTypeObjectVersion' && id > 0;
@@ -64,6 +70,9 @@ class ViewContentItem {
       propId: rawPropId?.toString(),
       propDatatype: m['propDatatype']?.toString(),
       isSingleFile: (m['isSingleFile'] as bool?) ?? true,       // ← ADD
+      isCheckedOut: (m['isCheckedOut'] as bool?) ?? false,       // ← ADD
+      checkoutUserId: (m['checkoutUserId'] as num?)?.toInt(),    // ← ADD
+      checkoutUsername: m['checkoutUsername'] as String?,        // ← ADD
     );
   }
 }

@@ -14,6 +14,9 @@ class ViewObject {
   final DateTime? lastModifiedUtc;
   final UserPermission? userPermission;
   final bool isSingleFile;          // ← ADD
+  final bool isCheckedOut;          // ← ADD
+  final int? checkoutUserId;        // ← ADD
+  final String? checkoutUsername;
 
   ViewObject({
     required this.id,
@@ -28,6 +31,9 @@ class ViewObject {
     required this.lastModifiedUtc,
     this.userPermission,
     required this.isSingleFile,     // ← ADD
+    this.isCheckedOut = false,     // ← ADD
+    this.checkoutUserId,           // ← ADD 
+    this.checkoutUsername
   });
 
   static DateTime? _dt(dynamic v) {
@@ -83,6 +89,9 @@ class ViewObject {
           ? UserPermission.fromJson(json['userPermission'] as Map<String, dynamic>)
           : null,
       isSingleFile: (json['isSingleFile'] as bool?) ?? true,   // ← ADD
+      isCheckedOut: (json['isCheckedOut'] as bool?) ?? false,  // ← ADD
+      checkoutUserId: asInt(json['checkoutUserId']),          // ← ADD
+      checkoutUsername: (json['checkoutUsername'] as String?) ?? '', // ← ADD
     );
   }
 }

@@ -10,7 +10,10 @@ class ClassProperty {
   final bool isHidden;
   final String? defaultValue;
   final List<PropertyValue>? valuelist;
-
+  final int typeId;        // ← ADD: object type of lookup items
+  final bool objectTypeVL; // ← ADD: whether valuelist items are lookup items
+  final bool allowAdding;
+  
   ClassProperty({
     required this.id,
     required this.name,
@@ -23,7 +26,11 @@ class ClassProperty {
     required this.isHidden,
     this.defaultValue,
     this.valuelist,
+    required this.typeId,
+    required this.objectTypeVL,
+    required this.allowAdding,
   });
+  
   factory ClassProperty.fromJson(Map<String, dynamic> json) {
     return ClassProperty(
       id: (json['propId'] as num?)?.toInt() ?? 0,
@@ -39,6 +46,9 @@ class ClassProperty {
       valuelist: (json['valuelist'] as List<dynamic>?)
           ?.map((item) => PropertyValue.fromJson(item as Map<String, dynamic>))
           .toList(),
+      typeId: (json['typeID'] as num?)?.toInt() ?? 0,        // ← ADD
+      objectTypeVL: json['objectTypeVL'] as bool? ?? false,
+      allowAdding: json['allowAdding'] as bool? ?? false,
     );
   }
   

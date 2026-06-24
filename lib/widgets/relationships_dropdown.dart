@@ -4,6 +4,8 @@ import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:provider/provider.dart';
 import '../models/view_object.dart';
 import '../services/mfiles_service.dart';
+import '../widgets/file_type_badge.dart';
+import '../utils/object_type_icons.dart';
 
 class RelationshipsDropdown extends StatefulWidget {
   final ViewObject obj;
@@ -316,12 +318,38 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
     final obj = _toViewObjectFromLinked(item);
     final canExpand = obj.id != 0 && obj.objectTypeId != 0 && obj.classId != 0;
 
+    final svc = context.watch<MFilesService>();
+    final isDoc = svc.isDocumentViewObject(obj);
+    final isMultiFileObj = svc.isMultiFile(
+        objectTypeId: obj.objectTypeId, isSingleFile: obj.isSingleFile);
+
+    // Relationship items never pass through warmExtensionsForObjects, so
+    // warm the extension cache here when needed.
+    if (isDoc && !isMultiFileObj && obj.id != 0) {
+      svc.ensureExtensionForObject(objectId: obj.id, classId: obj.classId);
+    }
+
+    Widget leadingIcon;
+    if (isDoc && !isMultiFileObj) {
+      final ext = svc.cachedExtensionForObject(obj.id);
+      leadingIcon = (ext != null && ext.isNotEmpty)
+          ? FileTypeBadge(extension: ext, size: 18)
+          : const Icon(Icons.insert_drive_file_outlined,
+              size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+    } else if (isMultiFileObj) {
+      leadingIcon = const Icon(Icons.folder_copy_rounded,
+          size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+    } else {
+      leadingIcon = Icon(iconForObjectTypeName(obj.objectTypeName),
+          size: 18, color: const Color.fromRGBO(25, 76, 129, 1));
+    }
+
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
         tilePadding: const EdgeInsets.fromLTRB(10, 2, 6, 2),
         childrenPadding: const EdgeInsets.only(left: 6, right: 6, bottom: 6),
-        enabled: true, // do not dim the whole tile
+        enabled: true,
         trailing: canExpand ? const Icon(Icons.expand_more, size: 18) : const SizedBox(width: 18),
         title: InkWell(
           onTap: () {
@@ -332,7 +360,7 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
           },
           child: Row(
             children: [
-              const Icon(Icons.folder_outlined, size: 18, color: Color.fromRGBO(25, 76, 129, 1)),
+              leadingIcon,
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -362,7 +390,7 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
                 RelationshipsDropdown(
                   obj: obj,
                   initiallyExpanded: false,
-                  isRoot: false, // IMPORTANT: no repeated "Relationships"
+                  isRoot: false,
                   depth: depth,
                 ),
               ]

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:mfiles_app/models/lookup_item.dart';
+import '../models/lookup_item.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import '../theme/app_colors.dart';
+
+
 class LookupField extends StatefulWidget {
   final String title;
   final int propertyId;
@@ -14,6 +16,12 @@ class LookupField extends StatefulWidget {
   // fallback when API gives display text but not IDs
   final List<String>? preSelectedLabels;
 
+  // Items the parent already knows about (e.g. the currently selected
+  // items, or an object just created via the inline "+" quick-create flow)
+  // that may not yet exist in the fetched lookup list. Merged into the
+  // fetched list so they display correctly without waiting for a refetch.
+  final List<LookupItem>? injectedItems;
+
   const LookupField({
     super.key,
     required this.title,
@@ -22,6 +30,7 @@ class LookupField extends StatefulWidget {
     required this.onSelected,
     this.preSelectedIds,
     this.preSelectedLabels,
+    this.injectedItems,
   });
 
   @override
@@ -65,12 +74,37 @@ class _LookupFieldState extends State<LookupField> {
     final labelsChanged = oldLabels.length != newLabels.length ||
         !oldLabels.every((x) => newLabels.contains(x));
 
-    if ((_items.isNotEmpty) && (idsChanged || labelsChanged)) {
+    final oldInjectedIds = (oldWidget.injectedItems ?? const <LookupItem>[])
+        .map((e) => e.id)
+        .toSet();
+    final newInjectedIds = (widget.injectedItems ?? const <LookupItem>[])
+        .map((e) => e.id)
+        .toSet();
+    final injectedChanged = oldInjectedIds.length != newInjectedIds.length ||
+        !oldInjectedIds.containsAll(newInjectedIds);
+
+    if (injectedChanged || idsChanged || labelsChanged) {
+      final merged = _mergeWithInjected(_items);
       if (!mounted) return;
       setState(() {
-        _selectedItems = _computeSelectedFromItems(_items);
+        _items = merged;
+        _selectedItems = _computeSelectedFromItems(merged);
       });
     }
+  }
+
+  /// Merges [widget.injectedItems] into [base], preferring the server's
+  /// copy of an id when both exist, and only adding injected items the
+  /// fetched list doesn't already contain.
+  List<LookupItem> _mergeWithInjected(List<LookupItem> base) {
+    final injected = widget.injectedItems;
+    if (injected == null || injected.isEmpty) return base;
+
+    final map = <int, LookupItem>{for (final i in base) i.id: i};
+    for (final item in injected) {
+      map.putIfAbsent(item.id, () => item);
+    }
+    return map.values.toList();
   }
 
   List<LookupItem> _computeSelectedFromItems(List<LookupItem> items) {
@@ -103,13 +137,15 @@ class _LookupFieldState extends State<LookupField> {
 
     try {
       final service = Provider.of<MFilesService>(context, listen: false);
-      final items = await service.fetchLookupItems(widget.propertyId);
+      final fetched = await service.fetchLookupItems(widget.propertyId);
 
       if (!mounted || seq != _requestSeq) return;
 
+      final merged = _mergeWithInjected(fetched);
+
       setState(() {
-        _items = items;
-        _selectedItems = _computeSelectedFromItems(items);
+        _items = merged;
+        _selectedItems = _computeSelectedFromItems(merged);
       });
     } catch (_) {
       if (!mounted || seq != _requestSeq) return;
@@ -192,7 +228,7 @@ class _LookupFieldState extends State<LookupField> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // ── Header (no search toggle icon needed anymore) ──
+                  // ── Header ──
                   Container(
                     padding: const EdgeInsets.fromLTRB(20, 20, 12, 16),
                     decoration: const BoxDecoration(
@@ -347,17 +383,31 @@ class _LookupFieldState extends State<LookupField> {
                                 );
                               }
 
+                              // ── Single-select: pop first, then fire onSelected
+                              // via postFrameCallback so the checking dialog has a
+                              // clean navigator stack to push onto.
                               return Material(
                                 color: isSelected
                                     ? const Color(0xFFEFF6FF)
                                     : Colors.transparent,
                                 child: InkWell(
                                   onTap: () {
+                                    debugPrint('✅ LookupField onTap fired for item: ${item.displayValue}');
                                     if (!mounted) return;
-                                    setState(
-                                        () => _selectedItems = [item]);
-                                    widget.onSelected([item]);
+                                    setState(() => _selectedItems = [item]);
+
+                                    // Capture before closing — the widget may be
+                                    // disposed by the time the callback fires.
+                                    final onSelected = widget.onSelected;
+                                    final selectedItem = item;
+
                                     Navigator.pop(dialogContext);
+
+                                    // Fire after the lookup dialog is fully gone.
+                                    WidgetsBinding.instance
+                                        .addPostFrameCallback((_) {
+                                      onSelected([selectedItem]);
+                                    });
                                   },
                                   child: Padding(
                                     padding: const EdgeInsets.symmetric(
@@ -365,8 +415,7 @@ class _LookupFieldState extends State<LookupField> {
                                     child: Row(
                                       children: [
                                         Expanded(
-                                            child:
-                                                Text(item.displayValue)),
+                                            child: Text(item.displayValue)),
                                         if (isSelected)
                                           const Icon(Icons.check_rounded,
                                               size: 18,
@@ -396,12 +445,22 @@ class _LookupFieldState extends State<LookupField> {
                           ),
                           const SizedBox(width: 8),
                           ElevatedButton(
+                            // ── Multi-select: same fix — pop first, then fire
+                            // onSelected after the dialog is fully dismissed.
                             onPressed: () {
                               if (!mounted) return;
-                              setState(
-                                  () => _selectedItems = tempSelected);
-                              widget.onSelected(tempSelected);
+                              setState(() => _selectedItems = tempSelected);
+
+                              final onSelected = widget.onSelected;
+                              final chosen =
+                                  List<LookupItem>.from(tempSelected);
+
                               Navigator.pop(dialogContext);
+
+                              WidgetsBinding.instance
+                                  .addPostFrameCallback((_) {
+                                onSelected(chosen);
+                              });
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: _primaryBlue,

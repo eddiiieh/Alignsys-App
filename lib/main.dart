@@ -9,6 +9,7 @@ import 'theme/app_colors.dart';
 
 import 'dss/services/dss_auth_service.dart';
 import 'dss/services/dss_api_service.dart';
+import 'navigation/app_navigator.dart';
 
 void main() {
   runApp(const MainApp());
@@ -34,6 +35,7 @@ Widget build(BuildContext context) {
       ),
     ],
     child: MaterialApp(
+      navigatorKey: navigatorKey,
       debugShowCheckedModeBanner: false,
       title: 'ALIGNSYS',
 

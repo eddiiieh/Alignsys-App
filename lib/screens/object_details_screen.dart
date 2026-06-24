@@ -15,6 +15,7 @@ import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
 import 'package:mfiles_app/dss/screens/dss_signing_screen.dart';
+import 'package:mfiles_app/utils/object_type_icons.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
@@ -90,7 +91,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _commentsExpanded = true;
 
   // ── Design constants ──
-  static const _primaryBlue = AppColors.primary;
   static const _filledBorder = Color(0xFF2563EB);
   static const _filledFill = Color(0xFFF0F6FF);
 
@@ -157,6 +157,7 @@ void initState() {
         _workflowFuture = _loadWorkflow();
         _workflowsFuture = _loadWorkflowsForThisObject();
       });
+      svc.syncCheckoutStateFromServer(widget.obj.id, widget.obj.isCheckedOut);
     });
   }
 
@@ -308,6 +309,9 @@ void initState() {
 
   bool _isLookup(_PropVm p) => p.datatype == 'MFDatatypeLookup';
   bool _isMultiLookup(_PropVm p) => p.datatype == 'MFDatatypeMultiSelectLookup';
+  bool _isDate(_PropVm p) => p.datatype == 'MFDatatypeDate';
+  bool _isTimestamp(_PropVm p) => p.datatype == 'MFDatatypeTimestamp';
+
 
   List<int> _selectedIdsForLookup(_PropVm p, {required bool isMulti}) {
     final source = _dirty[p.id]?.editedValue ?? p.value;
@@ -550,6 +554,195 @@ void initState() {
     return info;
   }
 
+  // ── Show a dialog with the object's automatic permissions ──────────────────
+  void _showAutoPermissionsDialog() {
+    final obj = widget.obj;
+    final perms = obj.userPermission;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Header ────────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F6FF),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline_rounded,
+                      size: 18, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Automatic Permissions',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Icon(Icons.close,
+                          size: 16, color: Colors.grey.shade600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Object Information ───────────────────────────────
+                  const Text(
+                    'Object Information',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _permKv('Title', _title.isEmpty ? obj.title : _title),
+                        const SizedBox(height: 6),
+                        _permKv('Type', obj.objectTypeName),
+                        const SizedBox(height: 6),
+                        _permKv('Class', obj.classTypeName),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── User Permissions ─────────────────────────────────
+                  const Text(
+                    'User Permissions',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Table(
+                      border: TableBorder(
+                        horizontalInside: BorderSide(
+                            color: Colors.grey.shade100, width: 1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      children: [
+                        // Header row
+                        TableRow(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF8FAFC),
+                            borderRadius: const BorderRadius.vertical(
+                                top: Radius.circular(10)),
+                          ),
+                          children: [
+                            _permTableHeader('Read'),
+                            _permTableHeader('Edit'),
+                            _permTableHeader('Delete'),
+                            _permTableHeader('Attach')
+                          ],
+                        ),
+                        // Values row
+                        TableRow(
+                          children: [
+                            _permTableCell(perms?.readPermission ?? false),
+                            _permTableCell(perms?.editPermission ?? false),
+                            _permTableCell(perms?.deletePermission ?? false),
+                            _permTableCell(perms?.attachObjectsPermission ?? false),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _permKv(String label, String value) {
+    return RichText(
+      text: TextSpan(
+        style: const TextStyle(fontSize: 13, color: Color(0xFF334155)),
+        children: [
+          TextSpan(
+            text: '$label: ',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          TextSpan(text: value),
+        ],
+      ),
+    );
+  }
+
+  Widget _permTableHeader(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF475569),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _permTableCell(bool allowed) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: Center(
+        child: Icon(
+          allowed ? Icons.check_rounded : Icons.close_rounded,
+          size: 20,
+          color: allowed ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+        ),
+      ),
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // e-SIGN ─ SEND FOR SIGNING DIALOG
   // ─────────────────────────────────────────────────────────────────────────
@@ -671,6 +864,7 @@ void initState() {
     }
   }
 
+  //e-Sign options bottom sheet, DO NOT REMOVE
   void _showESignOptions(ObjectFile file) {
     final busy = _saving || _downloading || _changingWorkflow || _eSigning;
     if (busy) return;
@@ -1685,23 +1879,118 @@ void initState() {
         '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
   }
 
+  /// Parses a stored date/timestamp string back to a DateTime for pre-filling
+  /// the picker. Accepts ISO 8601 and yyyy-MM-dd.
+  DateTime? _parseDateValue(dynamic raw) {
+    if (raw == null) return null;
+    final s = raw.toString().trim();
+    if (s.isEmpty) return null;
+    try {
+      return DateTime.parse(s);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Formats a DateTime as the ISO 8601 string M-Files expects.
+  /// Date-only:  yyyy-MM-dd
+  /// Timestamp:  yyyy-MM-ddTHH:mm:ss
+  String _formatForMFiles(DateTime dt, {required bool includeTime}) {
+    final y = dt.year.toString().padLeft(4, '0');
+    final mo = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    if (!includeTime) return '$y-$mo-$d';
+    final h = dt.hour.toString().padLeft(2, '0');
+    final mi = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    return '$y-$mo-${d}T$h:$mi:$s';
+  }
+
+  /// Human-readable display string shown in the read-only tile.
+  String _displayDate(String isoValue, {required bool includeTime}) {
+    final dt = _parseDateValue(isoValue);
+    if (dt == null) return isoValue;
+    final local = dt.toLocal();
+    final y = local.year.toString().padLeft(4, '0');
+    final mo = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    if (!includeTime) return '$d/$mo/$y';
+    final h = local.hour.toString().padLeft(2, '0');
+    final mi = local.minute.toString().padLeft(2, '0');
+    return '$d/$mo/$y $h:$mi';
+  }
+
+  /// Opens the date picker (and optionally time picker), marks the field dirty,
+  /// then auto-saves so the user does not need to tap Save manually.
+  Future<void> _pickDate(_PropVm p, {required bool includeTime}) async {
+    final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
+    final initial = _parseDateValue(rawCurrent) ?? DateTime.now();
+
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(1900),
+      lastDate: DateTime(2100),
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: const ColorScheme.light(primary: AppColors.primary),
+        ),
+        child: child!,
+      ),
+    );
+
+    if (pickedDate == null || !mounted) return;
+
+    DateTime finalDt = pickedDate;
+
+    if (includeTime) {
+      final pickedTime = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay(hour: initial.hour, minute: initial.minute),
+        builder: (ctx, child) => Theme(
+          data: Theme.of(ctx).copyWith(
+            colorScheme: const ColorScheme.light(primary: AppColors.primary),
+          ),
+          child: child!,
+        ),
+      );
+      if (!mounted) return;
+      if (pickedTime != null) {
+        finalDt = DateTime(
+          pickedDate.year,
+          pickedDate.month,
+          pickedDate.day,
+          pickedTime.hour,
+          pickedTime.minute,
+        );
+      }
+    }
+
+    final iso = _formatForMFiles(finalDt, includeTime: includeTime);
+    setState(() => _dirty[p.id] = p.copyWith(editedValue: iso));
+    await _saveField(p);
+  }
+
   @override
   Widget build(BuildContext context) {
     final obj = widget.obj;
     return Scaffold(
       backgroundColor: AppColors.surfaceLight,
-      floatingActionButton: FutureBuilder<List<ObjectFile>>(
-        future: _filesFuture,
-        builder: (context, snap) {
-          final svc = context.watch<MFilesService>();
-          final firstFile = (snap.data?.isNotEmpty ?? false) ? snap.data!.first : null;
-          if (firstFile == null || !svc.isDssAvailable) return const SizedBox.shrink();
-          return _ESignFab(
-            onTap: () => _showESignOptions(firstFile),
-            isBusy: _eSigning,
-          );
-        },
-      ),
+      // ── e-Sign FAB disabled: redundant now that the dedicated e-Sign card
+      //    (_signingCard, rendered right after the preview card) covers the
+      //    same actions. Uncomment to restore the floating shortcut.
+      // floatingActionButton: FutureBuilder<List<ObjectFile>>(
+      //   future: _filesFuture,
+      //   builder: (context, snap) {
+      //     final svc = context.watch<MFilesService>();
+      //     final firstFile = (snap.data?.isNotEmpty ?? false) ? snap.data!.first : null;
+      //     if (firstFile == null || !svc.isDssAvailable) return const SizedBox.shrink();
+      //     return _ESignFab(
+      //       onTap: () => _showESignOptions(firstFile),
+      //       isBusy: _eSigning,
+      //     );
+      //   },
+      // ),
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -1727,6 +2016,50 @@ void initState() {
                 ),
               ),
             ),
+          // ── TEMPORARY: smoke-test button for checkoutObject/undoCheckoutObject.
+          //    Remove once the long-press multi-select menu ships this properly.
+          Consumer<MFilesService>(
+            builder: (context, svc, _) {
+              final isCheckedOut = svc.isCheckedOutLocally(widget.obj.id);
+              final busy = _saving || _downloading || _changingWorkflow;
+              return IconButton(
+                tooltip: isCheckedOut ? 'Check In' : 'Check Out',
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final ok = isCheckedOut
+                            ? await svc.undoCheckoutObject(
+                                objectId: widget.obj.id,
+                                objectTypeId: widget.obj.objectTypeId,
+                              )
+                            : await svc.checkoutObject(
+                                objectId: widget.obj.id,
+                                objectTypeId: widget.obj.objectTypeId,
+                              );
+                        final errorMsg = svc.error ?? 'Unknown error';
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                ok
+                                    ? (isCheckedOut ? 'Checked in' : 'Checked out')
+                                    : errorMsg == 'already_checked_out'
+                                        ? 'Already checked out — status updated'
+                                        : 'Failed: $errorMsg',
+                              ),
+                            backgroundColor: ok
+                                ? Colors.green.shade600
+                                : Colors.red.shade600,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                icon: Icon(
+                  isCheckedOut ? Icons.file_open_rounded : Icons.drive_file_rename_outline,
+                ),
+              );
+            },
+          ),
           if (widget.obj.userPermission?.deletePermission ?? false)
             IconButton(
               onPressed:
@@ -2307,19 +2640,28 @@ void initState() {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               firstFile != null
-                  ? FileTypeBadge(extension: firstFile.extension, size: 36)
-                  : Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.description_outlined,
-                            size: 20, color: AppColors.primary),
+              ? _CheckoutBadge(
+                  objectId: obj.id,
+                  child: FileTypeBadge(extension: firstFile.extension, size: 36),
+                )
+              : _CheckoutBadge(
+                  objectId: obj.id,
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Center(
+                      child: Icon(
+                        iconForObjectTypeName(obj.objectTypeName),
+                        size: 20,
+                        color: AppColors.primary,
                       ),
                     ),
+                  ),
+                ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -2357,6 +2699,37 @@ void initState() {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: GestureDetector(
+              onTap: _showAutoPermissionsDialog,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0F6FF),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.25)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.lock_outline_rounded,
+                        size: 13, color: AppColors.primary),
+                    const SizedBox(width: 5),
+                    const Text(
+                      'Automatic Permissions',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
           AnimatedCrossFade(
@@ -3811,70 +4184,149 @@ Widget _buildCommentList(List<ObjectComment> comments) {
           label: label, value: displayText, prop: p);
     }
 
-    // ── Plain text/date/number fields ─────────────────────────────────────
+    // ── Date and timestamp fields ─────────────────────────────────────────────
     final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
     final currentText = _valueToText(rawCurrent);
 
-    if (isThisFieldEditing) {
-      final ctrl = _fieldCtrl[p.id] ??
-          (_fieldCtrl[p.id] = TextEditingController(text: currentText));
-      final isDirty = _dirty.containsKey(p.id);
+    // -- Date and timestamp fields --
+    if (_isDate(p) || _isTimestamp(p)) {
+      final isTimestamp = _isTimestamp(p);
+      final displayText = currentText.trim().isNotEmpty
+          ? _displayDate(currentText, includeTime: isTimestamp)
+          : '';
 
+      if (isThisFieldEditing) {
+        // Show a tappable read-only tile while in editing mode;
+        // the picker fires immediately so the user never types a date manually.
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _fieldLabelRow(label, p, isDirty: _dirty.containsKey(p.id)),
+            const SizedBox(height: 8),
+            GestureDetector(
+              onTap: () => _pickDate(p, includeTime: isTimestamp),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                decoration: BoxDecoration(
+                  color: _filledFill,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _filledBorder, width: 1.5),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isTimestamp
+                          ? Icons.schedule_rounded
+                          : Icons.calendar_today_rounded,
+                      size: 16,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        displayText.isEmpty
+                            ? 'Tap to select ${isTimestamp ? 'date & time' : 'date'}'
+                            : displayText,
+                        style: TextStyle(
+                          fontSize: 14.5,
+                          fontWeight: FontWeight.w500,
+                          color: displayText.isEmpty
+                              ? Colors.grey.shade400
+                              : const Color(0xFF111827),
+                        ),
+                      ),
+                    ),
+                    Icon(Icons.edit_calendar_rounded,
+                        size: 16, color: AppColors.primary.withOpacity(0.6)),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      // Read-only tile: pencil icon opens the picker directly
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _fieldLabelRow(label, p, isDirty: isDirty),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF475569),
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: (_saving || _downloading || _changingWorkflow)
+                    ? null
+                    : () {
+                        setState(() => _editingPropId = p.id);
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          _pickDate(p, includeTime: isTimestamp);
+                        });
+                      },
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: (_saving || _downloading || _changingWorkflow)
+                        ? Colors.grey.shade100
+                        : AppColors.primary.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.edit_calendar_rounded,
+                    size: 14,
+                    color: (_saving || _downloading || _changingWorkflow)
+                        ? Colors.grey.shade400
+                        : AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            child: TextFormField(
-              controller: ctrl,
-              autofocus: true,
-              style: const TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF111827),
-              ),
-              decoration: InputDecoration(
-                hintText: 'Enter ${label.toLowerCase()}',
-                hintStyle:
-                    TextStyle(color: Colors.grey.shade400, fontSize: 14),
-                isDense: true,
-                filled: true,
-                fillColor:
-                    isDirty ? _filledFill : AppColors.surfaceLight,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 14),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: isDirty
-                      ? const BorderSide(color: _filledBorder, width: 1.5)
-                      : BorderSide(color: Colors.grey.shade200),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isTimestamp
+                      ? Icons.schedule_rounded
+                      : Icons.calendar_today_rounded,
+                  size: 15,
+                  color: displayText.isNotEmpty
+                      ? Colors.grey.shade500
+                      : Colors.grey.shade300,
                 ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade200),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    displayText.isNotEmpty ? displayText : '-',
+                    style: TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: displayText.isNotEmpty
+                          ? FontWeight.w500
+                          : FontWeight.w400,
+                      color: displayText.isNotEmpty
+                          ? Colors.grey.shade700
+                          : Colors.grey.shade400,
+                    ),
+                  ),
                 ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide:
-                      const BorderSide(color: _primaryBlue, width: 2),
-                ),
-                suffixIcon: isDirty
-                    ? const Icon(Icons.check_circle_rounded,
-                        color: _filledBorder, size: 18)
-                    : null,
-              ),
-              onChanged: (v) {
-                setState(() {
-                  final originalText = _valueToText(p.value);
-                  if (v == originalText) {
-                    _dirty.remove(p.id);
-                  } else {
-                    _dirty[p.id] = p.copyWith(editedValue: v);
-                  }
-                });
-              },
+              ],
             ),
           ),
         ],
@@ -4013,6 +4465,43 @@ Widget _buildCommentList(List<ObjectComment> comments) {
               fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
               color:
                   hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ───────────── CHECKOUT BADGE CLASS ────────────────────────────────────────────────────────────────
+class _CheckoutBadge extends StatelessWidget {
+  final int objectId;
+  final Widget child;
+
+  const _CheckoutBadge({required this.objectId, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final isOut = context.watch<MFilesService>().isCheckedOutLocally(objectId);
+    if (!isOut) return child;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          right: -4,
+          bottom: -4,
+          child: Container(
+            width: 16,
+            height: 16,
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F766E),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.drive_file_rename_outline,
+              size: 10,
+              color: Colors.white,
             ),
           ),
         ),
@@ -4164,7 +4653,7 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: const BorderSide(
-                                        color: AppColors.primary, width: 1.5),
+                                        color: AppColors.primary, width: 2),
                                   ),
                                   errorBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),

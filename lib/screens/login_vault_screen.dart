@@ -57,6 +57,26 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     _vaultFade = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _animController, curve: const Interval(0.4, 1.0)),
     );
+    // If we landed here because MFilesService forced a session reset
+    // (expired JWT or a stale M-Files vault session), let the user know
+    // why instead of leaving them to wonder.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = context.read<MFilesService>();
+      if (s.sessionExpired) {
+        s.sessionExpired = false;
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                "You've been signed out because your session expired. Please log in again."),
+            backgroundColor: Colors.orange.shade800,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    });
   }
 
   @override

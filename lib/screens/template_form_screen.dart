@@ -1,18 +1,26 @@
 // ignore_for_file: deprecated_member_use
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../widgets/auto_suggest_dialog.dart';
 import 'package:provider/provider.dart';
-import 'package:mfiles_app/services/mfiles_service.dart';
-import 'package:mfiles_app/widgets/lookup_field.dart';
+import '../services/mfiles_service.dart';
+import '../widgets/lookup_field.dart';
 import 'package:intl/intl.dart';
 import '../theme/app_colors.dart';
+import '../models/lookup_item.dart';
+import '../models/vault_object_type.dart';
+import '../models/quick_create_result.dart';
+import 'dynamic_form_screen.dart';
 
 class TemplateFormScreen extends StatefulWidget {
   final int classId;
   final String className;
   final int templateObjectId;
   final String templateTitle;
+  final int objectTypeId;
 
   const TemplateFormScreen({
     super.key,
@@ -20,6 +28,7 @@ class TemplateFormScreen extends StatefulWidget {
     required this.className,
     required this.templateObjectId,
     required this.templateTitle,
+    required this.objectTypeId,
   });
 
   @override
@@ -43,8 +52,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   final Map<int, TextEditingController> _controllers = {};
   final Map<int, dynamic> _values = {};
   final Map<int, List<dynamic>> _selectedLookupItems = {};
+  final Map<int, int> _propTypeIds = {};
+  final Map<int, bool> _propAllowAdding = {};
+  final Map<int, bool> _propObjectTypeVL = {};
 
-  // ── FIX 3: track boolean field states separately ──
   final Map<int, bool?> _boolValues = {};
 
   @override
@@ -71,6 +82,59 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     return !(prop['isHidden'] as bool? ?? false);
   }
 
+  /// Resolves the object/value-list type ID from a prop map, trying all known
+  /// key variants that different endpoints may return.
+  int _resolveTypeId(Map<String, dynamic> prop) {
+    final id = (prop['propId'] as num?)?.toInt() ?? 0;
+
+    // Primary: use pre-fetched map from fetchClassProperties
+  if (id > 0 && _propTypeIds.containsKey(id)) {
+    return _propTypeIds[id]!;
+  }
+
+  // Fallback: try all known key variants
+    final raw = prop['typeID'] ??
+        prop['TypeID'] ??
+        prop['typeId'] ??
+        prop['TypeId'] ??
+        prop['objectType'] ??
+        prop['ObjectType'] ??
+        prop['valueList'] ??
+        prop['ValueList'];
+    if (raw == null) {
+      debugPrint('⚠️ AutoSuggest: no typeID-like key on this prop. '
+          'Available keys: ${prop.keys.toList()}');
+      return 0;
+    }
+    return raw is int
+        ? raw
+        : (raw is num ? raw.toInt() : int.tryParse('$raw') ?? 0);
+  }
+
+  /// Resolves whether the current user may add new items to this lookup's
+  /// target, trying the raw prop map first (in case the template-props
+  /// endpoint ever starts returning it directly) and falling back to the
+  /// ClassProps-derived map. Defaults to false — if we can't confirm
+  /// permission, we don't show the "+" button.
+  bool _resolveAllowAdding(Map<String, dynamic> prop) {
+    if (prop.containsKey('allowAdding')) {
+      return prop['allowAdding'] as bool? ?? false;
+    }
+    final id = (prop['propId'] as num?)?.toInt() ?? 0;
+    return _propAllowAdding[id] ?? false;
+  }
+
+  /// Resolves whether this lookup points at an M-Files object type (true)
+  /// or a plain value list (false). See [_resolveAllowAdding] for the
+  /// same fallback pattern.
+  bool _resolveObjectTypeVL(Map<String, dynamic> prop) {
+    if (prop.containsKey('objectTypeVL')) {
+      return prop['objectTypeVL'] as bool? ?? false;
+    }
+    final id = (prop['propId'] as num?)?.toInt() ?? 0;
+    return _propObjectTypeVL[id] ?? false;
+  }
+
   Future<void> _loadProps() async {
     final service = context.read<MFilesService>();
     final vaultGuid = service.selectedVault?.guid ?? '';
@@ -86,6 +150,27 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         objectId: widget.templateObjectId,
         userId: service.currentUserId,
       );
+
+      // ── Fetch class properties separately just to resolve typeId per propId ──
+    // fetchClassTemplateProps doesn't return typeID; fetchClassProperties does.
+    try {
+      await service.fetchClassProperties(
+        widget.objectTypeId,
+        widget.classId,
+      );
+      for (final cp in service.classProperties) {
+        if (cp.id > 0 && cp.typeId > 0) {
+          _propTypeIds[cp.id] = cp.typeId;
+        }
+        if (cp.id > 0) {
+          _propAllowAdding[cp.id] = cp.allowAdding;
+          _propObjectTypeVL[cp.id] = cp.objectTypeVL;
+        }
+      }
+      debugPrint('🔑 Resolved typeIds: $_propTypeIds');
+    } catch (e) {
+      debugPrint('⚠️ Could not resolve typeIds from class props: $e');
+    }
 
       for (final prop in data) {
         final id = prop['propId'] as int;
@@ -106,7 +191,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                   : '',
             );
             break;
-          // ── FIX 1a: handle Floating like text ──
           case 'MFDatatypeFloating':
             _controllers[id] = TextEditingController(
               text: value.isNotEmpty && double.tryParse(value) != null
@@ -121,9 +205,8 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           case 'MFDatatypeMultiSelectLookup':
             _values[id] = null;
             break;
-          // ── FIX 1b: handle Boolean ──
           case 'MFDatatypeBoolean':
-            _boolValues[id] = null; // null = not set
+            _boolValues[id] = null;
             break;
           default:
             _controllers[id] = TextEditingController(text: value);
@@ -162,18 +245,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     return null;
   }
 
-  // The backend deserializes Properties[n].value as System.String regardless
-  // of the property type — it handles conversion server-side.  Every value
-  // must therefore arrive as a JSON string.
-  //
-  // Encoding rules agreed with the backend:
-  //   Text / MultiLine  → plain string
-  //   Integer           → "42"
-  //   Floating          → "5.0"   (decimal point always present)
-  //   Date              → "yyyy-MM-dd"
-  //   Lookup            → "64"    (single id as string)
-  //   MultiSelectLookup → "2,19"  (comma-separated ids, no spaces)
-  //   Boolean           → "true" | "false"
   Map<String, dynamic> _buildPropEntry({
     required int id,
     required String type,
@@ -189,11 +260,9 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         break;
       case 'MFDatatypeFloating':
         final d = double.tryParse(rawValue.toString()) ?? 0.0;
-        // Always include decimal point so the backend recognises it as numeric
         stringValue = d.toString().contains('.') ? d.toString() : '$d.0';
         break;
       case 'MFDatatypeDate':
-        // Already "yyyy-MM-dd" coming in
         stringValue = rawValue.toString();
         break;
       case 'MFDatatypeLookup':
@@ -213,7 +282,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         break;
       case 'MFDatatypeBoolean':
         if (rawValue is bool) {
-          stringValue = rawValue.toString(); // "true" / "false"
+          stringValue = rawValue.toString();
         } else {
           final s = rawValue.toString().toLowerCase().trim();
           stringValue =
@@ -227,7 +296,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     return {
       'propId': id,
       'propertytype': type,
-      'value': stringValue, // always a String
+      'value': stringValue,
       'isRequired': isRequired,
       'isHidden': prop['isHidden'] ?? false,
       'isAutomatic': prop['isAutomatic'] ?? false,
@@ -236,7 +305,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   }
 
   Future<void> _submit() async {
-    // Validation
     for (final prop in _props) {
       if (!_isVisible(prop) || _isReadOnly(prop)) continue;
       final required = prop['isRequired'] as bool? ?? false;
@@ -303,7 +371,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           rawValue = _values[id] ?? '';
           if ((rawValue as String).isEmpty && !isRequired) continue;
         } else if (type == 'MFDatatypeBoolean') {
-          // ── FIX 1f: use _boolValues for booleans ──
           final bv = _boolValues[id];
           if (bv == null && !isRequired) continue;
           rawValue = bv ?? false;
@@ -321,7 +388,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         ));
       }
 
-      // Debug log
       if (kDebugMode) {
         debugPrint('📤 Template payload props:');
         for (final p in propsPayload) {
@@ -342,6 +408,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
       await service.createObjectFromTemplate(payload);
       if (mounted) {
+        unawaited(service.fetchRecentObjects());
         _showSnack('Created successfully from template!');
         Navigator.pop(context, true);
       }
@@ -523,6 +590,11 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     final title = prop['title'] as String? ?? 'Field $id';
     final type = prop['propertytype'] as String? ?? '';
     final required = prop['isRequired'] as bool? ?? false;
+
+    // CHANGED: use _resolveTypeId for resilient key lookup with diagnostics
+    final typeId = _resolveTypeId(prop);
+    final allowAdding = _resolveAllowAdding(prop);
+    final objectTypeVL = _resolveObjectTypeVL(prop);
     return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -546,12 +618,13 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                   : [],
             )),
           ),
-          _buildInputForType(id, type, title, required),
+          _buildInputForType(
+              id, type, title, required, typeId, allowAdding, objectTypeVL),
         ]);
   }
 
-  Widget _buildInputForType(
-      int id, String type, String label, bool required) {
+  Widget _buildInputForType(int id, String type, String label, bool required,
+      int typeId, bool allowAdding, bool objectTypeVL) {
     switch (type) {
       case 'MFDatatypeText':
       case 'MFDatatypeMultiLineText':
@@ -586,7 +659,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
               color: Color(0xFF111827)),
         );
 
-      // ── FIX 2a: Floating type gets a decimal keyboard ──
       case 'MFDatatypeFloating':
         final ctrl =
             _controllers.putIfAbsent(id, () => TextEditingController());
@@ -658,7 +730,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           ),
         );
 
-      // ── FIX 2b: Boolean gets a proper toggle ──
       case 'MFDatatypeBoolean':
         final bv = _boolValues[id];
         return _buildBooleanField(id, bv, required);
@@ -670,21 +741,38 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           required: required,
           hasValue: hasValue,
           isSingleSelect: true,
+          onCreateNew: _resolveLookupCreateCallback(
+            propId: id,
+            label: label,
+            typeId: typeId,
+            allowAdding: allowAdding,
+            objectTypeVL: objectTypeVL,
+            isMulti: false,
+          ),
           field: LookupField(
             title: label,
             propertyId: id,
             isMultiSelect: false,
-            preSelectedIds:
-                hasValue ? [_values[id] as int] : [],
-            onSelected: (items) => setState(() {
+            preSelectedIds: hasValue ? [_values[id] as int] : [],
+            injectedItems: (_selectedLookupItems[id])?.cast<LookupItem>(),
+            onSelected: (items) {
+              setState(() {
+                if (items.isNotEmpty) {
+                  _values[id] = items.first.id;
+                  _selectedLookupItems[id] = items;
+                } else {
+                  _values[id] = null;
+                  _selectedLookupItems.remove(id);
+                }
+              });
               if (items.isNotEmpty) {
-                _values[id] = items.first.id;
-                _selectedLookupItems[id] = items;
-              } else {
-                _values[id] = null;
-                _selectedLookupItems.remove(id);
+                _triggerAutoSuggest(
+                  selectedObjectId: items.first.id,
+                  selectedObjectTypeId: typeId,
+                  displayLabel: items.first.displayValue,
+                );
               }
-            }),
+            },
           ),
         );
 
@@ -702,16 +790,34 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
               .toList(),
           selectedItems: selectedItems,
           propertyId: id,
+          onCreateNew: _resolveLookupCreateCallback(
+            propId: id,
+            label: label,
+            typeId: typeId,
+            allowAdding: allowAdding,
+            objectTypeVL: objectTypeVL,
+            isMulti: true,
+          ),
           field: LookupField(
             key: ValueKey(selectedIds.join(',')),
             title: label,
             propertyId: id,
             isMultiSelect: true,
             preSelectedIds: selectedIds,
-            onSelected: (items) => setState(() {
-              _values[id] = items.map((i) => i.id).toList();
-              _selectedLookupItems[id] = items;
-            }),
+            injectedItems: selectedItems.cast<LookupItem>(),
+            onSelected: (items) {
+              setState(() {
+                _values[id] = items.map((i) => i.id).toList();
+                _selectedLookupItems[id] = items;
+              });
+              if (items.isNotEmpty) {
+                _triggerAutoSuggest(
+                  selectedObjectId: items.first.id,
+                  selectedObjectTypeId: typeId,
+                  displayLabel: items.first.displayValue,
+                );
+              }
+            },
           ),
         );
 
@@ -730,8 +836,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     }
   }
 
-  // Segmented-button style boolean — no trailing tick, just the chosen
-  // option gets a filled pill.
   Widget _buildBooleanField(int id, bool? current, bool required) {
     Widget pill(String label, bool value) {
       final selected = current == value;
@@ -806,7 +910,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     );
   }
 
-  // ── FIX 3: chip Row inside Wrap now uses Flexible so it can't overflow ──
   Widget _lookupShell({
     required String label,
     required bool required,
@@ -816,36 +919,48 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     List<String>? selectedTexts,
     List<dynamic>? selectedItems,
     int? propertyId,
+    VoidCallback? onCreateNew,
   }) {
     final showMulti =
         selectedTexts != null && selectedTexts.isNotEmpty;
     return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            decoration: BoxDecoration(
-              color:
-                  hasValue ? _filledFill : AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: hasValue
-                      ? _filledBorder
-                      : Colors.grey.shade200,
-                  width: hasValue ? 1.5 : 1),
-            ),
-            child: Row(children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Expanded(
-                  child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12),
-                      child: field)),
-              if (hasValue)
-                const Padding(
-                    padding: EdgeInsets.only(right: 12),
-                    child: Icon(Icons.check_circle_rounded,
-                        color: _filledBorder, size: 18)),
-            ]),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  decoration: BoxDecoration(
+                    color:
+                        hasValue ? _filledFill : AppColors.surfaceLight,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: hasValue
+                            ? _filledBorder
+                            : Colors.grey.shade200,
+                        width: hasValue ? 1.5 : 1),
+                  ),
+                  child: Row(children: [
+                    Expanded(
+                        child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12),
+                            child: field)),
+                    if (hasValue)
+                      const Padding(
+                          padding: EdgeInsets.only(right: 12),
+                          child: Icon(Icons.check_circle_rounded,
+                              color: _filledBorder, size: 18)),
+                  ]),
+                ),
+              ),
+              if (onCreateNew != null) ...[
+                const SizedBox(width: 8),
+                _quickCreateButton(onCreateNew),
+              ],
+            ],
           ),
           if (showMulti) ...[
             const SizedBox(height: 10),
@@ -862,7 +977,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                         borderRadius: BorderRadius.circular(999),
                         border: Border.all(
                             color: const Color(0xFFBFDBFE))),
-                    // ── FIX 3: Flexible + min size prevents overflow ──
                     child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -921,6 +1035,24 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         ]);
   }
 
+  /// The blue "+" button rendered next to lookup fields, matching the web
+  /// app's inline quick-create affordance.
+  Widget _quickCreateButton(VoidCallback onTap) {
+    return Material(
+      color: _primaryBlue,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: const SizedBox(
+          width: 48,
+          height: 48,
+          child: Icon(Icons.add, color: Colors.white, size: 22),
+        ),
+      ),
+    );
+  }
+
   Widget _sectionHeader(String title, {String? subtitle}) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title,
@@ -973,5 +1105,336 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                 child: const Text('Retry'),
               ),
             ])));
+  }
+
+  // ── QUICK CREATE (inline "+" button on lookup fields) ──────────────────────
+
+  /// Decides which inline "+" action (if any) applies to a lookup property:
+  /// - null: user lacks permission to add (allowAdding == false)
+  /// - full quick-create screen: the lookup targets an M-Files object type
+  /// - lightweight add-value dialog: the lookup targets a plain value list
+  VoidCallback? _resolveLookupCreateCallback({
+    required int propId,
+    required String label,
+    required int typeId,
+    required bool allowAdding,
+    required bool objectTypeVL,
+    required bool isMulti,
+  }) {
+    if (!allowAdding) return null;
+    if (objectTypeVL) {
+      return () => _handleQuickCreate(
+            propId: propId,
+            label: label,
+            typeId: typeId,
+            isMulti: isMulti,
+          );
+    }
+    return () => _handleAddValueListItem(
+          propId: propId,
+          label: label,
+          typeId: typeId,
+          isMulti: isMulti,
+        );
+  }
+
+  /// Pushes a [DynamicFormScreen] scoped to [typeId] so the user can create
+  /// a related object without leaving this template form.
+  Future<void> _handleQuickCreate({
+    required int propId,
+    required String label,
+    required int typeId,
+    required bool isMulti,
+  }) async {
+    final service = context.read<MFilesService>();
+
+    if (typeId <= 0) {
+      _showSnack(
+        'Cannot create a new $label: target type unknown',
+        isError: true,
+      );
+      return;
+    }
+
+    final targetType = service.objectTypes.firstWhere(
+      (t) => t.id == typeId,
+      orElse: () => VaultObjectType(
+        id: typeId,
+        displayName: label,
+        isDocument: false,
+        name: label,
+      ),
+    );
+
+    final result = await Navigator.push<QuickCreateResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DynamicFormScreen(
+          objectType: targetType,
+          isQuickCreate: true,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    if (result.objectId == null) {
+      _showSnack('$label created — please select it from the search list');
+      return;
+    }
+
+    final newItem =
+        LookupItem(id: result.objectId!, displayValue: result.displayValue);
+
+    setState(() {
+      if (isMulti) {
+        final existing = List<LookupItem>.from(
+            (_selectedLookupItems[propId] ?? const []).cast<LookupItem>());
+        if (!existing.any((i) => i.id == newItem.id)) {
+          existing.add(newItem);
+        }
+        _selectedLookupItems[propId] = existing;
+        _values[propId] = existing.map((i) => i.id).toList();
+      } else {
+        _selectedLookupItems[propId] = [newItem];
+        _values[propId] = newItem.id;
+      }
+    });
+
+    _showSnack('$label created and selected');
+
+    _triggerAutoSuggest(
+      selectedObjectId: newItem.id,
+      selectedObjectTypeId: typeId,
+      displayLabel: newItem.displayValue,
+    );
+  }
+
+  /// Opens a lightweight "add a value" dialog for lookups that point at a
+  /// plain value list (not an M-Files object type) — just a name, no class
+  /// or metadata, posted straight to AddValuelistItem.
+  Future<void> _handleAddValueListItem({
+    required int propId,
+    required String label,
+    required int typeId,
+    required bool isMulti,
+  }) async {
+    if (typeId <= 0) {
+      _showSnack(
+        'Cannot add a new $label: value list unknown',
+        isError: true,
+      );
+      return;
+    }
+
+    final controller = TextEditingController();
+
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        insetPadding:
+            const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Add new $label',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Enter ${label.toLowerCase()}',
+                  filled: true,
+                  fillColor: AppColors.surfaceLight,
+                  contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade200),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        const BorderSide(color: _primaryBlue, width: 2),
+                  ),
+                ),
+                onSubmitted: (v) =>
+                    Navigator.pop(dialogContext, v.trim()),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: Text('Cancel',
+                        style: TextStyle(color: Colors.grey.shade700)),
+                  ),
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: () => Navigator.pop(
+                        dialogContext, controller.text.trim()),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _primaryBlue,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 12),
+                    ),
+                    child: const Text('Add'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (name == null || name.isEmpty || !mounted) return;
+
+    final service = context.read<MFilesService>();
+    final newItem = await service.addValueListItem(
+      valueListId: typeId,
+      name: name,
+    );
+
+    if (!mounted) return;
+
+    if (newItem == null) {
+      _showSnack('Failed to add value: ${service.error ?? "unknown error"}',
+          isError: true);
+      return;
+    }
+
+    setState(() {
+      if (isMulti) {
+        final existing = List<LookupItem>.from(
+            (_selectedLookupItems[propId] ?? const []).cast<LookupItem>());
+        if (!existing.any((i) => i.id == newItem.id)) {
+          existing.add(newItem);
+        }
+        _selectedLookupItems[propId] = existing;
+        _values[propId] = existing.map((i) => i.id).toList();
+      } else {
+        _selectedLookupItems[propId] = [newItem];
+        _values[propId] = newItem.id;
+      }
+    });
+
+    _showSnack('$label value added and selected');
+  }
+
+  Future<void> _triggerAutoSuggest({
+    required int selectedObjectId,
+    required int selectedObjectTypeId,
+    required String displayLabel,
+  }) async {
+    debugPrint('🔍 AutoSuggest: objectId=$selectedObjectId typeId=$selectedObjectTypeId');
+
+    // ADDED: warn early if typeId resolved to 0 so we know to check the log
+    // above for the "no typeID-like key" diagnostic from _resolveTypeId.
+    if (selectedObjectTypeId == 0) {
+      debugPrint('⚠️ AutoSuggest: selectedObjectTypeId resolved to 0 — '
+          'GetObjectViewProps will likely return nothing usable. Check the '
+          '"no typeID-like key" log above for the real keys on this prop.');
+    }
+
+    final service = context.read<MFilesService>();
+
+    await Future.delayed(const Duration(milliseconds: 350));
+    if (!mounted) return;
+
+    showCheckingDialog(context);
+
+    List<Map<String, dynamic>> fetched;
+    try {
+      fetched = await service.fetchObjectViewProps(
+        objectId: selectedObjectId,
+        objectTypeId: selectedObjectTypeId,
+      );
+    } catch (e) {
+      if (mounted) Navigator.of(context, rootNavigator: true).pop();
+      return;
+    }
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    final formPropIds = _props
+        .where((p) =>
+            !(p['isHidden'] as bool? ?? false) &&
+            !(p['isAutomatic'] as bool? ?? false))
+        .map((p) => (p['propId'] as num?)?.toInt() ?? 0)
+        .where((id) => id > 0)
+        .toSet();
+
+    final suggestions = extractSuggestions(
+      fetchedProps: fetched,
+      formPropertyIds: formPropIds,
+    );
+
+    debugPrint('🔍 AutoSuggest: fetched ${fetched.length} props, '
+        'formPropIds=$formPropIds, suggestions=${suggestions.length}');
+
+    if (suggestions.isEmpty || !mounted) return;
+
+    final chosen = await showSuggestionsDialog(
+      context: context,
+      suggestions: suggestions,
+      sourceLabel: displayLabel,
+    );
+    if (chosen == null || !mounted) return;
+    _applySuggestions(chosen);
+  }
+
+  void _applySuggestions(List<SuggestedField> fields) {
+    setState(() {
+      for (final f in fields) {
+        final type = f.propertyType.toLowerCase();
+
+        if (type.contains('multiselectlookup')) {
+          final ids = (f.rawValue as List).cast<int>();
+          _values[f.propertyId] = ids;
+          final names = f.displayValue.split(', ');
+          _selectedLookupItems[f.propertyId] = List.generate(
+            ids.length,
+            (i) => LookupItem(
+              id: ids[i],
+              displayValue: i < names.length ? names[i] : ids[i].toString(),
+            ),
+          );
+        } else if (type.contains('lookup')) {
+          _values[f.propertyId] = f.rawValue as int;
+          _selectedLookupItems[f.propertyId] = [
+            LookupItem(id: f.rawValue as int, displayValue: f.displayValue),
+          ];
+        } else if (type.contains('text') ||
+            type.contains('integer') ||
+            type.contains('float')) {
+          _controllers[f.propertyId]?.text = f.rawValue.toString();
+        } else if (type.contains('boolean')) {
+          _boolValues[f.propertyId] = f.rawValue as bool?;
+        } else if (type.contains('date')) {
+          _values[f.propertyId] = f.rawValue;
+        } else {
+          _values[f.propertyId] = f.rawValue;
+        }
+      }
+    });
   }
 }

@@ -18,8 +18,8 @@ import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
 
-// ─── ADD THIS IMPORT (adjust path to wherever your preview screen lives) ───
-import 'document_preview_screen.dart';
+import '../screens/document_preview_screen.dart';
+import '../screens/search_results_screen.dart';
 
 class ViewItemsScreen extends StatefulWidget {
   final String title;
@@ -83,7 +83,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      context.read<MFilesService>().warmExtensionsForItems(_items);
+      final svc = context.read<MFilesService>();
+      svc.warmExtensionsForItems(_items);
+      svc.syncCheckoutStateForItems(_items); 
     });
   }
 
@@ -283,6 +285,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       createdUtc: item.createdUtc,
       lastModifiedUtc: item.lastModifiedUtc,
       isSingleFile: item.isSingleFile,
+      isCheckedOut: item.isCheckedOut,
+      checkoutUserId: item.checkoutUserId,
+      checkoutUsername: item.checkoutUsername,
     );
 
     // ✅ TapRegion removed — see ViewDetailsScreen for full explanation.
@@ -347,20 +352,25 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           ] else
                             const SizedBox(width: 4),
 
-                          (item.isObject && svc.isDocumentContentItem(item))
-                              ? FileTypeBadge(
-                                  extension: svc.cachedExtensionForObject(item.id) ?? '',
-                                  size: 38,
-                                )
-                              : Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.10),
-                                    borderRadius: BorderRadius.circular(10),
+                          _CheckoutBadge(
+                            objectId: item.id,
+                            child: (item.isObject && svc.isDocumentContentItem(item))
+                                ? FileTypeBadge(
+                                    extension:
+                                        svc.cachedExtensionForObject(item.id) ?? '',
+                                    size: 40,
+                                  )
+                                : Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary.withOpacity(0.10),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(Icons.folder_rounded,
+                                        color: AppColors.primary, size: 20),
                                   ),
-                                  child: const Icon(Icons.folder_rounded, color: AppColors.primary, size: 20),
-                                ),
+                          ),
 
                           const SizedBox(width: 10),
 
@@ -489,6 +499,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         createdUtc: item.createdUtc,
         lastModifiedUtc: item.lastModifiedUtc,
         isSingleFile: item.isSingleFile,
+        isCheckedOut: item.isCheckedOut,
+        checkoutUserId: item.checkoutUserId,
+        checkoutUsername: item.checkoutUsername,
       );
 
       await Navigator.push(
@@ -656,45 +669,122 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   }
 
   Widget _buildSearchBar() {
-    return Container(
-      color: AppColors.surfaceLight,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search...',
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(
-              color: Color.fromRGBO(25, 76, 129, 1),
-              width: 2,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: GestureDetector(
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SearchResultsScreen(initialQuery: ''),
+              ),
+            );
+          },
+          child: AbsorbPointer(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search repository...',
+                hintStyle: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary,
+                    width: 2,
+                  ),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 16,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: AppColors.primary.withOpacity(0.6),
+                  size: 20,
+                ),
+                suffixIcon: _filter.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: Colors.grey.shade400,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _filter = '';
+                            _searchController.clear();
+                          });
+                        },
+                      )
+                    : null,
+              ),
+              onChanged: (v) => setState(() => _filter = v),
             ),
           ),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          suffixIcon: _filter.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () {
-                    setState(() {
-                      _filter = '';
-                      _searchController.clear();
-                    });
-                  },
-                ),
         ),
-        onChanged: (v) => setState(() => _filter = v),
       ),
+    );
+  }
+}
+
+// ───────────────────── CHECKOUT BADGE CLASS ─────────────────────────────────────────────────────────
+class _CheckoutBadge extends StatelessWidget {
+  final int objectId;
+  final Widget child;
+
+  const _CheckoutBadge({required this.objectId, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final isOut = context.watch<MFilesService>().isCheckedOutLocally(objectId);
+    if (!isOut) return child;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          right: -4,
+          bottom: -4,
+          child: Container(
+            width: 16,
+            height: 16,
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F766E),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.drive_file_rename_outline,
+              size: 10,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

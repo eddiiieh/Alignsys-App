@@ -21,6 +21,7 @@ import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
 import 'document_preview_screen.dart';
+import '../screens/search_results_screen.dart';
 
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({
@@ -74,9 +75,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     super.didChangeDependencies();
     if (!_dataLoaded) {
       _dataLoaded = true;
-      _future =
-          context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
-        context.read<MFilesService>().warmExtensionsForItems(items);
+      _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
+        final svc = context.read<MFilesService>();
+        svc.warmExtensionsForItems(items);
+        svc.syncCheckoutStateForItems(items);   // ← ADD
         return items;
       });
     }
@@ -106,7 +108,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       _expandedRelationshipsItemId = null;
       _future =
           context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
-        context.read<MFilesService>().warmExtensionsForItems(items);
+        final svc = context.read<MFilesService>();
+        svc.warmExtensionsForItems(items);
+        svc.syncCheckoutStateForItems(items);
         return items;
       });
     });
@@ -226,41 +230,84 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildInViewSearchBar() {
-    return Container(
-      color: AppColors.surfaceLight,
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
-      child: TextField(
-        controller: _searchController,
-        decoration: InputDecoration(
-          hintText: 'Search in ${widget.view.name}...',
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide(color: Colors.grey.shade300),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(
-                color: Color.fromRGBO(25, 76, 129, 1), width: 2),
-          ),
-          filled: true,
-          fillColor: Colors.white,
-          contentPadding:
-              const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-          suffixIcon: _filter.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.clear),
-                  onPressed: () => setState(() {
-                    _filter = '';
-                    _searchController.clear();
-                  }),
-                ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 12,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-        onChanged: (v) => setState(() => _filter = v),
+        child: GestureDetector(
+          onTap: () async {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => SearchResultsScreen(initialQuery: ''),
+              ),
+            );
+          },
+          child: AbsorbPointer(
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Search repository...',
+                hintStyle: TextStyle(
+                  color: Colors.grey.shade400,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(
+                    color: AppColors.primary,
+                    width: 2,
+                  ),
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 14,
+                  horizontal: 16,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: AppColors.primary.withOpacity(0.6),
+                  size: 20,
+                ),
+                suffixIcon: _filter.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: Colors.grey.shade400,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _filter = '';
+                            _searchController.clear();
+                          });
+                        },
+                      )
+                    : null,
+              ),
+              onChanged: (v) => setState(() => _filter = v),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -292,6 +339,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             createdUtc: item.createdUtc,
             lastModifiedUtc: item.lastModifiedUtc,
             isSingleFile: item.isSingleFile,
+            isCheckedOut: item.isCheckedOut,
+            checkoutUserId: item.checkoutUserId,
+            checkoutUsername: item.checkoutUsername,
           )
         : null;
 
@@ -385,23 +435,25 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                           const SizedBox(width: 4),
 
                         // Badge / folder
-                        (item.isObject && svc.isDocumentContentItem(item))
-                            ? FileTypeBadge(
-                                extension:
-                                    svc.cachedExtensionForObject(item.id) ??
-                                        '',
-                                size: 40,
-                              )
-                            : Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.10),
-                                  borderRadius: BorderRadius.circular(10),
+                        _CheckoutBadge(
+                          objectId: item.id,
+                          child: (item.isObject && svc.isDocumentContentItem(item))
+                              ? FileTypeBadge(
+                                  extension:
+                                      svc.cachedExtensionForObject(item.id) ?? '',
+                                  size: 40,
+                                )
+                              : Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(Icons.folder_rounded,
+                                      color: AppColors.primary, size: 20),
                                 ),
-                                child: const Icon(Icons.folder_rounded,
-                                    color: AppColors.primary, size: 20),
-                              ),
+                        ),
 
                         const SizedBox(width: 10),
 
@@ -603,6 +655,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       createdUtc: item.createdUtc,
       lastModifiedUtc: item.lastModifiedUtc,
       isSingleFile: item.isSingleFile,
+      isCheckedOut: item.isCheckedOut,
+      checkoutUserId: item.checkoutUserId,
+      checkoutUsername: item.checkoutUsername,
     );
 
     final deleted = await Navigator.push<bool>(
@@ -897,6 +952,43 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ───────────────────── CHECKOUT BADGE CLASS ─────────────────────────────────────────────────────────
+class _CheckoutBadge extends StatelessWidget {
+  final int objectId;
+  final Widget child;
+
+  const _CheckoutBadge({required this.objectId, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final isOut = context.watch<MFilesService>().isCheckedOutLocally(objectId);
+    if (!isOut) return child;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          right: -4,
+          bottom: -4,
+          child: Container(
+            width: 16,
+            height: 16,
+            decoration: const BoxDecoration(
+              color: Color(0xFF0F766E),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.drive_file_rename_outline,
+              size: 10,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
