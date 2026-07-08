@@ -557,7 +557,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     // Resolve extension for document rows
     final String? ext = isDoc ? svc.cachedExtensionForObject(obj.id) : null;
 
-    if (canExpand && !isDoc && svc.cachedHasRelationships(obj.id) == null) {
+    if (canExpand && svc.cachedHasRelationships(obj.id) == null) {
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
@@ -616,7 +616,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   child: Row(
                     children: [
                       // Relationships chevron
-                      if (canExpand && !isDoc && hasRelationships) ...[
+                      if (canExpand && hasRelationships) ...[
                         Material(
                           color: Colors.transparent,
                           child: InkWell(
@@ -766,7 +766,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               Divider(height: 1, color: Colors.grey.shade200),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: RelationshipsDropdown(obj: obj, initiallyExpanded: true),
+                child: RelationshipsDropdown(
+                  key: ValueKey('rel_${obj.id}'),
+                  obj: obj,
+                  initiallyExpanded: true,
+                ),
               ),
             ],
           ],

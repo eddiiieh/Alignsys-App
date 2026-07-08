@@ -22,6 +22,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_colors.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
 import '../utils/error_messages.dart';
+import '../utils/scan_document_flow.dart';
 
 enum _MoreSubTab { trash, reports }
 
@@ -407,7 +408,6 @@ class _HomeScreenState extends State<HomeScreen>
             backgroundColor: AppColors.surfaceLight,
 
             // ── Create FAB (Home tab only) ─────────────────────────────────
-            /*
             floatingActionButton: AnimatedBuilder(
               animation: _tabController,
               builder: (_, __) {
@@ -419,20 +419,19 @@ class _HomeScreenState extends State<HomeScreen>
                   child: AnimatedOpacity(
                     duration: const Duration(milliseconds: 180),
                     opacity: onHomeTab ? 1.0 : 0.0,
-                    child: Builder(
-                      builder: (ctx) => FloatingActionButton(
-                        onPressed: onHomeTab ? () => _showCreateBottomSheet(ctx) : null,
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        elevation: 4,
-                        child: const Icon(Icons.add_rounded, size: 26),
-                      ),
+                    child: FloatingActionButton(
+                      onPressed: onHomeTab ? () => _startDocumentScan(context) : null,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 4,
+                      tooltip: 'Scan Document',
+                      child: const Icon(Icons.document_scanner_rounded, size: 26),
                     ),
                   ),
                 );
               },
             ),
-            */
+            
             appBar: AppBar(
               backgroundColor: AppColors.primary,
               elevation: 0,
@@ -1638,8 +1637,34 @@ class _HomeScreenState extends State<HomeScreen>
     _resetSearch();
   }
 
-  // ── Create bottom sheet ───────────────────────────────────────────────────
+  // ── Scan document (FAB shortcut) ──────────────────────────────────────────
+  Future<void> _startDocumentScan(BuildContext context) async {
+    final service = context.read<MFilesService>();
 
+    // Find the Documents object type (objectTypeId == 0). Fall back to the
+    // first type if, for any reason, none is explicitly flagged isDocument.
+    final docType = service.objectTypes.firstWhere(
+      (t) => t.isDocument,
+      orElse: () => service.objectTypes.first,
+    );
+
+    final pdfFile = await ScanDocumentFlow.captureAndConvert(context);
+    if (pdfFile == null) return; // user cancelled at camera or crop step
+
+    if (!context.mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => DynamicFormScreen(
+          objectType: docType,
+          scannedFile: pdfFile,
+        ),
+      ),
+    );
+  }
+
+  // ── Create bottom sheet ───────────────────────────────────────────────────
   void _showCreateBottomSheet(BuildContext context) {
     final service = context.read<MFilesService>();
     if (service.objectTypes.isEmpty) {
@@ -1663,6 +1688,7 @@ class _HomeScreenState extends State<HomeScreen>
     final searchFocusNode = FocusNode();
 
     final List<_CreateEntry> allEntries = [
+      const _CreateEntry.scan(),
       const _CreateEntry.template(),
       ...sortedTypes.map((t) => _CreateEntry.objectType(t)),
     ];
@@ -1791,6 +1817,10 @@ class _HomeScreenState extends State<HomeScreen>
                               } else {
                                 filteredEntries =
                                     allEntries.where((e) {
+                                  if (e.isScan) {
+                                    return 'scan document'
+                                        .contains(q.toLowerCase());
+                                  }
                                   if (e.isTemplate) {
                                     return 'templates'
                                         .contains(q.toLowerCase());
@@ -1842,6 +1872,45 @@ class _HomeScreenState extends State<HomeScreen>
                             height: 1, color: Colors.grey.shade100),
                         itemBuilder: (context, index) {
                           final entry = filteredEntries[index];
+
+                          if (entry.isScan) {
+                            return Material(
+                              color: Colors.transparent,
+                              child: ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                leading: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.08),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(
+                                    Icons.document_scanner_rounded,
+                                    size: 20,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                title: const Text('Scan Document',
+                                    style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600)),
+                                subtitle: Text(
+                                  'Take a photo and upload as a PDF',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade500),
+                                ),
+                                trailing: Icon(Icons.chevron_right_rounded,
+                                    color: Colors.grey.shade400),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  _startDocumentScan(context);
+                                },
+                              ),
+                            );
+                          }
+
                           if (entry.isTemplate) {
                             return Material(
                               color: Colors.transparent,
@@ -2930,16 +2999,23 @@ class _HomeScreenState extends State<HomeScreen>
 }
 
 // ── Create entry type ─────────────────────────────────────────────────────────
-
 class _CreateEntry {
   final bool isTemplate;
+  final bool isScan;
   final VaultObjectType? objectType;
+
+  const _CreateEntry.scan()
+      : isScan = true,
+        isTemplate = false,
+        objectType = null;
 
   const _CreateEntry.template()
       : isTemplate = true,
+        isScan = false,
         objectType = null;
 
   const _CreateEntry.objectType(VaultObjectType type)
       : isTemplate = false,
+        isScan = false,
         objectType = type;
 }

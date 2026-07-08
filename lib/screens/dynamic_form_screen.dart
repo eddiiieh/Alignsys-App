@@ -26,10 +26,14 @@ class DynamicFormScreen extends StatefulWidget {
     required this.objectType,
     this.objectClass,
     this.isQuickCreate = false,
+    this.scannedFile,
   });
 
   final VaultObjectType objectType;
   final ObjectClass? objectClass;
+  /// When set, pre-populates the file attachment section with a scanned PDF
+  /// so the user only needs to pick a class and fill metadata.
+  final File? scannedFile;
 
   /// True when pushed from the "+" button next to a lookup field on
   /// another form, to create a related object inline. Locks the
@@ -89,6 +93,15 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     _currentObjectType = widget.objectType;
     _selectedClass = widget.objectClass;
 
+    // Pre-populate file section when launched from the scan flow.
+    if (widget.scannedFile != null) {
+      _selectedFile = PlatformFile(
+        name: widget.scannedFile!.path.split('/').last,
+        path: widget.scannedFile!.path,
+        size: widget.scannedFile!.lengthSync(),
+      );
+      _selectedFileName = _selectedFile!.name;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final service = context.read<MFilesService>();
 

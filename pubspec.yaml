@@ -2,7 +2,7 @@ name: mfiles_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.4+13
+version: 1.0.5+14
 
 environment:
   sdk: ^3.7.2
@@ -31,6 +31,11 @@ dependencies:
   syncfusion_flutter_pdfviewer: ^33.2.4  # Alternative PDF viewer with better controls
   webview_flutter: ^4.10.0         # For HTML/text files
   flutter_widget_from_html: ^0.17.2  # HTML rendering
+
+  #
+  image_picker: ^1.1.2
+  image_cropper: 12.2.1
+  pdf: ^3.12.0
 
 dev_dependencies:
   flutter_test:
