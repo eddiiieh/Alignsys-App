@@ -720,8 +720,13 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                   ],
                 ),
-                const SizedBox(width: 6),
-                const Text('Assigned'),
+                const SizedBox(width: 2),
+                Flexible(
+                  child: const Text(
+                    'Assigned',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),

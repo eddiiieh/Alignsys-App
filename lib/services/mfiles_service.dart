@@ -1,5 +1,6 @@
 // ignore_for_file: curly_braces_in_flow_control_structures, avoid_print, unused_element
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -223,7 +224,10 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
+  String? dssLoginError; // NEW
+
   Future<void> _loginToDss(String email, String password) async {
+    dssLoginError = null; // reset each attempt
     try {
       debugPrint('🔐 Attempting DSS login for: $email');
 
@@ -236,6 +240,7 @@ class MFilesService extends ChangeNotifier {
       debugPrint('📡 DSS login response status: ${response.statusCode}');
 
       if (response.statusCode != 200) {
+        dssLoginError = 'HTTP ${response.statusCode}';
         debugPrint('❌ DSS login FAILED: ${response.statusCode}');
         debugPrint('❌ DSS response body: ${response.body}');
         debugPrint('❌ DSS response headers: ${response.headers}');
@@ -247,6 +252,7 @@ class MFilesService extends ChangeNotifier {
       final refresh = data['refresh'] as String?;
 
       if (access == null || access.isEmpty) {
+        dssLoginError = 'No access token returned';
         debugPrint('❌ DSS login returned no token');
         return;
       }
@@ -271,6 +277,7 @@ class MFilesService extends ChangeNotifier {
 
       notifyListeners();
     } catch (e, stack) {
+      dssLoginError = e.runtimeType.toString();
       debugPrint('❌ DSS login EXCEPTION: $e');
       debugPrint('❌ Stack: $stack');
     }
@@ -630,22 +637,45 @@ class MFilesService extends ChangeNotifier {
       'auth_type': 'email',
     };
 
-    print('🔐 Attempting login for: $email');
+    debugPrint('🔐 Attempting login for: $email');
 
-    final response = await http.post(
+    try {
+    } catch (e) {
+      debugPrint("Certificate test failed:");
+      debugPrint(e.toString());
+    }
+
+    http.Response? response;
+
+    try{
+    response = await http.post(
       Uri.parse('https://auth.alignsys.tech/api/token/'),
       headers: const {'Content-Type': 'application/json'},
       body: json.encode(body),
     );
-
-    print('📡 Login response status: ${response.statusCode}');
-
-    if (response.statusCode != 200) {
-      throw Exception('Login failed: ${response.statusCode}');
+    } on HandshakeException catch (e) {
+      debugPrint('❌ TLS HandshakeException');
+      debugPrint(e.toString());
+      rethrow;
+    }
+    on SocketException catch (e) {
+      debugPrint('❌ SocketException');
+      debugPrint(e.toString());
+      rethrow;
+    }
+    on TimeoutException catch (e) {
+      debugPrint('❌ TimeoutException');
+      debugPrint(e.toString());
+      rethrow;
+    }
+    catch (e, stack) {
+      debugPrint('❌ Login Exception: $e');
+      debugPrint(stack.toString());
+      rethrow;
     }
 
     final data = json.decode(response.body);
-    print('📡 Login response body: $data');
+    debugPrint('📡 Login response body: $data');
 
     final access = data['access'] as String?;
     final refresh = data['refresh'] as String?;
@@ -690,6 +720,8 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> requestPasswordReset(String email) async {
+
+    try{
     final response = await http.post(
       Uri.parse('https://auth.alignsys.tech/api/password_reset/'),
       headers: const {
@@ -703,6 +735,26 @@ class MFilesService extends ChangeNotifier {
         response.statusCode != 204) {
       throw Exception(
           'Password reset failed: ${response.statusCode} — ${response.body}');
+    }
+    } on HandshakeException catch (e) {
+      debugPrint('❌ TLS HandshakeException');
+      debugPrint(e.toString());
+      rethrow;
+    }
+    on SocketException catch (e) {
+      debugPrint('❌ SocketException');
+      debugPrint(e.toString());
+      rethrow;
+    }
+    on TimeoutException catch (e) {
+      debugPrint('❌ TimeoutException');
+      debugPrint(e.toString());
+      rethrow;
+    }
+    catch (e, stack) {
+      debugPrint('❌ Login Exception: $e');
+      debugPrint(stack.toString());
+      rethrow;
     }
   }
 
