@@ -82,6 +82,31 @@ class _HomeScreenState extends State<HomeScreen>
     return copy;
   }
 
+  final Set<int> _selectedIds = {};
+  final Map<int, ViewObject> _selectedObjects = {};
+
+  bool get _selectionMode => _selectedIds.isNotEmpty;
+
+  bool _isSelected(int id) => _selectedIds.contains(id);
+
+  void _toggleSelection(ViewObject obj) {
+    setState(() {
+      if (_selectedIds.remove(obj.id)) {
+        _selectedObjects.remove(obj.id);
+      } else {
+        _selectedIds.add(obj.id);
+        _selectedObjects[obj.id] = obj;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+      _selectedObjects.clear();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -89,9 +114,14 @@ class _HomeScreenState extends State<HomeScreen>
 
     _tabController.addListener(() {
       if (_tabController.indexIsChanging) return;
+
       setState(() {});
+
       _onTabChanged(_tabController.index);
-      if (tabs[_tabController.index] == 'Home') _resetSearch();
+
+      if (tabs[_tabController.index] == 'Home') {
+        _resetSearch();
+      }
     });
 
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialData());
@@ -227,6 +257,9 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onTabChanged(int index) {
+    if (_selectionMode) {
+      _clearSelection();
+    }
     final service = context.read<MFilesService>();
     final tab = tabs[index];
     service.setActiveTab(tab);
@@ -406,6 +439,102 @@ class _HomeScreenState extends State<HomeScreen>
     return Icons.category_rounded;
   }
 
+  PreferredSizeWidget _buildHomeAppBar() {
+    return AppBar(
+        backgroundColor: AppColors.primary,
+        elevation: 0,
+        toolbarHeight: 64,
+        titleSpacing: 12,
+        title: GestureDetector(
+          onTap: () async {
+            final uri = Uri.parse('https://alignsys.tech');
+            final launched = await launchUrl(
+              uri,
+              mode: LaunchMode.externalApplication,
+            );
+            if (!launched && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Could not open Alignsys website'),
+                ),
+              );
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.asset(
+                'assets/alignsysnew.png',
+                height: 36,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          Builder(
+            builder:
+                (ctx) => TextButton.icon(
+                  onPressed: () => _showCreateBottomSheet(ctx),
+                  icon: const Icon(Icons.add, size: 20, color: Colors.white),
+                  label: const Text(
+                    'Create',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+          ),
+          const SizedBox(width: 4),
+          Builder(
+            builder:
+                (ctx) => IconButton(
+                  icon: const Icon(
+                    Icons.person_rounded,
+                    size: 20,
+                    color: Colors.white,
+                  ),
+                  onPressed: () => _showProfileMenu(ctx),
+                ),
+          ),
+          const SizedBox(width: 4),
+        ],
+      );
+  }
+
+  PreferredSizeWidget _buildSelectionAppBar() {
+    return AppBar(
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      toolbarHeight: 64,
+
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: _clearSelection,
+      ),
+
+      title: Text(
+        '${_selectedIds.length} selected',
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.delete_outline),
+          onPressed: () {
+            // TODO: Batch delete
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -414,110 +543,19 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           Scaffold(
             backgroundColor: AppColors.surfaceLight,
-
-            // ── Create FAB (Home tab only) ─────────────────────────────────
-            // floatingActionButton: AnimatedBuilder(
-            //   animation: _tabController,
-            //   builder: (_) {
-            //     final onHomeTab = _tabController.index == 0;
-            //     return AnimatedSlide(
-            //       duration: const Duration(milliseconds: 220),
-            //       curve: Curves.easeInOut,
-            //       offset: onHomeTab ? Offset.zero : const Offset(0, 2.5),
-            //       child: AnimatedOpacity(
-            //         duration: const Duration(milliseconds: 180),
-            //         opacity: onHomeTab ? 1.0 : 0.0,
-            //         child: FloatingActionButton(
-            //           onPressed:
-            //               onHomeTab ? () => _startDocumentScan(context) : null,
-            //           backgroundColor: AppColors.primary,
-            //           foregroundColor: Colors.white,
-            //           elevation: 4,
-            //           tooltip: 'Scan Document',
-            //           child: const Icon(
-            //             Icons.document_scanner_rounded,
-            //             size: 26,
-            //           ),
-            //         ),
-            //       ),
-            //     );
-            //   },
-            // ),
-
-            appBar: AppBar(
-              backgroundColor: AppColors.primary,
-              elevation: 0,
-              toolbarHeight: 64,
-              titleSpacing: 12,
-              title: GestureDetector(
-                onTap: () async {
-                  final uri = Uri.parse('https://alignsys.tech');
-                  final launched = await launchUrl(
-                    uri,
-                    mode: LaunchMode.externalApplication,
-                  );
-                  if (!launched && context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Could not open Alignsys website'),
-                      ),
-                    );
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: Image.asset(
-                      'assets/alignsysnew.png',
-                      height: 36,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              ),
-              actions: [
-                Builder(
-                  builder:
-                      (ctx) => TextButton.icon(
-                        onPressed: () => _showCreateBottomSheet(ctx),
-                        icon: const Icon(
-                          Icons.add,
-                          size: 20,
-                          color: Colors.white,
-                        ),
-                        label: const Text(
-                          'Create',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                ),
-                const SizedBox(width: 4),
-                Builder(
-                  builder:
-                      (ctx) => IconButton(
-                        icon: const Icon(
-                          Icons.person_rounded,
-                          size: 20,
-                          color: Colors.white,
-                        ),
-                        onPressed: () => _showProfileMenu(ctx),
-                      ),
-                ),
-                const SizedBox(width: 4),
-              ],
-            ),
+            appBar: _selectionMode
+              ? _buildSelectionAppBar()
+              : _buildHomeAppBar(),
             body: NetworkBanner(
               child: Column(
                 children: [
-                  _buildSearchBar(),
-                  const SizedBox(height: _sectionSpacing),
-                  _buildTabBar(),
-                  const SizedBox(height: _sectionSpacing),
+                  if (!_selectionMode) ...[
+                    _buildSearchBar(),
+                    const SizedBox(height: _sectionSpacing),
+                    _buildTabBar(),
+                    const SizedBox(height: _sectionSpacing),
+                  ],
+
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
@@ -1116,12 +1154,9 @@ class _HomeScreenState extends State<HomeScreen>
               _searchQuery.isNotEmpty
                   ? s.searchVault(_searchQuery)
                   : s.fetchRecentObjects(),
-      onLongPress:
-          (obj) => showLongPressDeleteSheet(
-            context,
-            obj: obj,
-            onDeleted: _refreshActiveTab,
-          ),
+      onLongPress: (obj) async {
+        _toggleSelection(obj);
+      },
       errorSelector: (s) => s.recentError,
     );
   }
@@ -1133,12 +1168,9 @@ class _HomeScreenState extends State<HomeScreen>
       emptyText: 'No assigned items',
       emptySubtext: 'Items assigned to you will appear here',
       onRefresh: (s) => s.fetchAssignedObjects(),
-      onLongPress:
-          (obj) => showLongPressDeleteSheet(
-            context,
-            obj: obj,
-            onDeleted: _refreshActiveTab,
-          ),
+      onLongPress: (obj) async {
+        _toggleSelection(obj);
+      },
       errorSelector: (s) => s.assignedError,
     );
   }
@@ -1166,12 +1198,9 @@ class _HomeScreenState extends State<HomeScreen>
       emptyText: 'No reports found',
       emptySubtext: 'Reports will appear here when available',
       onRefresh: (s) => s.fetchReportObjects(),
-      onLongPress:
-          (obj) => showLongPressDeleteSheet(
-            context,
-            obj: obj,
-            onDeleted: _refreshActiveTab,
-          ),
+      onLongPress: (obj) async {
+        _toggleSelection(obj);
+      },
     );
   }
 
@@ -1461,7 +1490,9 @@ class _HomeScreenState extends State<HomeScreen>
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _isSelected(obj.id)
+          ? AppColors.primary.withOpacity(0.12)
+          : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border:
               infoExpanded
@@ -1492,6 +1523,10 @@ class _HomeScreenState extends State<HomeScreen>
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () async {
+                  if (_selectionMode) {
+                    _toggleSelection(obj);
+                    return;
+                  }
                   if (isDimmed) {
                     setState(() => _expandedInfoItemId = null);
                     return;
@@ -1550,15 +1585,37 @@ class _HomeScreenState extends State<HomeScreen>
                         const SizedBox(width: 4),
 
                       // Badge / icon
-                      isDocument
-                          ? _buildDocumentBadge(svc, obj)
-                          : isMultiFileObj
-                          ? _buildMultiFileBadge(svc, obj)
-                          : const Icon(
-                            Icons.folder_rounded,
-                            color: AppColors.primary,
-                            size: 22,
-                          ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        child: _isSelected(obj.id)
+                            ? Container(
+                                key: const ValueKey('selected'),
+                                width: 42,
+                                height: 42,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              )
+                            : Container(
+                                key: const ValueKey('normal'),
+                                child: isDocument
+                                    ? _buildDocumentBadge(svc, obj)
+                                    : isMultiFileObj
+                                        ? _buildMultiFileBadge(svc, obj)
+                                        : const Icon(
+                                            Icons.folder_rounded,
+                                            color: AppColors.primary,
+                                            size: 22,
+                                          ),
+                              ),
+                      ),
+
                       const SizedBox(width: 12),
 
                       Expanded(
@@ -1589,6 +1646,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
 
+                      if (!_selectionMode)
                       if (isTrashTab) ...[
                         const SizedBox(width: 8),
                         _buildRestoreButton(obj, onLongPress),
@@ -1833,30 +1891,54 @@ class _HomeScreenState extends State<HomeScreen>
     _resetSearch();
   }
 
-  // ── Scan document (FAB shortcut) ──────────────────────────────────────────
-  Future<void> _startDocumentScan(BuildContext context) async {
+  // ── Scan document ──────────────────────────────────────────
+  Future<void> _startDocumentScan() async {
+  try {
     final service = context.read<MFilesService>();
 
-    // Find the Documents object type (objectTypeId == 0). Fall back to the
-    // first type if, for any reason, none is explicitly flagged isDocument.
+    debugPrint("HOME A");
+
     final docType = service.objectTypes.firstWhere(
       (t) => t.isDocument,
       orElse: () => service.objectTypes.first,
     );
 
+    debugPrint("HOME B");
+
     final pdfFile = await ScanDocumentFlow.captureAndConvert(context);
-    if (pdfFile == null) return; // user cancelled at camera or crop step
 
-    if (!context.mounted) return;
+    debugPrint("HOME C");
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder:
-            (_) => DynamicFormScreen(objectType: docType, scannedFile: pdfFile),
+    if (pdfFile == null) {
+      debugPrint("HOME D");
+      return;
+    }
+
+    debugPrint("HOME E");
+
+    //if (!context.mounted) {
+      //debugPrint("HOME F");
+      //return;
+    //}
+
+    debugPrint("HOME G");
+
+    await Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => DynamicFormScreen(
+        objectType: docType,
+        scannedFile: pdfFile,
       ),
-    );
+    ),
+  );
+
+    debugPrint("HOME I");
+  } catch (e, st) {
+    debugPrint("HOME ERROR");
+    debugPrint(e.toString());
+    debugPrint(st.toString());
   }
+}
 
   // ── Create bottom sheet ───────────────────────────────────────────────────
   void _showCreateBottomSheet(BuildContext context) {
@@ -2171,9 +2253,14 @@ class _HomeScreenState extends State<HomeScreen>
                                             Icons.chevron_right_rounded,
                                             color: Colors.grey.shade400,
                                           ),
-                                          onTap: () {
+                                          onTap: () async {
                                             Navigator.pop(ctx);
-                                            _startDocumentScan(context);
+
+                                            await Future.delayed(const Duration(milliseconds: 300));
+
+                                            if (!mounted) return;
+
+                                            await _startDocumentScan();
                                           },
                                         ),
                                       );

@@ -57,6 +57,33 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
 
+  // ── Multi-selection ─────────────────────────────────────────────
+
+  final Set<int> _selectedIds = {};
+  final Map<int, ViewObject> _selectedObjects = {};
+
+  bool get _selectionMode => _selectedIds.isNotEmpty;
+
+  bool _isSelected(int id) => _selectedIds.contains(id);
+
+  void _toggleSelection(ViewObject obj) {
+    setState(() {
+      if (_selectedIds.remove(obj.id)) {
+        _selectedObjects.remove(obj.id);
+      } else {
+        _selectedIds.add(obj.id);
+        _selectedObjects[obj.id] = obj;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+      _selectedObjects.clear();
+    });
+  }
+
   // ✅ Unified icon-tap claim: timestamp-based, set synchronously.
   bool _suppressRowTap = false;
   DateTime? _lastIconTap;
@@ -85,7 +112,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       if (!mounted) return;
       final svc = context.read<MFilesService>();
       svc.warmExtensionsForItems(_items);
-      svc.syncCheckoutStateForItems(_items); 
+      svc.syncCheckoutStateForItems(_items);
     });
   }
 
@@ -138,68 +165,70 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   // ─── NEW: navigate to the document preview screen ───────────────────────
   Future<void> _openPreview(ViewContentItem item) async {
-  if (!_tryClaimIconTap()) return;
-  if (_previewLoading.contains(item.id)) return;
+    if (!_tryClaimIconTap()) return;
+    if (_previewLoading.contains(item.id)) return;
 
-  setState(() => _previewLoading.add(item.id));
-  try {
-    final svc = context.read<MFilesService>();
-    final files = await svc.fetchObjectFiles(
-      objectId: item.id,
-      classId: item.classId,
-    );
+    setState(() => _previewLoading.add(item.id));
+    try {
+      final svc = context.read<MFilesService>();
+      final files = await svc.fetchObjectFiles(
+        objectId: item.id,
+        classId: item.classId,
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (files.isEmpty) {
+      if (files.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No files attached to this document.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
+
+      final f = files.first;
+      final displayIdInt =
+          int.tryParse(item.displayId?.trim() ?? '') ?? item.id;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (_) => DocumentPreviewScreen(
+                displayObjectId: displayIdInt,
+                classId: item.classId,
+                fileId: f.fileId,
+                fileTitle: f.fileTitle,
+                extension: f.extension,
+                reportGuid: f.reportGuid,
+                objectTypeId: item.objectTypeId,
+                canDownload: true,
+              ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No files attached to this document.'),
+        SnackBar(
+          content: Text('Failed to load preview: $e'),
+          backgroundColor: Colors.red.shade600,
           behavior: SnackBarBehavior.floating,
         ),
       );
-      return;
+    } finally {
+      if (mounted) setState(() => _previewLoading.remove(item.id));
     }
-
-    final f = files.first;
-    final displayIdInt =
-        int.tryParse(item.displayId?.trim() ?? '') ?? item.id;
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DocumentPreviewScreen(
-          displayObjectId: displayIdInt,
-          classId: item.classId,
-          fileId: f.fileId,
-          fileTitle: f.fileTitle,
-          extension: f.extension,
-          reportGuid: f.reportGuid,
-          objectTypeId: item.objectTypeId,
-          canDownload: true,
-        ),
-      ),
-    );
-  } catch (e) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Failed to load preview: $e'),
-        backgroundColor: Colors.red.shade600,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  } finally {
-    if (mounted) setState(() => _previewLoading.remove(item.id));
   }
-}
   // ────────────────────────────────────────────────────────────────────────
 
   String? _subtitleLabel(ViewContentItem item) {
     if (item.isObject) {
-      final idPart = (item.displayId ?? '').trim().isNotEmpty
-          ? item.displayId!.trim()
-          : '${item.id}';
+      final idPart =
+          (item.displayId ?? '').trim().isNotEmpty
+              ? item.displayId!.trim()
+              : '${item.id}';
       final t = (item.objectTypeName ?? '').trim();
       if (t.isNotEmpty) return '$t | ID $idPart';
       final c = (item.classTypeName ?? '').trim();
@@ -271,7 +300,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
 
     final BorderRadius radius =
-        isLast ? const BorderRadius.vertical(bottom: Radius.circular(12)) : BorderRadius.zero;
+        isLast
+            ? const BorderRadius.vertical(bottom: Radius.circular(12))
+            : BorderRadius.zero;
 
     final ViewObject asViewObj = ViewObject(
       id: item.id,
@@ -294,198 +325,264 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     return Column(
       children: [
         AnimatedOpacity(
-            duration: const Duration(milliseconds: 200),
-            opacity: isDimmed ? 0.45 : 1.0,
-            child: Material(
-              color: infoExpanded ? AppColors.primary.withOpacity(0.03) : Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: radius,
-                side: infoExpanded
-                    ? const BorderSide(color: AppColors.primary, width: 1.5)
-                    : BorderSide.none,
-              ),
-              clipBehavior: Clip.antiAlias,
-              elevation: 0,
-              child: InkWell(
-                borderRadius: radius,
-                onTap: () {
-                  // ✅ Guard: reject if an icon tap was just claimed.
-                  final now = DateTime.now();
-                  if (_suppressRowTap) return;
-                  if (_lastIconTap != null &&
-                      now.difference(_lastIconTap!) < const Duration(milliseconds: 350)) return;
+          duration: const Duration(milliseconds: 200),
+          opacity: isDimmed ? 0.45 : 1.0,
+          child: Material(
+            color:
+                _isSelected(item.id)
+                    ? AppColors.primary.withOpacity(0.12)
+                    : infoExpanded
+                    ? AppColors.primary.withOpacity(0.03)
+                    : Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              side:
+                  infoExpanded
+                      ? const BorderSide(color: AppColors.primary, width: 1.5)
+                      : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias,
+            elevation: 0,
+            child: InkWell(
+              borderRadius: radius,
+              onLongPress: () {
+                _toggleSelection(asViewObj);
+              },
+              onTap: () {
+                // ✅ Guard: reject if an icon tap was just claimed.
+                final now = DateTime.now();
+                if (_suppressRowTap) return;
+                if (_lastIconTap != null &&
+                    now.difference(_lastIconTap!) <
+                        const Duration(milliseconds: 350))
+                  return;
 
-                  if (isDimmed) {
-                    setState(() {
-                      _expandedInfoItemId = null;
-                      _expandedRelationshipsItemId = null;
-                    });
-                    return;
-                  }
+                if (isDimmed) {
+                  setState(() {
+                    _expandedInfoItemId = null;
+                    _expandedRelationshipsItemId = null;
+                  });
+                  return;
+                }
 
-                  _handleTap(item);
-                },
-                child: Column(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      child: Row(
-                        children: [
-                          // ✅ Relationships chevron
-                          if (hasRelationships && svc.cachedHasRelationships(item.id) == true) ...[
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {
-                                if (!_tryClaimIconTap()) return;
-                                _toggleRelationships(item.id);
-                              },
-                              child: Padding(
-                                padding: const EdgeInsets.all(4),
-                                child: Icon(
-                                  relationshipsExpanded ? Icons.expand_more : Icons.chevron_right,
-                                  size: 18,
-                                  color: AppColors.primary,
-                                ),
+                if (_selectionMode) {
+                  _toggleSelection(asViewObj);
+                  return;
+                }
+
+                _handleTap(item);
+              },
+              child: Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 12,
+                    ),
+                    child: Row(
+                      children: [
+                        // ✅ Relationships chevron
+                        if (hasRelationships &&
+                            svc.cachedHasRelationships(item.id) == true) ...[
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleRelationships(item.id);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                relationshipsExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                                color: AppColors.primary,
                               ),
                             ),
-                            const SizedBox(width: 6),
-                          ] else
-                            const SizedBox(width: 4),
+                          ),
+                          const SizedBox(width: 6),
+                        ] else
+                          const SizedBox(width: 4),
 
-                          _CheckoutBadge(
-                            objectId: item.id,
-                            child: (item.isObject && svc.isDocumentContentItem(item))
-                                ? FileTypeBadge(
-                                    extension:
-                                        svc.cachedExtensionForObject(item.id) ?? '',
-                                    size: 40,
-                                  )
-                                : Container(
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child:
+                              _isSelected(item.id)
+                                  ? Container(
                                     width: 38,
                                     height: 38,
-                                    decoration: BoxDecoration(
-                                      color: AppColors.primary.withOpacity(0.10),
-                                      borderRadius: BorderRadius.circular(10),
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.primary,
+                                      shape: BoxShape.circle,
                                     ),
-                                    child: const Icon(Icons.folder_rounded,
-                                        color: AppColors.primary, size: 20),
+                                    child: const Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 22,
+                                    ),
+                                  )
+                                  : _CheckoutBadge(
+                                    objectId: item.id,
+                                    child:
+                                        (item.isObject &&
+                                                svc.isDocumentContentItem(item))
+                                            ? FileTypeBadge(
+                                              extension:
+                                                  svc.cachedExtensionForObject(
+                                                    item.id,
+                                                  ) ??
+                                                  '',
+                                              size: 40,
+                                            )
+                                            : Container(
+                                              width: 38,
+                                              height: 38,
+                                              decoration: BoxDecoration(
+                                                color: AppColors.primary
+                                                    .withOpacity(0.10),
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              child: const Icon(
+                                                Icons.folder_rounded,
+                                                color: AppColors.primary,
+                                                size: 20,
+                                              ),
+                                            ),
                                   ),
-                          ),
+                        ),
 
-                          const SizedBox(width: 10),
+                        const SizedBox(width: 10),
 
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              if (subtitle != null &&
+                                  subtitle.trim().isNotEmpty) ...[
+                                const SizedBox(height: 2),
                                 Text(
-                                  item.title,
+                                  subtitle,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontSize: 14, fontWeight: FontWeight.w600),
-                                ),
-                                if (subtitle != null && subtitle.trim().isNotEmpty) ...[
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    subtitle,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 12, color: Colors.grey.shade600),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
                                   ),
-                                ],
+                                ),
                               ],
+                            ],
+                          ),
+                        ),
+
+                        // ─── NEW: Eye / preview icon (documents only) ────────────
+                        if (isDocument) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _openPreview(item),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blueGrey.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child:
+                                  _previewLoading.contains(
+                                        item.id,
+                                      ) // ← add spinner
+                                      ? SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.blueGrey.shade400,
+                                              ),
+                                        ),
+                                      )
+                                      : Icon(
+                                        Icons.remove_red_eye_outlined,
+                                        size: 18,
+                                        color: Colors.blueGrey.shade400,
+                                      ),
                             ),
                           ),
-
-                          // ─── NEW: Eye / preview icon (documents only) ────────────
-                          if (isDocument) ...[
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () => _openPreview(item),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.blueGrey.withOpacity(0.08),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: _previewLoading.contains(item.id)  // ← add spinner
-                                  ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor: AlwaysStoppedAnimation<Color>(
-                                            Colors.blueGrey.shade400),
-                                      ),
-                                    )
-                                  :Icon(
-                                  Icons.remove_red_eye_outlined,
-                                  size: 18,
-                                  color: Colors.blueGrey.shade400,
-                                ),
-                              ),
-                            ),
-                          ],
-                          // ─────────────────────────────────────────────────────────
-
-                          // ✅ Info icon
-                          if (isObject) ...[
-                            const SizedBox(width: 6),
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: () {
-                                if (!_tryClaimIconTap()) return;
-                                _toggleInfo(item.id);
-                              },
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: infoExpanded
-                                      ? AppColors.primary.withOpacity(0.15)
-                                      : AppColors.primary.withOpacity(0.08),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  infoExpanded
-                                      ? Icons.keyboard_arrow_up_rounded
-                                      : Icons.info_outline,
-                                  size: 18,
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            ),
-                          ] else
-                            Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey.shade400)
                         ],
+                        // ─────────────────────────────────────────────────────────
+
+                        // ✅ Info icon
+                        if (isObject) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleInfo(item.id);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color:
+                                    infoExpanded
+                                        ? AppColors.primary.withOpacity(0.15)
+                                        : AppColors.primary.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                infoExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.info_outline,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ] else
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: Colors.grey.shade400,
+                          ),
+                      ],
+                    ),
+                  ),
+
+                  if (infoExpanded && isObject) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    ObjectInfoDropdown(obj: asViewObj),
+                  ],
+
+                  if (relationshipsExpanded && hasRelationships) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: RelationshipsDropdown(
+                        key: ValueKey('rel_${item.id}'),
+                        obj: asViewObj,
                       ),
                     ),
-
-                    if (infoExpanded && isObject) ...[
-                      Divider(height: 1, color: Colors.grey.shade200),
-                      ObjectInfoDropdown(obj: asViewObj),
-                    ],
-
-                    if (relationshipsExpanded && hasRelationships) ...[
-                      Divider(height: 1, color: Colors.grey.shade200),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                        child: RelationshipsDropdown(
-                          key: ValueKey('rel_${item.id}'),
-                          obj: asViewObj,
-                        ),
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
             ),
           ),
-          if (!isLast) Divider(height: 0.5, thickness: 0.5, color: Colors.grey.shade100),
-        ],
-      );
+        ),
+        if (!isLast)
+          Divider(height: 0.5, thickness: 0.5, color: Colors.grey.shade100),
+      ],
+    );
   }
 
   Future<void> _handleTap(ViewContentItem item) async {
@@ -510,12 +607,13 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ObjectDetailsScreen(
-            obj: obj,
-            parentViewName: widget.parentViewName,
-            parentSection: widget.parentSection,
-            groupingName: widget.title,
-          ),
+          builder:
+              (_) => ObjectDetailsScreen(
+                obj: obj,
+                parentViewName: widget.parentViewName,
+                parentSection: widget.parentSection,
+                groupingName: widget.title,
+              ),
         ),
       );
       return;
@@ -525,10 +623,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ViewDetailsScreen(
-            view: ViewItem(id: item.id, name: item.title, count: 0),
-            parentSection: widget.parentSection,
-          ),
+          builder:
+              (_) => ViewDetailsScreen(
+                view: ViewItem(id: item.id, name: item.title, count: 0),
+                parentSection: widget.parentSection,
+              ),
         ),
       );
       return;
@@ -568,22 +667,23 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ViewItemsScreen(
-            title: item.title,
-            parentViewId: vid,
-            items: children,
-            filters: nextFilters,
-            parentViewName: widget.title,
-            parentSection: widget.parentSection,
-          ),
+          builder:
+              (_) => ViewItemsScreen(
+                title: item.title,
+                parentViewId: vid,
+                items: children,
+                filters: nextFilters,
+                parentViewName: widget.title,
+                parentSection: widget.parentSection,
+              ),
         ),
       );
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Unsupported item type')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Unsupported item type')));
   }
 
   @override
@@ -592,81 +692,112 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.surfaceLight,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        titleSpacing: 12,
-        title: Text(
-          widget.title,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: [
-          IconButton(
-            icon: Icon(_showSearch ? Icons.close : Icons.search),
-            onPressed: _toggleSearch,
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: NetworkBanner(
-      child: Column(
-        children: [
-          _buildBreadcrumbs(),
-          if (_showSearch) _buildSearchBar(),
-          Expanded(
-            child: filtered.isEmpty
-                ? const Center(child: Text('No items found'))
-                // ✅ Dismiss expanded dropdowns when tapping empty list space.
-                : GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onTap: () {
-                      if (_expandedInfoItemId != null ||
-                          _expandedRelationshipsItemId != null) {
-                        setState(() {
-                          _expandedInfoItemId = null;
-                          _expandedRelationshipsItemId = null;
-                        });
-                      }
+      appBar:
+          _selectionMode
+              ? AppBar(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: _clearSelection,
+                ),
+                title: Text('${_selectedIds.length} selected'),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () {
+                      // later
                     },
-                    child: Scrollbar(
-                    controller: _itemsScroll,
-                    interactive: true,
-                    thickness: 6,
-                    radius: const Radius.circular(8),
-                    child: ListView(
-                      controller: _itemsScroll,
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      padding: const EdgeInsets.all(10),
-                      children: [
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: Colors.grey.shade100, width: 0.5),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.04),
-                                blurRadius: 12,
-                                offset: const Offset(0, 2),
+                  ),
+                  if (_selectedIds.length == 1)
+                    IconButton(
+                      icon: const Icon(Icons.drive_file_rename_outline),
+                      onPressed: () {},
+                    ),
+                ],
+              )
+              : AppBar(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                titleSpacing: 12,
+                title: Text(
+                  widget.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                actions: [
+                  IconButton(
+                    icon: Icon(_showSearch ? Icons.close : Icons.search),
+                    onPressed: _toggleSearch,
+                  ),
+                  const SizedBox(width: 4),
+                ],
+              ),
+      body: NetworkBanner(
+        child: Column(
+          children: [
+            _buildBreadcrumbs(),
+            if (_showSearch) _buildSearchBar(),
+            Expanded(
+              child:
+                  filtered.isEmpty
+                      ? const Center(child: Text('No items found'))
+                      // ✅ Dismiss expanded dropdowns when tapping empty list space.
+                      : GestureDetector(
+                        behavior: HitTestBehavior.translucent,
+                        onTap: () {
+                          if (_expandedInfoItemId != null ||
+                              _expandedRelationshipsItemId != null) {
+                            setState(() {
+                              _expandedInfoItemId = null;
+                              _expandedRelationshipsItemId = null;
+                            });
+                          }
+                        },
+                        child: Scrollbar(
+                          controller: _itemsScroll,
+                          interactive: true,
+                          thickness: 6,
+                          radius: const Radius.circular(8),
+                          child: ListView(
+                            controller: _itemsScroll,
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(10),
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: Colors.grey.shade100,
+                                    width: 0.5,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.04),
+                                      blurRadius: 12,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Column(
+                                  children: List.generate(
+                                    filtered.length,
+                                    (i) => _buildRow(
+                                      filtered[i],
+                                      i == filtered.length - 1,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
-                          child: Column(
-                            children: List.generate(
-                              filtered.length,
-                              (i) => _buildRow(filtered[i], i == filtered.length - 1),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    ), // Scrollbar
-                  ), // GestureDetector
-          ),
-        ],
-      ),
+                        ), // Scrollbar
+                      ), // GestureDetector
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -730,21 +861,22 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   color: AppColors.primary.withOpacity(0.6),
                   size: 20,
                 ),
-                suffixIcon: _filter.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: Colors.grey.shade400,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _filter = '';
-                            _searchController.clear();
-                          });
-                        },
-                      )
-                    : null,
+                suffixIcon:
+                    _filter.isNotEmpty
+                        ? IconButton(
+                          icon: Icon(
+                            Icons.close_rounded,
+                            size: 18,
+                            color: Colors.grey.shade400,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _filter = '';
+                              _searchController.clear();
+                            });
+                          },
+                        )
+                        : null,
               ),
               onChanged: (v) => setState(() => _filter = v),
             ),

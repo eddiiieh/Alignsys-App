@@ -50,6 +50,34 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   bool _dataLoaded = false;
 
+  // ── Multi-selection ────────────────────────────────────────────────
+
+  final Set<int> _selectedIds = {};
+
+  final Map<int, ViewObject> _selectedObjects = {};
+
+  bool get _selectionMode => _selectedIds.isNotEmpty;
+
+  bool _isSelected(int id) => _selectedIds.contains(id);
+
+  void _toggleSelection(ViewObject obj) {
+    setState(() {
+      if (_selectedIds.remove(obj.id)) {
+        _selectedObjects.remove(obj.id);
+      } else {
+        _selectedIds.add(obj.id);
+        _selectedObjects[obj.id] = obj;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+      _selectedObjects.clear();
+    });
+  }
+
   // ── per-item preview-loading set ──────────────────────────────────────────
   final Set<int> _previewLoading = {};
 
@@ -367,7 +395,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           duration: const Duration(milliseconds: 200),
           opacity: isDimmed ? 0.45 : 1.0,
           child: Material(
-            color: infoExpanded
+            color: _isSelected(item.id)
+            ? AppColors.primary.withOpacity(0.12)
+            : infoExpanded
                 ? AppColors.primary.withOpacity(0.03)
                 : Colors.white,
             shape: RoundedRectangleBorder(
@@ -393,15 +423,21 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   });
                   return;
                 }
+                if (_selectionMode && asViewObj != null) {
+                  _toggleSelection(asViewObj);
+                  return;
+                }
+
                 _handleTap(item);
               },
               onLongPress: canDelete
-                  ? () => showLongPressDeleteSheet(
-                        context,
-                        obj: asViewObj!,
-                        onDeleted: _refreshThisView,
-                      )
-                  : null,
+                ? () {
+                  debugPrint("LONG PRESS: ${item.title}");
+                    if (asViewObj != null) {
+                      _toggleSelection(asViewObj);
+                    }
+                  }
+                : null,
               child: Column(
                 children: [
                   Padding(
@@ -434,23 +470,43 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                           const SizedBox(width: 4),
 
                         // Badge / folder
-                        _CheckoutBadge(
-                          objectId: item.id,
-                          child: (item.isObject && svc.isDocumentContentItem(item))
-                              ? FileTypeBadge(
-                                  extension:
-                                      svc.cachedExtensionForObject(item.id) ?? '',
-                                  size: 40,
-                                )
-                              : Container(
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child: _isSelected(item.id)
+                              ? Container(
+                                  key: const ValueKey('selected'),
                                   width: 38,
                                   height: 38,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.10),
-                                    borderRadius: BorderRadius.circular(10),
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
                                   ),
-                                  child: const Icon(Icons.folder_rounded,
-                                      color: AppColors.primary, size: 20),
+                                  child: const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                )
+                              : _CheckoutBadge(
+                                  objectId: item.id,
+                                  child: (item.isObject && svc.isDocumentContentItem(item))
+                                      ? FileTypeBadge(
+                                          extension: svc.cachedExtensionForObject(item.id) ?? '',
+                                          size: 40,
+                                        )
+                                      : Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary.withOpacity(0.10),
+                                            borderRadius: BorderRadius.circular(10),
+                                          ),
+                                          child: const Icon(
+                                            Icons.folder_rounded,
+                                            color: AppColors.primary,
+                                            size: 20,
+                                          ),
+                                        ),
                                 ),
                         ),
 
@@ -678,9 +734,55 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: !_selectionMode,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+
+        if (_selectionMode) {
+          _clearSelection();
+        }
+      },
+      child: Scaffold(
       backgroundColor: AppColors.surfaceLight,
-      appBar: AppBar(
+      appBar: _selectionMode
+        ? AppBar(
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: _clearSelection,
+            ),
+            title: Text(
+              '${_selectedIds.length}',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.delete_outline),
+                onPressed: () {
+                  // Coming next
+                },
+              ),
+              if (_selectedIds.length == 1)
+                IconButton(
+                  icon: const Icon(Icons.drive_file_rename_outline),
+                  onPressed: () {
+                    // Checkout / Check-in
+                  },
+                ),
+              PopupMenuButton<String>(
+                onSelected: (_) {},
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'future',
+                    child: Text('More actions coming soon'),
+                  ),
+                ],
+              ),
+            ],
+          )
+        : AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -785,6 +887,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

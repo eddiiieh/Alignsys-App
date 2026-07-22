@@ -1741,6 +1741,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   // ---------- Build ----------
   @override
   Widget build(BuildContext context) {
+    // ── Determine if this is a scanned document (from camera or scanner)
+    final bool isScannedDocument = widget.scannedFile != null;
     return SafeArea(
       top: false,
       child: Scaffold(
@@ -2035,9 +2037,12 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            _sectionHeader('File upload',
-                                subtitle:
-                                    'Attach the document file.'),
+                            _sectionHeader(
+                              'File Upload',
+                              subtitle: isScannedDocument
+                                  ? 'Scanned document attached.'
+                                  : 'Attach the document file.',
+                            ),
                             const SizedBox(height: 14),
                             _topLabel('File', required: true),
                             AnimatedContainer(
@@ -2100,12 +2105,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                             null) ...[
                                           const SizedBox(height: 2),
                                           Text(
-                                            'Ready to upload',
-                                            style: TextStyle(
-                                                fontSize: 12,
-                                                color: Colors
-                                                    .green.shade600),
-                                          ),
+                                            isScannedDocument
+                                                ? "Scanned document ready"
+                                                : "Ready to upload",
+                                          )
                                         ],
                                       ],
                                     ),

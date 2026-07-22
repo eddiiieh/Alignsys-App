@@ -12,43 +12,80 @@ class ScanDocumentFlow {
   /// Full pipeline: camera → crop → PDF.
   /// Returns null if the user cancels at any step.
   static Future<File?> captureAndConvert(BuildContext context) async {
-    // ── Step 1: Camera ────────────────────────────────────────────────────
-    final picker = ImagePicker();
-    final shot = await picker.pickImage(
-      source: ImageSource.camera,
-      imageQuality: 90,
-      preferredCameraDevice: CameraDevice.rear,
-    );
-    if (shot == null) return null;
+    try {
+      debugPrint("STEP 1 - Opening camera");
 
-    // ── Step 2: Crop ──────────────────────────────────────────────────────
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: shot.path,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Document',
-          toolbarColor: const Color(0xFF2563EB),
-          toolbarWidgetColor: Colors.white,
-          activeControlsWidgetColor: const Color(0xFF2563EB),
-          lockAspectRatio: false,
-          hideBottomControls: false,
-          initAspectRatio: CropAspectRatioPreset.original,
-        ),
-        IOSUiSettings(
-          title: 'Crop Document',
-          doneButtonTitle: 'Use Photo',
-          cancelButtonTitle: 'Retake',
-          resetAspectRatioEnabled: true,
-          aspectRatioLockEnabled: false,
-        ),
-      ],
-    );
-    if (cropped == null) return null;
+      // ── Step 1: Camera ────────────────────────────────────────────────────
+      final picker = ImagePicker();
+      final shot = await picker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 90,
+        preferredCameraDevice: CameraDevice.rear,
+      );
 
-    // ── Step 3: Image → single-page PDF ───────────────────────────────────
-    // Multi-page fast-follow: replace File with List<File> here, loop
-    // doc.addPage() for each, and update the caller signature accordingly.
-    return _imageToPdf(File(cropped.path));
+      if (shot == null) {
+        debugPrint("Camera cancelled");
+        return null;
+      }
+
+      debugPrint("STEP 2 - Camera complete: ${shot.path}");
+
+      // ── Step 2: Crop ──────────────────────────────────────────────────────
+      debugPrint("STEP 3 - Opening cropper");
+
+      final cropped = await ImageCropper().cropImage(
+        sourcePath: shot.path,
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Document',
+            toolbarColor: const Color(0xFF2563EB),
+            toolbarWidgetColor: Colors.white,
+            activeControlsWidgetColor: const Color(0xFF2563EB),
+            lockAspectRatio: false,
+            hideBottomControls: false,
+            initAspectRatio: CropAspectRatioPreset.original,
+          ),
+          IOSUiSettings(
+            title: 'Crop Document',
+            doneButtonTitle: 'Use Photo',
+            cancelButtonTitle: 'Retake',
+            resetAspectRatioEnabled: true,
+            aspectRatioLockEnabled: false,
+          ),
+        ],
+      );
+
+      if (cropped == null) {
+        debugPrint("Crop cancelled");
+        return null;
+      }
+
+      debugPrint("STEP 4 - Crop complete: ${cropped.path}");
+
+      // ── Step 3: Image → single-page PDF ───────────────────────────────────
+      debugPrint("STEP 5 - Creating PDF");
+
+      final pdf = await _imageToPdf(File(cropped.path));
+
+      debugPrint("STEP 6 - PDF created: ${pdf.path}");
+
+      return pdf;
+    } catch (e, stackTrace) {
+      debugPrint("❌ ScanDocumentFlow.captureAndConvert failed");
+      debugPrint("$e");
+      debugPrintStack(stackTrace: stackTrace);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Document scan failed:\n$e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+
+      return null;
+    }
   }
 
   static Future<File> _imageToPdf(File imageFile) async {
@@ -58,9 +95,9 @@ class ScanDocumentFlow {
     final doc = pw.Document();
     doc.addPage(
       pw.Page(
-        build: (context) => pw.Center(
-          child: pw.Image(pwImage, fit: pw.BoxFit.contain),
-        ),
+        build:
+            (context) =>
+                pw.Center(child: pw.Image(pwImage, fit: pw.BoxFit.contain)),
       ),
     );
 
