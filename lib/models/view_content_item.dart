@@ -71,8 +71,8 @@ class ViewContentItem {
       propDatatype: m['propDatatype']?.toString(),
       isSingleFile: (m['isSingleFile'] as bool?) ?? true,       // ← ADD
       isCheckedOut: (m['isCheckedOut'] as bool?) ?? false,       // ← ADD
-      checkoutUserId: (m['checkoutUserId'] as num?)?.toInt(),    // ← ADD
-      checkoutUsername: m['checkoutUsername'] as String?,        // ← ADD
+      checkoutUserId: ((m['checkoutUserId'] ?? m['checkoutuserid']) as num?)?.toInt(),
+      checkoutUsername: (m['checkoutUsername'] ?? m['checkoutusername']) as String?,        // ← ADD
     );
   }
 }

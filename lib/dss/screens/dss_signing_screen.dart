@@ -25,51 +25,84 @@ class _DssSigningScreenState extends State<DssSigningScreen> {
   bool _hasError = false;
 
   @override
-  void initState() {
-    super.initState();
-    final mfiles = context.read<MFilesService>();
+void initState() {
+  super.initState();
 
-    final safeAccess = (mfiles.dssAccessToken ?? '')
-        .replaceAll(r'\', r'\\')
-        .replaceAll("'", r"\'");
-    final safeRefresh = (mfiles.dssRefreshToken ?? '')
-        .replaceAll(r'\', r'\\')
-        .replaceAll("'", r"\'");
+  final mfiles = context.read<MFilesService>();
 
-    final reInjectJs =
-        "try {"
-        "  var t = JSON.stringify({"
-        "    access:  '$safeAccess',"
-        "    refresh: '$safeRefresh'"
-        "  });"
-        "  sessionStorage.setItem('authTokens', t);"
-        "  localStorage.setItem('authTokens',   t);"
-        "} catch(e) {}";
+  // Use DSS tokens if available, otherwise fall back to the normal EDMS tokens.
+  final accessToken =
+      (mfiles.dssAccessToken?.isNotEmpty == true)
+          ? mfiles.dssAccessToken!
+          : (mfiles.accessToken ?? '');
 
-    // Shim: inject tokens then redirect to the signing URL
-    final shimHtml = '''
+  final refreshToken =
+      (mfiles.dssRefreshToken?.isNotEmpty == true)
+          ? mfiles.dssRefreshToken!
+          : (mfiles.refreshToken ?? '');
+
+  /*debugPrint('================ DSS WEBVIEW TOKENS ================');
+  debugPrint('Access token empty : ${accessToken.isEmpty}');
+  debugPrint('Refresh token empty: ${refreshToken.isEmpty}');
+  debugPrint(
+      'Access preview : ${accessToken.length > 30 ? accessToken.substring(0, 30) : accessToken}');
+  debugPrint(
+      'Refresh preview: ${refreshToken.length > 30 ? refreshToken.substring(0, 30) : refreshToken}');
+  debugPrint('====================================================');*/
+
+  final safeAccess = accessToken
+      .replaceAll(r'\', r'\\')
+      .replaceAll("'", r"\'");
+
+  final safeRefresh = refreshToken
+      .replaceAll(r'\', r'\\')
+      .replaceAll("'", r"\'");
+
+  final reInjectJs = """
+    try {
+      var t = JSON.stringify({
+        access: '$safeAccess',
+        refresh: '$safeRefresh'
+      });
+      // sessionStorage.setItem('authTokens', t);
+      // localStorage.setItem('authTokens', t);
+      // console.log('Injected authTokens:', t);
+    } catch(e) {
+      console.error(e);
+    }
+  """;
+
+  final shimHtml = """
 <!DOCTYPE html>
 <html>
 <head>
 <script>
-  try {
-    var tokens = JSON.stringify({
-      "access":  "$safeAccess",
-      "refresh": "$safeRefresh"
-    });
-    sessionStorage.setItem('authTokens', tokens);
-    localStorage.setItem('authTokens',   tokens);
-  } catch(e) {}
-  window.location.replace('${widget.signingUrl}');
+try {
+  var t = JSON.stringify({
+    access: "$safeAccess",
+    refresh: "$safeRefresh"
+  });
+
+  //sessionStorage.setItem('authTokens', t);
+  //localStorage.setItem('authTokens', t);
+
+  //console.log('Injected authTokens:', t);
+
+} catch(e) {
+  console.error(e);
+}
+
+window.location.replace("${widget.signingUrl}");
 </script>
 </head>
 <body></body>
 </html>
-''';
+""";
 
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(NavigationDelegate(
+  _controller = WebViewController()
+    ..setJavaScriptMode(JavaScriptMode.unrestricted)
+    ..setNavigationDelegate(
+      NavigationDelegate(
         onPageStarted: (_) {
           if (mounted) setState(() => _loading = true);
         },
@@ -77,22 +110,26 @@ class _DssSigningScreenState extends State<DssSigningScreen> {
           await _controller.runJavaScript(reInjectJs);
           if (mounted) {
             setState(() {
-            _loading = false;
-            _hasError = false;
-          });
+              _loading = false;
+              _hasError = false;
+            });
           }
         },
         onWebResourceError: (_) {
           if (mounted) {
             setState(() {
-            _loading = false;
-            _hasError = true;
-          });
+              _loading = false;
+              _hasError = true;
+            });
           }
         },
-      ))
-      ..loadHtmlString(shimHtml, baseUrl: widget.signingUrl);
-  }
+      ),
+    )
+    ..loadHtmlString(
+      shimHtml,
+      baseUrl: 'https://dss.alignsys.tech',
+    );
+}
 
   void _reload() {
     setState(() {

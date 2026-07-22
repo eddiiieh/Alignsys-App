@@ -12,10 +12,11 @@ import '../models/view_object.dart';
 /// Only requires a valid object id — classId may be 0 for documents.
 bool canLongPress(ViewObject obj, BuildContext context, String currentTab) {
   if (obj.id <= 0) return false;
-  // Deleted tab → restore → available to all users
+  // Trash tab → restore action, available to all users
   if (currentTab == 'Trash') return true;
-  // All other tabs → delete → requires deletePermission
-  return obj.userPermission?.deletePermission ?? false;
+  // All other tabs → move to trash, available to all users.
+  // Permanent deletion is backend/admin only and not exposed in the app.
+  return true;
 }
 
 /// Long-press → delete confirmation dialog.

@@ -2,7 +2,7 @@ name: mfiles_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.6+17
+version: 1.0.7+18
 
 environment:
   sdk: ^3.7.2
@@ -34,7 +34,7 @@ dependencies:
 
   # Media
   image_picker: ^1.1.2
-  image_cropper: ^8.0.2            # Fixed version format
+  image_cropper: ^12.2.1            # Fixed version format
   pdf: ^3.12.0
 
 dev_dependencies:

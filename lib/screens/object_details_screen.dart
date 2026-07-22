@@ -2182,7 +2182,7 @@ void initState() {
                                   (sigSnap.data?.isNotEmpty ?? false)
                                       ? sigSnap.data!.first
                                       : null;
-                              if (firstFile == null || !svc.isDssAvailable) {
+                              if (firstFile == null) {
                                 return const SizedBox.shrink();
                               }
                               return Column(

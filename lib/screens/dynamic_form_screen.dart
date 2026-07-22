@@ -454,8 +454,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       _formValues.clear();
       _selectedLookupItems.clear();
       _fieldFilled.clear();
-      _selectedFile = null;
-      _selectedFileName = null;
+      if (widget.scannedFile == null) {
+        _selectedFile = null;
+        _selectedFileName = null;
+      }
       // ── FIX: clear immediately so the UI never shows stale properties
       //         from the previously selected class while the fetch runs.
       _localProperties = [];

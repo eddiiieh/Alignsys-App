@@ -27,6 +27,7 @@ import '../models/view_item.dart';
 import '../models/view_object.dart';
 
 import '../navigation/app_navigator.dart';
+import '../models/object_version.dart';
 
 /// Result of [MFilesService.createObject]. [objectId] is parsed from the
 /// server's response when possible so callers (e.g. the quick-create flow
@@ -713,7 +714,7 @@ class MFilesService extends ChangeNotifier {
     );
 
     // DSS parallel login — non-fatal if it fails
-    await _loginToDss(email, password);
+    //await _loginToDss(email, password);
 
     print('✅ Login successful, tokens saved');
     return true;
@@ -3103,6 +3104,7 @@ class MFilesService extends ChangeNotifier {
     await prefs.setString('selectedVaultId', v.vaultId);
 
     mfilesUserId = null;
+    isAdmin = false;
     await prefs.remove('mfiles_user_id');
 
     recentObjects = [];
@@ -3577,6 +3579,111 @@ class MFilesService extends ChangeNotifier {
     }
     return filelink;
   }
+
+  // ==================== OBJECT VERSIONS ====================
+
+Future<List<ObjectVersion>> fetchObjectVersions({
+  required int displayObjectId,
+  required int classId,
+}) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+    throw Exception('Session not ready');
+  }
+
+  final url = Uri.parse(
+    '$baseUrl/api/ObjectVersions/GetObjectVesions'
+    '/$vaultGuidWithBraces/$displayObjectId/$classId/$mfilesUserId',
+  );
+
+  debugPrint('📋 fetchObjectVersions URL: $url');
+
+  final resp = await _authenticatedRequest(
+    () => http.get(url, headers: _authHeadersNoJson),
+  );
+
+  if (resp.statusCode != 200) {
+    throw Exception('GetObjectVersions failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  final decoded = json.decode(resp.body);
+  if (decoded is! List) return <ObjectVersion>[];
+
+  return decoded
+      .whereType<Map<String, dynamic>>()
+      .map(ObjectVersion.fromJson)
+      .toList();
+}
+
+Future<({List<int> bytes, String? contentType})> fetchObjectFileVersion({
+  required int displayObjectId,
+  required int versionId,
+  required int fileId,
+  required int classId,
+}) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+    throw Exception('Session not ready');
+  }
+
+  final url = Uri.parse(
+    '$baseUrl/api/ObjectVersions/GetObjectFileVersion'
+    '/$vaultGuidWithBraces/$displayObjectId/$versionId/$fileId/$classId/$mfilesUserId',
+  );
+
+  debugPrint('📥 fetchObjectFileVersion URL: $url');
+
+  final resp = await _authenticatedRequest(
+    () => http.get(url, headers: _authHeadersNoJson),
+  );
+
+  if (resp.statusCode != 200) {
+    throw Exception('GetObjectFileVersion failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  return (
+    bytes: resp.bodyBytes.toList(),
+    contentType: resp.headers['content-type'],
+  );
+}
+
+Future<bool> rollbackToVersion({
+  required int objectId,
+  required int classId,
+  required int versionId,
+}) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+    _setError('Session not ready');
+    return false;
+  }
+
+  try {
+    final url = Uri.parse('$baseUrl/api/ObjectVersions/RollbackToVersion');
+
+    final body = {
+      'vaultGuid': vaultGuidWithBraces,
+      'objectId': objectId,
+      'classId': classId,
+      'userID': mfilesUserId,
+      'versionID': versionId,
+    };
+
+    debugPrint('🔄 rollbackToVersion URL: $url');
+    debugPrint('📦 Body: ${jsonEncode(body)}');
+
+    final resp = await _authenticatedRequest(
+      () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
+    );
+
+    if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) {
+      return true;
+    }
+
+    _setError('Rollback failed: ${resp.statusCode} ${resp.body}');
+    return false;
+  } catch (e) {
+    _setError('Error rolling back: $e');
+    return false;
+  }
+}
 }
 
 // ==================== MODELS (kept outside service) ====================
