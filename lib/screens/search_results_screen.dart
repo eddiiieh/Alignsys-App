@@ -42,6 +42,54 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   final ScrollController _scrollController = ScrollController();
 
+  final Set<int> _selectedIds = {};
+  final Map<int, ViewObject> _selectedObjects = {};
+
+  bool get _selectionMode => _selectedIds.isNotEmpty;
+
+  bool _isSelected(int id) => _selectedIds.contains(id);
+
+  bool _searchWhileSelecting = false;
+
+  bool _showSelectedOnly = false;
+
+  bool _isProcessing = false;
+
+  String _processingText = '';
+
+  void _setProcessing(bool value, [String text = '']) {
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessing = value;
+      _processingText = text;
+    });
+  }
+
+  void _toggleSelection(ViewObject obj) {
+    setState(() {
+      if (_selectedIds.remove(obj.id)) {
+        _selectedObjects.remove(obj.id);
+      } else {
+        _selectedIds.add(obj.id);
+        _selectedObjects[obj.id] = obj;
+      }
+      if (_selectedIds.isEmpty) {
+        _showSelectedOnly = false;
+        _searchWhileSelecting = false;
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedIds.clear();
+      _selectedObjects.clear();
+      _showSelectedOnly = false;
+      _searchWhileSelecting = false;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -203,23 +251,280 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
-      appBar: _buildAppBar(),
-      body: NetworkBanner(
-        child: Column(
+  Future<void> _batchCheckout() async {
+    if (_selectedObjects.isEmpty) return;
+
+    _setProcessing(true, "Checking out documents...");
+    try {
+    final service = context.read<MFilesService>();
+
+    int success = 0;
+
+    for (final obj in _selectedObjects.values) {
+      final checkedOut = await service.checkoutObject(
+        objectId: obj.id,
+        objectTypeId: obj.objectTypeId,
+      );
+
+      if (checkedOut) {
+        success++;
+      }
+    }
+
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
           children: [
-            _buildStatusBar(),
-            Expanded(child: _buildBody()),
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object checked out'
+                    : '$success objects checked out',
+              ),
+            ),
           ],
         ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
       ),
+    );
+  } finally {
+    _setProcessing(false);
+  }
+  }
+
+  Future<void> _batchUndoCheckout() async {
+    if (_selectedObjects.isEmpty) return;
+
+    _setProcessing(true, "Checking in documents...");
+    try {
+    final service = context.read<MFilesService>();
+
+    int success = 0;
+
+    for (final obj in _selectedObjects.values) {
+      final checkedIn = await service.undoCheckoutObject(
+        objectId: obj.id,
+        objectTypeId: obj.objectTypeId,
+      );
+
+      if (checkedIn) {
+        success++;
+      }
+    }
+
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object checked in'
+                    : '$success objects checked in',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.blue.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
+  } finally {
+    _setProcessing(false);
+  }
+  }
+
+  Future<void> _batchDelete() async {
+    if (_selectedIds.isEmpty) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text('Delete Objects'),
+        content: Text(
+          '${_selectedIds.length} selected '
+          '${_selectedIds.length == 1 ? "object" : "objects"}?\n\n'
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    _setProcessing(true, "Deleting objects...");
+    try {
+    final service = context.read<MFilesService>();
+
+    final allObjects = <ViewObject>[
+      ...service.recentObjects,
+      ...service.assignedObjects,
+      ...service.reportObjects,
+      ...service.searchResults,
+    ];
+
+    final selectedObjects =
+        allObjects.where((o) => _selectedIds.contains(o.id)).toList();
+
+        debugPrint('Selected IDs: $_selectedIds');
+        debugPrint('Matched objects: ${selectedObjects.length}');
+
+    int success = 0;
+
+    for (final obj in selectedObjects) {
+      debugPrint(
+        'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+      );
+
+      final deleted = await service.deleteObject(
+        objectId: obj.id,
+        classId: obj.classId,
+      );
+
+      debugPrint('Delete result: $deleted');
+      debugPrint('Service error: ${service.error}');
+
+      if (deleted) success++;
+    }
+
+    _results.removeWhere((o) => _selectedIds.contains(o.id));
+
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object moved to Trash'
+                    : '$success objects moved to Trash',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
+  } finally {
+    _setProcessing(false);
+  }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: AppColors.surfaceLight,
+          appBar: _buildAppBar(),
+          body: NetworkBanner(
+            child: Column(
+              children: [
+                _buildStatusBar(),
+
+                if (_selectionMode)
+                  _buildSelectionSummary(),
+
+                Expanded(
+                  child: _buildBody(),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (_isProcessing)
+          Container(
+            color: Colors.black38,
+            child: Center(
+              child: Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(_processingText)
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 
   PreferredSizeWidget _buildAppBar() {
+  if (!_selectionMode) {
+    return _buildSearchAppBar();
+  }
+
+  return _searchWhileSelecting
+      ? _buildSearchAppBar()
+      : _buildSelectionAppBar();
+}
+
+  PreferredSizeWidget _buildSearchAppBar() {
     return AppBar(
       backgroundColor: AppColors.primary,
       elevation: 0,
@@ -227,6 +532,13 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       leading: IconButton(
         icon: const Icon(Icons.arrow_back, color: Colors.white),
         onPressed: () {
+          if (_selectionMode && _searchWhileSelecting) {
+            setState(() {
+              _searchWhileSelecting = false;
+            });
+            return;
+          }
+
           context.read<MFilesService>().clearSearchResults();
           Navigator.pop(context);
         },
@@ -262,12 +574,200 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               _debounce?.cancel();
               _controller.clear();
               _onQueryChanged('');
+
+              if (_selectionMode) {
+                setState(() {
+                  _searchWhileSelecting = false;
+                });
+              }
             },
           ),
         const SizedBox(width: 4),
       ],
     );
   }
+
+  PreferredSizeWidget _buildSelectionAppBar() {
+    final allCheckedOut =
+    _selectedObjects.values.every((o) => o.isCheckedOut);
+
+    final allNotCheckedOut =
+        _selectedObjects.values.every((o) => !o.isCheckedOut);
+    return AppBar(
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      toolbarHeight: 64,
+
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: _clearSelection,
+      ),
+
+      title: Text(
+        '${_selectedIds.length} selected',
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+
+      actions: [
+        IconButton(
+        tooltip: 'Search',
+        icon: const Icon(Icons.search),
+        onPressed: () {
+          setState(() {
+            _showSelectedOnly = false;
+            _searchWhileSelecting = true;
+          });
+
+          _focusNode.requestFocus();
+        },
+      ),
+        if (allNotCheckedOut)
+          IconButton(
+            tooltip: 'Checkout',
+            icon: const Icon(Icons.lock_open),
+            onPressed: _batchCheckout,
+          ),
+
+        if (allCheckedOut)
+          IconButton(
+            tooltip: 'Check In',
+            icon: const Icon(Icons.lock),
+            onPressed: _batchUndoCheckout,
+          ),
+        IconButton(
+          tooltip: 'Delete',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: _batchDelete,
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'More',
+          onSelected: (value) async {
+            switch (value) {
+              case 'history':
+                // TODO
+                break;
+
+              case 'download':
+                _setProcessing(true, "Downloading files...");
+                try {
+                  final svc = context.read<MFilesService>();
+
+                  int success = 0;
+
+                  for (final obj in _selectedObjects.values) {
+                    try {
+                      final files = await svc.fetchObjectFiles(
+                        objectId: obj.id,
+                        classId: obj.classId,
+                      );
+
+                      if (files.isEmpty) continue;
+
+                      final file = files.first;
+
+                      await svc.downloadAndSaveFile(
+                      displayObjectId: obj.id,
+                      classId: obj.classId,
+                      fileId: file.fileId,
+                      reportGuid: file.reportGuid,
+                      fileTitle: file.fileTitle,
+                      extension: file.extension,
+                    );
+
+                      success++;
+                    } catch (e) {
+                      debugPrint(e.toString());
+                    }
+                  }
+
+                  if (!mounted) return;
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Downloaded $success ${success == 1 ? "file" : "files"}',
+                      ),
+                    ),
+                  );
+
+                  _clearSelection();
+                } finally {
+                  _setProcessing(false);
+                }
+
+                break;
+
+              case 'convertPdf':
+                _setProcessing(true, "Converting to PDF...");
+                try {
+                  final svc = context.read<MFilesService>();
+
+                  int converted = 0;
+
+                  for (final obj in _selectedObjects.values) {
+                    try {
+                      final files = await svc.fetchObjectFiles(
+                        objectId: obj.id,
+                        classId: obj.classId,
+                      );
+
+                      if (files.isEmpty) continue;
+
+                      await svc.convertToPdf(
+                        objectId: obj.id,
+                        classId: obj.classId,
+                        fileId: files.first.fileId,
+                        overWriteOriginal: false,
+                        separateFile: true,
+                      );
+
+                      converted++;
+                    } catch (e) {
+                      debugPrint(e.toString());
+                    }
+                  }
+
+                  if (!mounted) return;
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
+                      ),
+                    ),
+                  );
+
+                  _clearSelection();
+                } finally {
+                  _setProcessing(false);
+                }
+
+                break;
+            }
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: 'history',
+              child: Text('Version History'),
+            ),
+            PopupMenuDivider(),
+            PopupMenuItem(
+              value: 'download',
+              child: Text('Download'),
+            ),
+            PopupMenuItem(
+              value: 'convertPdf',
+              child: Text('Convert to PDF'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
 
   Widget _buildStatusBar() {
     final query = _controller.text.trim();
@@ -359,6 +859,59 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 fontWeight: FontWeight.w500,
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectionSummary() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 10,
+      ),
+      decoration: BoxDecoration(
+        color: _showSelectedOnly
+        ? Colors.green.shade50
+        : AppColors.primary.withOpacity(0.05),
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade300,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.check_circle,
+            color: AppColors.primary,
+            size: 18,
+          ),
+
+          const SizedBox(width: 8),
+
+          Expanded(
+            child: Text(
+              _showSelectedOnly
+              ? 'Reviewing ${_selectedIds.length} selected items'
+              : '${_selectedIds.length} items selected across searches',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+
+          TextButton(
+            onPressed: () {
+              setState(() {
+              _showSelectedOnly = !_showSelectedOnly;
+            });
+            },
+            child: Text(
+              _showSelectedOnly ? 'Show All' : 'Review',
+            ),
+          ),
         ],
       ),
     );
@@ -526,6 +1079,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildResultsList() {
+    final displayedResults = _showSelectedOnly
+        ? _selectedObjects.values.toList()
+        : _results;
+
     return Scrollbar(
       controller: _scrollController,
       interactive: true,
@@ -535,8 +1092,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(10),
-        itemCount: _results.length,
-        itemBuilder: (context, index) => _buildObjectRow(_results[index]),
+        itemCount: displayedResults.length,
+        itemBuilder: (context, index) =>
+            _buildObjectRow(displayedResults[index]),
       ),
     );
   }
@@ -572,11 +1130,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: _isSelected(obj.id)
+          ? AppColors.primary.withOpacity(0.08)
+          : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border: infoExpanded
-              ? Border.all(color: AppColors.primary, width: 1.5)
-              : null,
+          border:
+              infoExpanded
+                  ? Border.all(color: AppColors.primary, width: 1.5)
+                  : null,
           boxShadow: infoExpanded
               ? [
                   BoxShadow(
@@ -601,16 +1162,29 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () async {
-                  if (isDimmed) {
-                    setState(() => _expandedInfoItemId = null);
-                    return;
-                  }
-                  await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => ObjectDetailsScreen(obj: obj)),
-                  );
-                },
+                if (_selectionMode) {
+                  _toggleSelection(obj);
+                  return;
+                }
+
+                if (isDimmed) {
+                  setState(() => _expandedInfoItemId = null);
+                  return;
+                }
+
+                await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ObjectDetailsScreen(obj: obj),
+                  ),
+                );
+              },
+
+              onLongPress: () {
+                if (!_selectionMode) {
+                  _toggleSelection(obj);
+                }
+              },
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   child: Row(
@@ -647,17 +1221,37 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                       ] else
                         const SizedBox(width: 4),
 
-                      // Icon
-                      isDoc
-                          ? FileTypeBadge(
-                              extension: ext ?? '',
-                              size: 28,
-                            )
-                          : const Icon(
-                              Icons.folder_rounded,
-                              color: AppColors.primary,
-                              size: 22,
-                            ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        child: (_selectionMode && _isSelected(obj.id))
+                            ? Container(
+                                key: const ValueKey('selected'),
+                                width: 42,
+                                height: 42,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              )
+                            : Container(
+                                key: const ValueKey('normal'),
+                                child: isDoc
+                                    ? FileTypeBadge(
+                                        extension: ext ?? '',
+                                        size: 28,
+                                      )
+                                    : const Icon(
+                                        Icons.folder_rounded,
+                                        color: AppColors.primary,
+                                        size: 22,
+                                      ),
+                              ),
+                      ),
 
                       const SizedBox(width: 12),
 

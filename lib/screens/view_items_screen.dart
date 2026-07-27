@@ -1,5 +1,3 @@
-// ViewItemsScreen.dart (UPDATED - copy/paste whole file)
-
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
@@ -66,6 +64,61 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   bool _isSelected(int id) => _selectedIds.contains(id);
 
+  bool _searchWhileSelecting = false;
+
+  bool _isProcessing = false;
+
+  String _processingText = '';
+
+  void _setProcessing(bool value, [String text = '']) {
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessing = value;
+      _processingText = text;
+    });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedIds.addAll(_items.map((item) => item.id));
+      _selectedObjects.addEntries(
+        _items.where((item) => item.id > 0).map(
+          (item) => MapEntry(
+            item.id,
+            ViewObject(
+              id: item.id,
+              title: item.title,
+              objectTypeId: item.objectTypeId,
+              classId: item.classId,
+              versionId: item.versionId,
+              objectTypeName: item.objectTypeName ?? '',
+              classTypeName: item.classTypeName ?? '',
+              displayId: item.displayId ?? '',
+              createdUtc: item.createdUtc,
+              lastModifiedUtc: item.lastModifiedUtc,
+              isSingleFile: item.isSingleFile,
+              isCheckedOut: item.isCheckedOut,
+              checkoutUserId: item.checkoutUserId,
+              checkoutUsername: item.checkoutUsername,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  bool get _allSelected =>
+      _items.isNotEmpty && _selectedIds.length == _items.length;
+
+  void _toggleSelectAll() {
+    if (_allSelected) {
+      _clearSelection();
+    } else {
+      _selectAll();
+    }
+  }
+
   void _toggleSelection(ViewObject obj) {
     setState(() {
       if (_selectedIds.remove(obj.id)) {
@@ -81,7 +134,212 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     setState(() {
       _selectedIds.clear();
       _selectedObjects.clear();
+      _expandedInfoItemId = null;
+      _expandedRelationshipsItemId = null;
+      _searchWhileSelecting = false;
     });
+  }
+
+  Future<void> _batchCheckout() async {
+    if (_selectedObjects.isEmpty) return;
+
+    _setProcessing(true, "Checking out documents...");
+    try {
+
+    final service = context.read<MFilesService>();
+
+    int success = 0;
+
+    for (final obj in _selectedObjects.values) {
+      final checkedOut = await service.checkoutObject(
+        objectId: obj.id,
+        objectTypeId: obj.objectTypeId,
+      );
+
+      if (checkedOut) {
+        success++;
+      }
+    }
+
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object checked out'
+                    : '$success objects checked out',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
+  } finally {
+      _setProcessing(false);
+    }
+  }
+
+  Future<void> _batchUndoCheckout() async {
+    if (_selectedObjects.isEmpty) return;
+
+    _setProcessing(true, "Checking in documents...");
+    try {
+
+    final service = context.read<MFilesService>();
+
+    int success = 0;
+
+    for (final obj in _selectedObjects.values) {
+      final checkedIn = await service.undoCheckoutObject(
+        objectId: obj.id,
+        objectTypeId: obj.objectTypeId,
+      );
+
+      if (checkedIn) {
+        success++;
+      }
+    }
+
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object checked in'
+                    : '$success objects checked in',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.blue.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
+  } finally {
+      _setProcessing(false);
+    }
+  }
+
+  Future<void> _batchDelete() async {
+    if (_selectedObjects.isEmpty) return;
+
+    _setProcessing(true, "Deleting objects...");
+    try {
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        title: const Text('Delete Objects'),
+        content: Text(
+          '${_selectedIds.length} selected '
+          '${_selectedIds.length == 1 ? "object" : "objects"}?\n\n'
+          'This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final svc = context.read<MFilesService>();
+
+    int success = 0;
+
+    for (final obj in _selectedObjects.values) {
+      final ok = await svc.deleteObject(
+        objectId: obj.id,
+        classId: obj.classId,
+      );
+
+      if (ok) success++;
+    }
+
+    setState(() {
+      _items.removeWhere((e) => _selectedIds.contains(e.id));
+    });
+
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(
+                Icons.check_circle_outline,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  success == 1
+                      ? '1 object deleted'
+                      : '$success objects deleted',
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+          margin: const EdgeInsets.all(12),
+        ),
+    );
+  } finally {
+      _setProcessing(false);
+    }
   }
 
   // ✅ Unified icon-tap claim: timestamp-based, set synchronously.
@@ -330,9 +588,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           child: Material(
             color:
                 _isSelected(item.id)
-                    ? AppColors.primary.withOpacity(0.12)
+                    ? AppColors.primary.withValues(alpha: 0.12)
                     : infoExpanded
-                    ? AppColors.primary.withOpacity(0.03)
+                    ? AppColors.primary.withValues(alpha: 0.03)
                     : Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: radius,
@@ -686,59 +944,326 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     ).showSnackBar(const SnackBar(content: Text('Unsupported item type')));
   }
 
+  PreferredSizeWidget _buildAppBar() {
+    if (!_selectionMode) {
+      return _buildNormalAppBar();
+    }
+
+    return _buildSelectionAppBar();
+  }
+
+  PreferredSizeWidget _buildNormalAppBar() {
+    return AppBar(
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      titleSpacing: 12,
+      title: Text(
+        widget.title,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(_showSearch ? Icons.close : Icons.search),
+          onPressed: _toggleSearch,
+        ),
+        const SizedBox(width: 4),
+      ],
+    );
+  }
+
+  PreferredSizeWidget _buildSelectionAppBar() {
+    final allCheckedOut =
+        _selectedObjects.values.every((o) => o.isCheckedOut);
+
+    final allNotCheckedOut =
+        _selectedObjects.values.every((o) => !o.isCheckedOut);
+
+    return AppBar(
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      toolbarHeight: 64,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back),
+        onPressed: () {
+          if (_searchWhileSelecting) {
+            setState(() {
+              _searchWhileSelecting = false;
+              _filter = '';
+              _searchController.clear();
+            });
+          } else {
+            _clearSelection();
+          }
+        },
+      ),
+      title: Text(
+        '${_selectedIds.length} selected',
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      actions: [
+        IconButton(
+          tooltip: 'Search',
+          icon: const Icon(Icons.search),
+          onPressed: () {
+            setState(() {
+              _searchWhileSelecting = true;
+            });
+          },
+        ),
+        if (allNotCheckedOut)
+          IconButton(
+            tooltip: 'Checkout',
+            icon: const Icon(Icons.lock_open),
+            onPressed: _batchCheckout,
+          ),
+        if (allCheckedOut)
+          IconButton(
+            tooltip: 'Check In',
+            icon: const Icon(Icons.lock),
+            onPressed: _batchUndoCheckout,
+          ),
+        IconButton(
+          tooltip: 'Delete',
+          icon: const Icon(Icons.delete_outline),
+          onPressed: _batchDelete,
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'More',
+          onSelected: (value) async {
+            switch (value) {
+              case 'history':
+                // TODO: Version History
+                break;
+
+              case 'download':
+              _setProcessing(true, "Downloading files...");
+              try {
+                final svc = context.read<MFilesService>();
+
+                int success = 0;
+
+                for (final obj in _selectedObjects.values) {
+                  try {
+                    final files = await svc.fetchObjectFiles(
+                      objectId: obj.id,
+                      classId: obj.classId,
+                    );
+
+                    if (files.isEmpty) continue;
+
+                    final file = files.first;
+
+                    await svc.downloadAndSaveFile(
+                    displayObjectId: obj.id,
+                    classId: obj.classId,
+                    fileId: file.fileId,
+                    reportGuid: file.reportGuid,
+                    fileTitle: file.fileTitle,
+                    extension: file.extension,
+                  );
+
+                    success++;
+                  } catch (e) {
+                    debugPrint(e.toString());
+                  }
+                }
+
+                if (!mounted) return;
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Downloaded $success ${success == 1 ? "file" : "files"}',
+                    ),
+                  ),
+                );
+
+                _clearSelection();
+              } finally {
+                  _setProcessing(false);
+                }
+
+                break;
+
+              case 'convertPdf':
+              _setProcessing(true, "Converting to PDF...");
+              try {
+                final svc = context.read<MFilesService>();
+
+                int converted = 0;
+
+                for (final obj in _selectedObjects.values) {
+                  try {
+                    final files = await svc.fetchObjectFiles(
+                      objectId: obj.id,
+                      classId: obj.classId,
+                    );
+
+                    if (files.isEmpty) continue;
+
+                    await svc.convertToPdf(
+                      objectId: obj.id,
+                      classId: obj.classId,
+                      fileId: files.first.fileId,
+                      overWriteOriginal: false,
+                      separateFile: true,
+                    );
+
+                    converted++;
+                  } catch (e) {
+                    debugPrint(e.toString());
+                  }
+                }
+
+                if (!mounted) return;
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
+                    ),
+                  ),
+                );
+                _clearSelection();
+              } finally {
+                _setProcessing(false); 
+              }
+
+              break;
+            }
+          },
+
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: 'history',
+              child: Text('Version History'),
+            ),
+            PopupMenuDivider(),
+            PopupMenuItem(
+              value: 'download',
+              child: Text('Download'),
+            ),
+            PopupMenuItem(
+              value: 'convertPdf',
+              child: Text('Convert to PDF'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSelectAllBar() {
+    return Material(
+      color: Colors.white,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _toggleSelectAll,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+              child: Row(
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      _allSelected
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      key: ValueKey(_allSelected),
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _allSelected
+                          ? 'Deselect All'
+                          : 'Select All (${_items.length})',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: Colors.grey.shade200,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectionSummary() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 10,
+      ),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.05),
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade300,
+          ),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.check_circle,
+            color: AppColors.primary,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${_selectedIds.length} items selected',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final filtered = _applyFilter(_items);
 
-    return Scaffold(
+    return Stack(
+      children: [
+        Scaffold(
       backgroundColor: AppColors.surfaceLight,
-      appBar:
-          _selectionMode
-              ? AppBar(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: _clearSelection,
-                ),
-                title: Text('${_selectedIds.length} selected'),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () {
-                      // later
-                    },
-                  ),
-                  if (_selectedIds.length == 1)
-                    IconButton(
-                      icon: const Icon(Icons.drive_file_rename_outline),
-                      onPressed: () {},
-                    ),
-                ],
-              )
-              : AppBar(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                titleSpacing: 12,
-                title: Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                actions: [
-                  IconButton(
-                    icon: Icon(_showSearch ? Icons.close : Icons.search),
-                    onPressed: _toggleSearch,
-                  ),
-                  const SizedBox(width: 4),
-                ],
-              ),
+      appBar: _buildAppBar(),
       body: NetworkBanner(
         child: Column(
           children: [
-            _buildBreadcrumbs(),
-            if (_showSearch) _buildSearchBar(),
+            if (_selectionMode) ...[
+              _buildSelectAllBar(),
+              const SizedBox(height: 2),
+            ],
+            if (!_selectionMode || !_searchWhileSelecting)
+              _buildBreadcrumbs(),
+            if ((!_selectionMode && _showSearch) || (_selectionMode && _searchWhileSelecting))
+              _buildSearchBar(),
             Expanded(
               child:
                   filtered.isEmpty
@@ -799,6 +1324,27 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           ],
         ),
       ),
+      ),
+      if (_isProcessing)
+        Container(
+          color: Colors.black38,
+          child: Center(
+            child: Card(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text(_processingText)
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+    ],
     );
   }
 
@@ -818,14 +1364,18 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         ),
         child: GestureDetector(
           onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SearchResultsScreen(initialQuery: ''),
-              ),
-            );
+            // Only navigate to SearchResultsScreen in normal mode
+            if (!_selectionMode) {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SearchResultsScreen(initialQuery: ''),
+                ),
+              );
+            }
           },
           child: AbsorbPointer(
+            absorbing: !_selectionMode,
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(

@@ -74,6 +74,14 @@ class ViewObject {
       'raw.id=${json['id']} raw.displayID=${json['displayID']} resolvedId=$resolvedId',
     );
 
+    debugPrint(
+      'Checkout: '
+      'id=${resolvedId}, '
+      'checkedOut=${json['isCheckedOut']}, '
+      'checkoutUserId=${json['checkoutUserId']}, '
+      'checkoutUsername=${json['checkoutUsername']}',
+    );
+
     return ViewObject(
       id: resolvedId,
       title: (json['title'] as String?) ?? '',

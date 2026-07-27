@@ -65,6 +65,11 @@ class _HomeScreenState extends State<HomeScreen>
   final FocusNode _searchFocus = FocusNode();
   final ScrollController _homeScroll = ScrollController();
 
+  final TextEditingController _selectionFilterController =
+    TextEditingController();
+
+  String _selectionFilter = '';
+
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
 
@@ -85,7 +90,53 @@ class _HomeScreenState extends State<HomeScreen>
   final Set<int> _selectedIds = {};
   final Map<int, ViewObject> _selectedObjects = {};
 
+  bool _isProcessing = false;
+
+  String _processingText = '';
+
+  void _setProcessing(bool value, [String text = '']) {
+    if (!mounted) return;
+
+    setState(() {
+      _isProcessing = value;
+      _processingText = text;
+    });
+  }
+
   bool get _selectionMode => _selectedIds.isNotEmpty;
+
+  List<ViewObject> get _currentObjects {
+    final service = context.read<MFilesService>();
+
+    switch (tabs[_tabController.index]) {
+      case 'Recent':
+        return service.recentObjects;
+
+      case 'Assigned':
+        return service.assignedObjects;
+
+      case 'More':
+        return _moreSubTab == _MoreSubTab.trash
+            ? service.deletedObjects
+            : service.reportObjects;
+
+      default:
+        return const [];
+    }
+  }
+
+  List<ViewObject> get _visibleObjects {
+    if (_selectionFilter.trim().isEmpty) {
+      return _currentObjects;
+    }
+
+    final query = _selectionFilter.toLowerCase();
+
+    return _currentObjects.where((object) {
+      final title = object.title.toLowerCase();
+      return title.contains(query);
+    }).toList();
+  }
 
   bool _isSelected(int id) => _selectedIds.contains(id);
 
@@ -105,6 +156,230 @@ class _HomeScreenState extends State<HomeScreen>
       _selectedIds.clear();
       _selectedObjects.clear();
     });
+  }
+
+  void _selectAll() {
+    setState(() {
+      _selectedIds
+        ..clear()
+        ..addAll(_visibleObjects.map((o) => o.id));
+
+      _selectedObjects
+        ..clear()
+        ..addEntries(
+          _visibleObjects.map((o) => MapEntry(o.id, o)),
+        );
+    });
+  }
+
+  bool get _allSelected =>
+      _currentObjects.isNotEmpty &&
+      _selectedIds.length == _visibleObjects.length;
+
+  void _toggleSelectAll() {
+    if (_allSelected) {
+      _clearSelection();
+    } else {
+      _selectAll();
+    }
+  }
+
+  // Batch delete selected objects
+  Future<void> _batchDelete() async {
+    if (_selectedIds.isEmpty) return;
+
+    final confirmed = await showBatchDeleteConfirmDialog(
+      context,
+      count: _selectedIds.length,
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    _setProcessing(true, "Deleting objects...");
+    try {
+    final service = context.read<MFilesService>();
+
+    final allObjects = <ViewObject>[
+      ...service.recentObjects,
+      ...service.assignedObjects,
+      ...service.reportObjects,
+      ...service.searchResults,
+    ];
+
+    final selectedObjects =
+        allObjects.where((o) => _selectedIds.contains(o.id)).toList();
+
+        debugPrint('Selected IDs: $_selectedIds');
+        debugPrint('Matched objects: ${selectedObjects.length}');
+
+    int success = 0;
+
+    for (final obj in selectedObjects) {
+      debugPrint(
+        'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+      );
+
+      final deleted = await service.deleteObject(
+        objectId: obj.id,
+        classId: obj.classId,
+      );
+
+      debugPrint('Delete result: $deleted');
+      debugPrint('Service error: ${service.error}');
+
+      if (deleted) success++;
+    }
+
+    _clearSelection();
+
+    await _refreshActiveTab();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+              size: 20,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object moved to Trash'
+                    : '$success objects moved to Trash',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
+  } finally {
+    _setProcessing(false);
+  }
+  }
+
+  // Batch checkout selected objects
+  Future<void> _batchCheckout() async {
+    if (_selectedObjects.isEmpty) return;
+
+    _setProcessing(true, "Checking out documents...");
+    try {
+    final service = context.read<MFilesService>();
+
+    int success = 0;
+
+    for (final obj in _selectedObjects.values) {
+      final checkedOut = await service.checkoutObject(
+        objectId: obj.id,
+        objectTypeId: obj.objectTypeId,
+      );
+
+      if (checkedOut) {
+        success++;
+      }
+    }
+
+    await _refreshActiveTab();
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object checked out'
+                    : '$success objects checked out',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
+  } finally {
+    _setProcessing(false);
+  }
+  }
+
+  // Batch undo checkout selected objects
+  Future<void> _batchUndoCheckout() async {
+    if (_selectedObjects.isEmpty) return;
+
+    _setProcessing(true, "Checking in documents...");
+    try {
+    final service = context.read<MFilesService>();
+
+    int success = 0;
+
+    for (final obj in _selectedObjects.values) {
+      final checkedIn = await service.undoCheckoutObject(
+        objectId: obj.id,
+        objectTypeId: obj.objectTypeId,
+      );
+
+      if (checkedIn) {
+        success++;
+      }
+    }
+
+    await _refreshActiveTab();
+    _clearSelection();
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            const Icon(
+              Icons.check_circle_outline,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                success == 1
+                    ? '1 object checked in'
+                    : '$success objects checked in',
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.blue.shade700,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
+  } finally {
+    _setProcessing(false);
+  }
   }
 
   @override
@@ -129,7 +404,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildDocumentBadge(MFilesService svc, ViewObject obj) {
     final isTrashed = svc.isObjectDeleted(obj.id);
-    final isCheckedOut = svc.isCheckedOutLocally(obj.id);
+    final isCheckedOut = obj.isCheckedOut;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -186,7 +461,7 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildMultiFileBadge(MFilesService svc, ViewObject obj) {
     final isTrashed = svc.isObjectDeleted(obj.id);
-    final isCheckedOut = svc.isCheckedOutLocally(obj.id);
+    final isCheckedOut = obj.isCheckedOut;
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -377,65 +652,130 @@ class _HomeScreenState extends State<HomeScreen>
 
   IconData _iconForObjectTypeName(String name) {
     final n = name.toLowerCase().trim();
-    if (n == 'cars' || n.contains('vehicle'))
+    if (n == 'cars' || n.contains('vehicle')) {
       return Icons.directions_car_rounded;
-    if (n == 'container files') return Icons.folder_zip_rounded;
-    if (n == 'document collections') return Icons.library_books_rounded;
-    if (n == 'news') return Icons.newspaper_rounded;
-    if (n == 'students') return Icons.school_rounded;
-    if (n == 'annotations') return Icons.rate_review_rounded;
-    if (n == 'archive boxes') return Icons.archive_rounded;
-    if (n == 'calendar events') return Icons.event_rounded;
-    if (n == 'customers') return Icons.people_alt_rounded;
-    if (n == 'departments') return Icons.account_tree_rounded;
-    if (n == 'filing slots') return Icons.inbox_rounded;
-    if (n == 'finances') return Icons.account_balance_rounded;
-    if (n == 'insurers') return Icons.health_and_safety_rounded;
-    if (n == 'job vacancies') return Icons.work_history_rounded;
-    if (n == 'library books') return Icons.menu_book_rounded;
-    if (n == 'librarys' || n == 'libraries') return Icons.local_library_rounded;
-    if (n == 'prescription sales') return Icons.medication_rounded;
-    if (n == 'processes') return Icons.account_tree_rounded;
-    if (n == 'requisitions') return Icons.request_page_rounded;
-    if (n == 'shares') return Icons.share_rounded;
-    if (n == 'test') return Icons.science_rounded;
-    if (n == 'loans') return Icons.local_atm_rounded;
-    if (n == 'members') return Icons.person_2_rounded;
-    if (n == 'valuers') return Icons.currency_exchange_rounded;
-    if (n.contains('contact') || n.contains('person') || n.contains('client'))
+    }
+    if (n == 'container files') {
+      return Icons.folder_zip_rounded;
+    }
+    if (n == 'document collections') {
+      return Icons.library_books_rounded;
+    }
+    if (n == 'news') {
+      return Icons.newspaper_rounded;
+    }
+    if (n == 'students') {
+      return Icons.school_rounded;
+    }
+    if (n == 'annotations') {
+      return Icons.rate_review_rounded;
+    }
+    if (n == 'archive boxes') {
+      return Icons.archive_rounded;
+    }
+    if (n == 'calendar events') {
+      return Icons.event_rounded;
+    }
+    if (n == 'customers') {
+      return Icons.people_alt_rounded;
+    }
+    if (n == 'departments') {
+      return Icons.account_tree_rounded;
+    }
+    if (n == 'filing slots') {
+      return Icons.inbox_rounded;
+    }
+    if (n == 'finances') {
+      return Icons.account_balance_rounded;
+    }
+    if (n == 'insurers') {
+      return Icons.health_and_safety_rounded;
+    }
+    if (n == 'job vacancies') {
+      return Icons.work_history_rounded;
+    }
+    if (n == 'library books') {
+      return Icons.menu_book_rounded;
+    }
+    if (n == 'librarys' || n == 'libraries') {
+      return Icons.local_library_rounded;
+    }
+    if (n == 'prescription sales') {
+      return Icons.medication_rounded;
+    }
+    if (n == 'processes') {
+      return Icons.account_tree_rounded;
+    }
+    if (n == 'requisitions') {
+      return Icons.request_page_rounded;
+    }
+    if (n == 'shares') {
+      return Icons.share_rounded;
+    }
+    if (n == 'test') {
+      return Icons.science_rounded;
+    }
+    if (n == 'loans') {
+      return Icons.local_atm_rounded;
+    }
+    if (n == 'members') {
+      return Icons.person_2_rounded;
+    }
+    if (n == 'valuers') {
+      return Icons.currency_exchange_rounded;
+    }
+    if (n.contains('contact') || n.contains('person') || n.contains('client')) {
       return Icons.person_rounded;
-    if (n.contains('project')) return Icons.work_rounded;
-    if (n.contains('invoice')) return Icons.receipt_long_rounded;
-    if (n.contains('payment') || n.contains('transaction'))
+    }
+    if (n.contains('project')) {
+      return Icons.work_rounded;
+    }
+    if (n.contains('invoice')) {
+      return Icons.receipt_long_rounded;
+    }
+    if (n.contains('payment') || n.contains('transaction')) {
       return Icons.payments_rounded;
-    if (n.contains('contract') || n.contains('agreement'))
+    }
+    if (n.contains('contract') || n.contains('agreement')) {
       return Icons.handshake_rounded;
-    if (n.contains('report') || n.contains('analytics'))
+    }
+    if (n.contains('report') || n.contains('analytics')) {
       return Icons.analytics_rounded;
-    if (n.contains('meeting') || n.contains('minute'))
+    }
+    if (n.contains('meeting') || n.contains('minute')) {
       return Icons.groups_rounded;
-    if (n.contains('task') || n.contains('assignment'))
+    }
+    if (n.contains('task') || n.contains('assignment')) {
       return Icons.task_alt_rounded;
-    if (n.contains('email') || n.contains('message') || n.contains('mail'))
+    }
+    if (n.contains('email') || n.contains('message') || n.contains('mail')) {
       return Icons.email_rounded;
-    if (n.contains('asset') || n.contains('equipment'))
+    }
+    if (n.contains('asset') || n.contains('equipment')) {
       return Icons.inventory_2_rounded;
-    if (n.contains('employee') || n.contains('staff') || n.contains('user'))
+    }
+    if (n.contains('employee') || n.contains('staff') || n.contains('user')) {
       return Icons.badge_rounded;
-    if (n.contains('supplier') || n.contains('vendor'))
+    }
+    if (n.contains('supplier') || n.contains('vendor')) {
       return Icons.local_shipping_rounded;
+    }
     if (n.contains('company') ||
         n.contains('organisation') ||
-        n.contains('organization'))
+        n.contains('organization')) {
       return Icons.business_rounded;
-    if (n.contains('case') || n.contains('ticket') || n.contains('issue'))
+    }
+    if (n.contains('case') || n.contains('ticket') || n.contains('issue')) {
       return Icons.support_agent_rounded;
-    if (n.contains('product') || n.contains('item') || n.contains('sku'))
+    }
+    if (n.contains('product') || n.contains('item') || n.contains('sku')) {
       return Icons.inventory_rounded;
+    }
     if (n.contains('property') ||
         n.contains('real estate') ||
-        n.contains('land'))
+        n.contains('land')) {
       return Icons.home_work_rounded;
+    }
     return Icons.category_rounded;
   }
 
@@ -506,6 +846,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   PreferredSizeWidget _buildSelectionAppBar() {
+    final allCheckedOut =
+    _selectedObjects.values.every((o) => o.isCheckedOut);
+
+    final allNotCheckedOut =
+        _selectedObjects.values.every((o) => !o.isCheckedOut);
     return AppBar(
       backgroundColor: AppColors.primary,
       foregroundColor: Colors.white,
@@ -525,11 +870,145 @@ class _HomeScreenState extends State<HomeScreen>
       ),
 
       actions: [
+        if (allNotCheckedOut)
+          IconButton(
+            tooltip: 'Checkout',
+            icon: const Icon(Icons.lock_open),
+            onPressed: _batchCheckout,
+          ),
+
+        if (allCheckedOut)
+          IconButton(
+            tooltip: 'Check In',
+            icon: const Icon(Icons.lock),
+            onPressed: _batchUndoCheckout,
+          ),
         IconButton(
+          tooltip: 'Delete',
           icon: const Icon(Icons.delete_outline),
-          onPressed: () {
-            // TODO: Batch delete
+          onPressed: _batchDelete,
+        ),
+        PopupMenuButton<String>(
+          tooltip: 'More',
+          onSelected: (value) async {
+            switch (value) {
+              case 'history':
+                // TODO
+                break;
+
+              case 'download':
+                _setProcessing(true, "Downloading files...");
+                try {
+                  final svc = context.read<MFilesService>();
+
+                  int success = 0;
+
+                  for (final obj in _selectedObjects.values) {
+                    try {
+                      final files = await svc.fetchObjectFiles(
+                        objectId: obj.id,
+                        classId: obj.classId,
+                      );
+
+                      if (files.isEmpty) continue;
+
+                      final file = files.first;
+
+                      await svc.downloadAndSaveFile(
+                      displayObjectId: obj.id,
+                      classId: obj.classId,
+                      fileId: file.fileId,
+                      reportGuid: file.reportGuid,
+                      fileTitle: file.fileTitle,
+                      extension: file.extension,
+                    );
+
+                      success++;
+                    } catch (e) {
+                      debugPrint(e.toString());
+                    }
+                  }
+
+                  if (!mounted) return;
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Downloaded $success ${success == 1 ? "file" : "files"}',
+                      ),
+                    ),
+                  );
+
+                  _clearSelection();
+                } finally {
+                  _setProcessing(false);
+                }
+
+                break;
+
+              case 'convertPdf':
+                _setProcessing(true, "Converting to PDF...");
+                try {
+                  final svc = context.read<MFilesService>();
+
+                  int converted = 0;
+
+                  for (final obj in _selectedObjects.values) {
+                    try {
+                      final files = await svc.fetchObjectFiles(
+                        objectId: obj.id,
+                        classId: obj.classId,
+                      );
+
+                      if (files.isEmpty) continue;
+
+                      await svc.convertToPdf(
+                        objectId: obj.id,
+                        classId: obj.classId,
+                        fileId: files.first.fileId,
+                        overWriteOriginal: false,
+                        separateFile: true,
+                      );
+
+                      converted++;
+                    } catch (e) {
+                      debugPrint(e.toString());
+                    }
+                  }
+
+                  if (!mounted) return;
+
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
+                      ),
+                    ),
+                  );
+
+                  _clearSelection();
+                } finally {
+                  _setProcessing(false);
+                }
+
+                break;
+            }
           },
+          itemBuilder: (_) => const [
+            PopupMenuItem(
+              value: 'history',
+              child: Text('Version History'),
+            ),
+            PopupMenuDivider(),
+            PopupMenuItem(
+              value: 'download',
+              child: Text('Download'),
+            ),
+            PopupMenuItem(
+              value: 'convertPdf',
+              child: Text('Convert to PDF'),
+            ),
+          ],
         ),
       ],
     );
@@ -546,16 +1025,34 @@ class _HomeScreenState extends State<HomeScreen>
             appBar: _selectionMode
               ? _buildSelectionAppBar()
               : _buildHomeAppBar(),
+            floatingActionButton: !_selectionMode && _tabController.index == 0
+                ? FloatingActionButton.extended(
+                  onPressed: _startDocumentScan,
+                  label: const Text('Scan'),
+                  icon: const Icon(Icons.document_scanner_rounded),
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                )
+                : null,
+            floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
             body: NetworkBanner(
               child: Column(
                 children: [
+                  if (_selectionMode) ...[
+                    _buildSelectAllBar(),
+                    const SizedBox(height: 2),
+                  ],
+
+                    _selectionMode
+                    ? _buildSelectionSearchBar()
+                    : _buildSearchBar(),
+                  const SizedBox(height: _sectionSpacing),
+                  
                   if (!_selectionMode) ...[
-                    _buildSearchBar(),
-                    const SizedBox(height: _sectionSpacing),
                     _buildTabBar(),
                     const SizedBox(height: _sectionSpacing),
                   ],
-
+                
                   Expanded(
                     child: TabBarView(
                       controller: _tabController,
@@ -607,6 +1104,25 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ),
                   ],
+                ),
+              ),
+            ),
+          if (_isProcessing)
+            Container(
+              color: Colors.black38,
+              child: Center(
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const CircularProgressIndicator(),
+                        const SizedBox(height: 16),
+                        Text(_processingText)
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -703,6 +1219,131 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  // ── Selection filter bar ─────────────────────────────────────────────────
+  Widget _buildSelectionSearchBar() {
+    final hasText = _selectionFilterController.text.trim().isNotEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _selectionFilterController,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            hintText: 'Filter items...',
+            hintStyle: TextStyle(color: Colors.grey.shade400),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: Color.fromRGBO(25, 76, 129, 1),
+                width: 2,
+              ),
+            ),
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 14,
+              horizontal: 16,
+            ),
+            prefixIcon: Icon(
+              Icons.search,
+              color: Colors.grey.shade400,
+            ),
+            suffixIcon: hasText
+                ? IconButton(
+                    icon: Icon(
+                      Icons.close,
+                      color: Colors.grey.shade400,
+                    ),
+                    onPressed: () {
+                      _selectionFilterController.clear();
+
+                      setState(() {
+                        _selectionFilter = '';
+                      });
+                    },
+                  )
+                : null,
+          ),
+          onChanged: (value) {
+            setState(() {
+              _selectionFilter = value.trim();
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  // ── Select All bar ───────────────────────────────────────────────────────
+  Widget _buildSelectAllBar() {
+    return Material(
+      color: Colors.white,
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _toggleSelectAll,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 14,
+              ),
+              child: Row(
+                children: [
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      _allSelected
+                          ? Icons.check_box
+                          : Icons.check_box_outline_blank,
+                      key: ValueKey(_allSelected),
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      _allSelected
+                          ? 'Deselect All'
+                          : 'Select All (${_currentObjects.length})',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Divider(
+            height: 1,
+            thickness: 1,
+            color: Colors.grey.shade200,
+          ),
+        ],
+      ),
+    );
+  }
+
   // ── Tab bar ───────────────────────────────────────────────────────────────
 
   Widget _buildTabBar() {
@@ -754,7 +1395,7 @@ class _HomeScreenState extends State<HomeScreen>
     return Tab(
       height: 36,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -774,51 +1415,46 @@ class _HomeScreenState extends State<HomeScreen>
         return Tab(
           height: 36,
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.assignment_rounded, size: 16),
-                    if (count > 0)
-                      Positioned(
-                        top: -6,
-                        right: -8,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
-                          constraints: const BoxConstraints(minWidth: 16),
-                          decoration: BoxDecoration(
-                            color: Colors.red,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: Colors.white, width: 1.2),
-                          ),
-                          child: Text(
-                            count > 99 ? '99+' : '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              height: 1.2,
+            padding: const EdgeInsets.symmetric(horizontal: 8), // was 12
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      const Icon(Icons.assignment_rounded, size: 16),
+                      if (count > 0)
+                        Positioned(
+                          top: -6,
+                          right: -8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            constraints: const BoxConstraints(minWidth: 16),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white, width: 1.2),
                             ),
-                            textAlign: TextAlign.center,
+                            child: Text(
+                              count > 99 ? '99+' : '$count',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                height: 1.2,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
                           ),
                         ),
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 2),
-                Flexible(
-                  child: const Text(
-                    'Assigned',
-                    overflow: TextOverflow.ellipsis,
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(width: 2),
+                  const Text('Assigned', overflow: TextOverflow.ellipsis),
+                ],
+              ),
             ),
           ),
         );
@@ -1351,6 +1987,18 @@ class _HomeScreenState extends State<HomeScreen>
     return Consumer<MFilesService>(
       builder: (context, service, _) {
         final objects = selector(service);
+
+        final visibleObjects =
+          _selectionMode && _selectionFilter.isNotEmpty
+              ? objects.where((obj) {
+                  final q = _selectionFilter.toLowerCase();
+
+                  return obj.title.toLowerCase().contains(q) ||
+                      obj.objectTypeName.toLowerCase().contains(q) ||
+                      obj.displayId.toLowerCase().contains(q);
+                }).toList()
+              : objects;
+
         final rawError = errorSelector?.call(service);
         if (service.isLoading && objects.isEmpty) {
           return const Center(child: CircularProgressIndicator());
@@ -1383,10 +2031,10 @@ class _HomeScreenState extends State<HomeScreen>
               primary: true,
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(10),
-              itemCount: objects.length,
+              itemCount: visibleObjects.length,
               itemBuilder:
                   (context, index) =>
-                      _buildCompactObjectRow(objects[index], onLongPress),
+                      _buildCompactObjectRow(visibleObjects[index], onLongPress),
             ),
           ),
         );
@@ -1646,7 +2294,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
 
-                      if (!_selectionMode)
+                      //if (!_selectionMode)
                       if (isTrashTab) ...[
                         const SizedBox(width: 8),
                         _buildRestoreButton(obj, onLongPress),

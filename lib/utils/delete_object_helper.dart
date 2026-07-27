@@ -55,6 +55,92 @@ Future<void> showLongPressRestoreSheet(
   );
 }
 
+Future<bool> showBatchDeleteConfirmDialog(
+  BuildContext context, {
+  required int count,
+}) async {
+  HapticFeedback.mediumImpact();
+  final result = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: Colors.red.shade50, shape: BoxShape.circle),
+            child: Icon(Icons.delete_outline_rounded,
+                size: 28, color: Colors.red.shade500),
+          ),
+          const SizedBox(height: 12),
+          const Text('Delete Objects',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Text(
+            '$count selected ${count == 1 ? "object" : "objects"}?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'This action cannot be undone.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+      actions: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: () => Navigator.pop(context, false),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey.shade700,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Cancel',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+                child: const Text('Delete',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+  return result ?? false;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // INTERNAL
 // ─────────────────────────────────────────────────────────────────────────────
@@ -169,6 +255,7 @@ class _ActionDialogState extends State<_ActionDialog> {
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
