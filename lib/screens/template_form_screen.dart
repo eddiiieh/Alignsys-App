@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
 import '../widgets/auto_suggest_dialog.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
@@ -420,25 +421,11 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Row(children: [
-        Icon(
-            isError
-                ? Icons.error_outline
-                : Icons.check_circle_outline,
-            color: Colors.white,
-            size: 18),
-        const SizedBox(width: 8),
-        Expanded(child: Text(message)),
-      ]),
-      backgroundColor:
-          isError ? Colors.red.shade600 : Colors.green.shade600,
-      behavior: SnackBarBehavior.floating,
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      margin: const EdgeInsets.all(16),
-      duration: Duration(seconds: isError ? 4 : 2),
-    ));
+      if (isError) {
+      SnackbarHelper.showError(context, message);
+    } else {
+      SnackbarHelper.showSuccess(context, message);
+    }
   }
 
   Future<void> _pickDate(int propId) async {

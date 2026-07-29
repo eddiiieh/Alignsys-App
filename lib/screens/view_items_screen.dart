@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
+import 'package:mfiles_app/widgets/batch_actions_menu.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
+import 'package:mfiles_app/widgets/processing_dialog.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_content_item.dart';
@@ -18,6 +20,9 @@ import '../theme/app_colors.dart';
 
 import '../screens/document_preview_screen.dart';
 import '../screens/search_results_screen.dart';
+
+import 'package:mfiles_app/utils/delete_object_helper.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
 
 class ViewItemsScreen extends StatefulWidget {
   final String title;
@@ -165,31 +170,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked out'
-                    : '$success objects checked out',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked out'
+          : '$success objects checked out',
     );
   } finally {
       _setProcessing(false);
@@ -221,31 +206,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked in'
-                    : '$success objects checked in',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.blue.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked in'
+          : '$success objects checked in',
     );
   } finally {
       _setProcessing(false);
@@ -258,34 +223,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     _setProcessing(true, "Deleting objects...");
     try {
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Text('Delete Objects'),
-        content: Text(
-          '${_selectedIds.length} selected '
-          '${_selectedIds.length == 1 ? "object" : "objects"}?\n\n'
-          'This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showBatchDeleteConfirmDialog(
+      context,
+      count: _selectedIds.length,
     );
 
     if (confirmed != true || !mounted) return;
@@ -311,31 +251,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Row(
-            children: [
-              const Icon(
-                Icons.check_circle_outline,
-                color: Colors.white,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  success == 1
-                      ? '1 object deleted'
-                      : '$success objects deleted',
-                ),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.green.shade700,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-          margin: const EdgeInsets.all(12),
-        ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object deleted'
+          : '$success objects deleted',
     );
   } finally {
       _setProcessing(false);
@@ -895,9 +815,13 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       String key = item.propId?.trim() ?? '';
       String dtype = item.propDatatype?.trim() ?? '';
 
-      if (key.isEmpty || dtype.isEmpty) {
+      final looksLikeGuid = RegExp(
+        r'^\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?$',
+      ).hasMatch(key);
+
+      if (key.isEmpty || dtype.isEmpty || looksLikeGuid) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('There are no items in this view.')),
+          const SnackBar(content: Text('This grouping level cannot be opened.')),
         );
         return;
       }
@@ -913,10 +837,19 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         GroupFilter(propId: key, propDatatype: dtype),
       ];
 
-      final children = await svc.fetchViewPropItems(
-        viewId: vid,
-        filters: nextFilters,
-      );
+      List<ViewContentItem> children;
+      try {
+        children = await svc.fetchViewPropItems(
+          viewId: vid,
+          filters: nextFilters,
+        );
+      } catch (e) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load items: $e')),
+        );
+        return;
+      }
 
       if (!context.mounted) return;
 
@@ -1032,8 +965,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           icon: const Icon(Icons.delete_outline),
           onPressed: _batchDelete,
         ),
-        PopupMenuButton<String>(
-          tooltip: 'More',
+        BatchActionsMenu(
           onSelected: (value) async {
             switch (value) {
               case 'history':
@@ -1041,50 +973,55 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                 break;
 
               case 'download':
-              _setProcessing(true, "Downloading files...");
-              try {
-                final svc = context.read<MFilesService>();
+                _setProcessing(true, "Downloading files...");
+                try {
+                  final svc = context.read<MFilesService>();
 
-                int success = 0;
+                  int success = 0;
+                  String? lastPath;
 
-                for (final obj in _selectedObjects.values) {
-                  try {
-                    final files = await svc.fetchObjectFiles(
-                      objectId: obj.id,
-                      classId: obj.classId,
-                    );
+                  for (final obj in _selectedObjects.values) {
+                    try {
+                      final files = await svc.fetchObjectFiles(
+                        objectId: obj.id,
+                        classId: obj.classId,
+                      );
 
-                    if (files.isEmpty) continue;
+                      if (files.isEmpty) continue;
 
-                    final file = files.first;
+                      final file = files.first;
 
-                    await svc.downloadAndSaveFile(
-                    displayObjectId: obj.id,
-                    classId: obj.classId,
-                    fileId: file.fileId,
-                    reportGuid: file.reportGuid,
-                    fileTitle: file.fileTitle,
-                    extension: file.extension,
-                  );
+                      lastPath = await svc.downloadAndSaveFile(
+                        displayObjectId: obj.id,
+                        classId: obj.classId,
+                        fileId: file.fileId,
+                        reportGuid: file.reportGuid,
+                        fileTitle: file.fileTitle,
+                        extension: file.extension,
+                      );
 
-                    success++;
-                  } catch (e) {
-                    debugPrint(e.toString());
+                      success++;
+                    } catch (e) {
+                      debugPrint(e.toString());
+                    }
                   }
-                }
 
-                if (!mounted) return;
+                  if (!mounted) return;
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Downloaded $success ${success == 1 ? "file" : "files"}',
-                    ),
-                  ),
-                );
+                  if (success == 1 && lastPath != null) {
+                    SnackbarHelper.showSuccess(context, 'Downloaded to: $lastPath');
+                  } else if (success > 1 && lastPath != null) {
+                    final folder = lastPath.substring(0, lastPath.lastIndexOf('/'));
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded $success files to: $folder',
+                    );
+                  } else {
+                    SnackbarHelper.showSuccess(context, 'Downloaded $success files');
+                  }
 
-                _clearSelection();
-              } finally {
+                  _clearSelection();
+                } finally {
                   _setProcessing(false);
                 }
 
@@ -1122,12 +1059,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
                 if (!mounted) return;
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                      'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
-                    ),
-                  ),
+                SnackbarHelper.showSuccess(
+                  context,
+                  'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
                 );
                 _clearSelection();
               } finally {
@@ -1137,22 +1071,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
               break;
             }
           },
-
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: 'history',
-              child: Text('Version History'),
-            ),
-            PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'download',
-              child: Text('Download'),
-            ),
-            PopupMenuItem(
-              value: 'convertPdf',
-              child: Text('Convert to PDF'),
-            ),
-          ],
         ),
       ],
     );
@@ -1326,25 +1244,15 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       ),
       ),
       if (_isProcessing)
-        Container(
-          color: Colors.black38,
-          child: Center(
-            child: Card(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 16),
-                    Text(_processingText)
-                  ],
-                ),
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black45,
+              child: Center(
+                child: ProcessingDialog(operation: _processingText),
               ),
             ),
           ),
-        ),
-    ],
+      ],
     );
   }
 

@@ -210,25 +210,25 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       contentPadding:
           const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: filled
             ? const BorderSide(color: _filledBorder, width: 1.5)
             : BorderSide(color: Colors.grey.shade200),
       ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: Colors.grey.shade200),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: _primaryBlue, width: 2),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(color: Colors.red.shade300),
       ),
       focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: Colors.red, width: 2),
       ),
       suffixIcon: filled
@@ -878,14 +878,14 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         _topLabel(p.title, required: p.isRequired),
         InkWell(
           onTap: () => _pickTime(p),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(
                 horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
               color: has ? _filledFill : AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color: has ? _filledBorder : Colors.grey.shade200,
                 width: has ? 1.5 : 1,
@@ -1757,20 +1757,13 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
-          title: Padding(
-            padding:
-                const EdgeInsets.only(left: 12.0, right: 8.0),
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.asset(
-                  'assets/alignsysnew.png',
-                  height: 36,
-                  fit: BoxFit.cover,
-                ),
-              ),
-            ),
+          title: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Create ${_currentObjectType.displayName}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
+              if (_selectedClass != null)
+                Text(_selectedClass!.displayName, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+            ],
           ),
         ),
         body: NetworkBanner(
@@ -2225,8 +2218,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                               vertical: 12),
                                           child: Divider(
                                             height: 1,
-                                            thickness: 1.5,
-                                            color: Color(0xFFCBD5E1),
+                                            thickness: 1,
+                                            color: Color(0xFFE2E8F0),
                                           ),
                                         );
                                       }

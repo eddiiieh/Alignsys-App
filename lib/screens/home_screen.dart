@@ -7,10 +7,12 @@ import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/template_form_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
+import 'package:mfiles_app/widgets/processing_dialog.dart';
 import 'package:provider/provider.dart';
 import '../models/vault.dart';
 import '../models/view_item.dart';
@@ -23,6 +25,7 @@ import '../theme/app_colors.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
 import '../utils/error_messages.dart';
 import '../utils/scan_document_flow.dart';
+import 'package:mfiles_app/widgets/batch_actions_menu.dart';
 
 enum _MoreSubTab { trash, reports }
 
@@ -93,6 +96,8 @@ class _HomeScreenState extends State<HomeScreen>
   bool _isProcessing = false;
 
   String _processingText = '';
+
+  
 
   void _setProcessing(bool value, [String text = '']) {
     if (!mounted) return;
@@ -236,32 +241,11 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object moved to Trash'
-                    : '$success objects moved to Trash',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object deleted'
+          : '$success objects deleted',
     );
   } finally {
     _setProcessing(false);
@@ -294,31 +278,11 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked out'
-                    : '$success objects checked out',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked out'
+          : '$success objects checked out',
     );
   } finally {
     _setProcessing(false);
@@ -351,31 +315,11 @@ class _HomeScreenState extends State<HomeScreen>
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked in'
-                    : '$success objects checked in',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.blue.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked in'
+          : '$success objects checked in',
     );
   } finally {
     _setProcessing(false);
@@ -888,8 +832,7 @@ class _HomeScreenState extends State<HomeScreen>
           icon: const Icon(Icons.delete_outline),
           onPressed: _batchDelete,
         ),
-        PopupMenuButton<String>(
-          tooltip: 'More',
+        BatchActionsMenu(
           onSelected: (value) async {
             switch (value) {
               case 'history':
@@ -902,6 +845,7 @@ class _HomeScreenState extends State<HomeScreen>
                   final svc = context.read<MFilesService>();
 
                   int success = 0;
+                  String? lastPath;
 
                   for (final obj in _selectedObjects.values) {
                     try {
@@ -914,14 +858,14 @@ class _HomeScreenState extends State<HomeScreen>
 
                       final file = files.first;
 
-                      await svc.downloadAndSaveFile(
-                      displayObjectId: obj.id,
-                      classId: obj.classId,
-                      fileId: file.fileId,
-                      reportGuid: file.reportGuid,
-                      fileTitle: file.fileTitle,
-                      extension: file.extension,
-                    );
+                      lastPath = await svc.downloadAndSaveFile(
+                        displayObjectId: obj.id,
+                        classId: obj.classId,
+                        fileId: file.fileId,
+                        reportGuid: file.reportGuid,
+                        fileTitle: file.fileTitle,
+                        extension: file.extension,
+                      );
 
                       success++;
                     } catch (e) {
@@ -931,13 +875,17 @@ class _HomeScreenState extends State<HomeScreen>
 
                   if (!mounted) return;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Downloaded $success ${success == 1 ? "file" : "files"}',
-                      ),
-                    ),
-                  );
+                  if (success == 1 && lastPath != null) {
+                    SnackbarHelper.showSuccess(context, 'Downloaded to: $lastPath');
+                  } else if (success > 1 && lastPath != null) {
+                    final folder = lastPath.substring(0, lastPath.lastIndexOf('/'));
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded $success files to: $folder',
+                    );
+                  } else {
+                    SnackbarHelper.showSuccess(context, 'Downloaded $success files');
+                  }
 
                   _clearSelection();
                 } finally {
@@ -994,21 +942,6 @@ class _HomeScreenState extends State<HomeScreen>
                 break;
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: 'history',
-              child: Text('Version History'),
-            ),
-            PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'download',
-              child: Text('Download'),
-            ),
-            PopupMenuItem(
-              value: 'convertPdf',
-              child: Text('Convert to PDF'),
-            ),
-          ],
         ),
       ],
     );
@@ -1108,24 +1041,16 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           if (_isProcessing)
-            Container(
-              color: Colors.black38,
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black45,
               child: Center(
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const CircularProgressIndicator(),
-                        const SizedBox(height: 16),
-                        Text(_processingText)
-                      ],
-                    ),
-                  ),
+                child: ProcessingDialog(
+                  operation: _processingText,
                 ),
               ),
             ),
+          ),
         ],
       ),
     );
@@ -1824,6 +1749,7 @@ class _HomeScreenState extends State<HomeScreen>
             obj: obj,
             onRestored: _refreshActiveTab,
           ),
+      errorSelector: (s) => s.deletedError,
     );
   }
 
@@ -1837,6 +1763,7 @@ class _HomeScreenState extends State<HomeScreen>
       onLongPress: (obj) async {
         _toggleSelection(obj);
       },
+      errorSelector: (s) => s.reportError,
     );
   }
 
@@ -2011,12 +1938,12 @@ class _HomeScreenState extends State<HomeScreen>
               physics: const AlwaysScrollableScrollPhysics(),
               children: [
                 SizedBox(height: MediaQuery.of(context).size.height * 0.18),
-                rawError != null
-                    ? _buildInlineError(
-                      humanizeError(rawError),
-                      () => onRefresh(service),
-                    )
-                    : _buildEmptyState(emptyIcon, emptyText, emptySubtext),
+                _buildEmptyState(
+                  emptyIcon,
+                  emptyText,
+                  emptySubtext,
+                  onRetry: () => onRefresh(service),
+                ),
               ],
             ),
           );
@@ -2440,7 +2367,12 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Empty / error states ──────────────────────────────────────────────────
 
-  Widget _buildEmptyState(IconData icon, String text, String subtext) {
+  Widget _buildEmptyState(
+    IconData icon, 
+    String text, 
+    String subtext, {
+    VoidCallback? onRetry,
+    }) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -2471,6 +2403,20 @@ class _HomeScreenState extends State<HomeScreen>
               style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
+            if (onRetry != null) ...[
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Retry'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
           ],
         ),
       ),

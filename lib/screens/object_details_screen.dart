@@ -2,6 +2,7 @@
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
 
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:provider/provider.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
@@ -1781,18 +1782,15 @@ void initState() {
     );
     if (!mounted) return;
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: const Text('Deleted'),
-            backgroundColor: Colors.green.shade600),
+      SnackbarHelper.showSuccess(
+        context,
+        'Object deleted successfully',
       );
       Navigator.pop(context, true);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Delete failed: ${svc.error ?? 'Unknown'}'),
-          backgroundColor: Colors.red.shade600,
-        ),
+      SnackbarHelper.showError(
+        context,
+        'Failed to delete object: ${svc.error ?? 'Unknown error'}',
       );
     }
   }
@@ -1977,21 +1975,6 @@ void initState() {
     final obj = widget.obj;
     return Scaffold(
       backgroundColor: AppColors.surfaceLight,
-      // ── e-Sign FAB disabled: redundant now that the dedicated e-Sign card
-      //    (_signingCard, rendered right after the preview card) covers the
-      //    same actions. Uncomment to restore the floating shortcut.
-      // floatingActionButton: FutureBuilder<List<ObjectFile>>(
-      //   future: _filesFuture,
-      //   builder: (context, snap) {
-      //     final svc = context.watch<MFilesService>();
-      //     final firstFile = (snap.data?.isNotEmpty ?? false) ? snap.data!.first : null;
-      //     if (firstFile == null || !svc.isDssAvailable) return const SizedBox.shrink();
-      //     return _ESignFab(
-      //       onTap: () => _showESignOptions(firstFile),
-      //       isBusy: _eSigning,
-      //     );
-      //   },
-      // ),
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -2056,7 +2039,7 @@ void initState() {
                         );
                       },
                 icon: Icon(
-                  isCheckedOut ? Icons.file_open_rounded : Icons.drive_file_rename_outline,
+                  isCheckedOut ? Icons.lock_open : Icons.lock,
                 ),
               );
             },

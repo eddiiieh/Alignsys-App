@@ -106,6 +106,7 @@ class MFilesService extends ChangeNotifier {
   String? recentError;
   String? assignedError;
   String? deletedError;
+  String? reportError;
 
   bool isAdmin = false;
 
@@ -2479,6 +2480,8 @@ class MFilesService extends ChangeNotifier {
       debugPrint('📨 Status: ${resp.statusCode}');
       debugPrint('📨 Body: ${resp.body}');
     }
+
+    if (resp.statusCode == 404) return <ViewContentItem>[];
 
     if (resp.statusCode != 200) {
       throw Exception(

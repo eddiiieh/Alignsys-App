@@ -4,14 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
+import 'package:mfiles_app/widgets/batch_actions_menu.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
+import 'package:mfiles_app/widgets/processing_dialog.dart';
 import 'package:mfiles_app/widgets/relationships_dropdown.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_object.dart';
 import '../theme/app_colors.dart';
+
+import 'package:mfiles_app/utils/delete_object_helper.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
 
 class SearchResultsScreen extends StatefulWidget {
   final String initialQuery;
@@ -275,31 +280,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked out'
-                    : '$success objects checked out',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked out'
+          : '$success objects checked out',
     );
   } finally {
     _setProcessing(false);
@@ -330,31 +315,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked in'
-                    : '$success objects checked in',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.blue.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked in'
+          : '$success objects checked in',
     );
   } finally {
     _setProcessing(false);
@@ -364,34 +329,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Future<void> _batchDelete() async {
     if (_selectedIds.isEmpty) return;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Text('Delete Objects'),
-        content: Text(
-          '${_selectedIds.length} selected '
-          '${_selectedIds.length == 1 ? "object" : "objects"}?\n\n'
-          'This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+    final confirmed = await showBatchDeleteConfirmDialog(
+      context,
+      count: _selectedIds.length,
     );
 
     if (confirmed != true || !mounted) return;
@@ -437,32 +377,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object moved to Trash'
-                    : '$success objects moved to Trash',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object deleted'
+          : '$success objects deleted',
     );
   } finally {
     _setProcessing(false);
@@ -492,20 +411,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           ),
         ),
         if (_isProcessing)
-          Container(
-            color: Colors.black38,
-            child: Center(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 16),
-                      Text(_processingText)
-                    ],
-                  ),
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black45,
+              child: Center(
+                child: ProcessingDialog(
+                  operation: _processingText,
                 ),
               ),
             ),
@@ -642,8 +553,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           icon: const Icon(Icons.delete_outline),
           onPressed: _batchDelete,
         ),
-        PopupMenuButton<String>(
-          tooltip: 'More',
+        BatchActionsMenu(
           onSelected: (value) async {
             switch (value) {
               case 'history':
@@ -656,6 +566,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   final svc = context.read<MFilesService>();
 
                   int success = 0;
+                  String? lastPath;
 
                   for (final obj in _selectedObjects.values) {
                     try {
@@ -668,14 +579,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
                       final file = files.first;
 
-                      await svc.downloadAndSaveFile(
-                      displayObjectId: obj.id,
-                      classId: obj.classId,
-                      fileId: file.fileId,
-                      reportGuid: file.reportGuid,
-                      fileTitle: file.fileTitle,
-                      extension: file.extension,
-                    );
+                      lastPath = await svc.downloadAndSaveFile(
+                        displayObjectId: obj.id,
+                        classId: obj.classId,
+                        fileId: file.fileId,
+                        reportGuid: file.reportGuid,
+                        fileTitle: file.fileTitle,
+                        extension: file.extension,
+                      );
 
                       success++;
                     } catch (e) {
@@ -685,13 +596,17 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
                   if (!mounted) return;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Downloaded $success ${success == 1 ? "file" : "files"}',
-                      ),
-                    ),
-                  );
+                  if (success == 1 && lastPath != null) {
+                    SnackbarHelper.showSuccess(context, 'Downloaded to: $lastPath');
+                  } else if (success > 1 && lastPath != null) {
+                    final folder = lastPath.substring(0, lastPath.lastIndexOf('/'));
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded $success files to: $folder',
+                    );
+                  } else {
+                    SnackbarHelper.showSuccess(context, 'Downloaded $success files');
+                  }
 
                   _clearSelection();
                 } finally {
@@ -732,12 +647,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
                   if (!mounted) return;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
-                      ),
-                    ),
+                  SnackbarHelper.showSuccess(
+                    context,
+                    converted == 1
+                        ? 'Converted 1 object'
+                        : 'Converted $converted objects',
                   );
 
                   _clearSelection();
@@ -748,21 +662,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 break;
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: 'history',
-              child: Text('Version History'),
-            ),
-            PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'download',
-              child: Text('Download'),
-            ),
-            PopupMenuItem(
-              value: 'convertPdf',
-              child: Text('Convert to PDF'),
-            ),
-          ],
         ),
       ],
     );

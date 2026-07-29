@@ -8,8 +8,11 @@ import 'package:mfiles_app/models/group_filter.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_items_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
+import 'package:mfiles_app/utils/error_messages.dart';
+import 'package:mfiles_app/widgets/batch_actions_menu.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
+import 'package:mfiles_app/widgets/processing_dialog.dart';
 import 'package:mfiles_app/widgets/relationships_dropdown.dart';
 import 'package:provider/provider.dart';
 
@@ -21,6 +24,8 @@ import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
 import 'document_preview_screen.dart';
 import '../screens/search_results_screen.dart';
+import 'package:mfiles_app/utils/delete_object_helper.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
 
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({
@@ -225,34 +230,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   Future<void> _batchDelete() async {
   if (_selectedObjects.isEmpty) return;
 
-  final confirmed = await showDialog<bool>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        title: const Text('Delete Objects'),
-        content: Text(
-          '${_selectedIds.length} selected '
-          '${_selectedIds.length == 1 ? "object" : "objects"}?\n\n'
-          'This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+  final confirmed = await showBatchDeleteConfirmDialog(
+    context,
+    count: _selectedIds.length,
   );
 
   if (confirmed != true || !mounted) return;
@@ -277,32 +257,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object moved to Trash'
-                    : '$success objects moved to Trash',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object deleted'
+          : '$success objects deleted',
     );
   } finally {
     _setProcessing(false);
@@ -334,31 +293,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked out'
-                    : '$success objects checked out',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.green.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked out'
+          : '$success objects checked out',
     );
   } finally {
     _setProcessing(false);
@@ -390,31 +329,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(
-              Icons.check_circle_outline,
-              color: Colors.white,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                success == 1
-                    ? '1 object checked in'
-                    : '$success objects checked in',
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: Colors.blue.shade700,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        margin: const EdgeInsets.all(12),
-      ),
+    SnackbarHelper.showSuccess(
+      context,
+      success == 1
+          ? '1 object checked in'
+          : '$success objects checked in',
     );
   } finally {
     _setProcessing(false);
@@ -909,13 +828,19 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         final propId = item.propId;
         final propDatatype = item.propDatatype;
 
+        final looksLikeGuid = propId != null &&
+            RegExp(
+              r'^\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?$',
+            ).hasMatch(propId.trim());
+
         if (propId == null ||
             propId.trim().isEmpty ||
             propDatatype == null ||
-            propDatatype.trim().isEmpty) {
+            propDatatype.trim().isEmpty ||
+            looksLikeGuid) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('There are no items in this view.')),
+                content: Text('This grouping level cannot be opened.')),
           );
           return;
         }
@@ -949,7 +874,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         } catch (e) {
           if (!context.mounted) return;
           ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(e.toString())));
+              .showSnackBar(SnackBar(content: Text(humanizeError(e.toString()))));
         }
         return;
       }
@@ -1081,19 +1006,20 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           icon: const Icon(Icons.delete_outline),
           onPressed: _batchDelete,
         ),
-        PopupMenuButton<String>(
-          tooltip: 'More',
+        BatchActionsMenu(
           onSelected: (value) async {
             switch (value) {
               case 'history':
                 // TODO: Version History
                 break;
+                
               case 'download':
                 _setProcessing(true, "Downloading files...");
                 try {
                   final svc = context.read<MFilesService>();
 
                   int success = 0;
+                  String? lastPath;
 
                   for (final obj in _selectedObjects.values) {
                     try {
@@ -1106,14 +1032,14 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
                       final file = files.first;
 
-                      await svc.downloadAndSaveFile(
-                      displayObjectId: obj.id,
-                      classId: obj.classId,
-                      fileId: file.fileId,
-                      reportGuid: file.reportGuid,
-                      fileTitle: file.fileTitle,
-                      extension: file.extension,
-                    );
+                      lastPath = await svc.downloadAndSaveFile(
+                        displayObjectId: obj.id,
+                        classId: obj.classId,
+                        fileId: file.fileId,
+                        reportGuid: file.reportGuid,
+                        fileTitle: file.fileTitle,
+                        extension: file.extension,
+                      );
 
                       success++;
                     } catch (e) {
@@ -1123,13 +1049,17 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
                   if (!mounted) return;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Downloaded $success ${success == 1 ? "file" : "files"}',
-                      ),
-                    ),
-                  );
+                  if (success == 1 && lastPath != null) {
+                    SnackbarHelper.showSuccess(context, 'Downloaded to: $lastPath');
+                  } else if (success > 1 && lastPath != null) {
+                    final folder = lastPath.substring(0, lastPath.lastIndexOf('/'));
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded $success files to: $folder',
+                    );
+                  } else {
+                    SnackbarHelper.showSuccess(context, 'Downloaded $success files');
+                  }
 
                   _clearSelection();
                 } finally {
@@ -1170,12 +1100,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
                   if (!mounted) return;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
-                      ),
-                    ),
+                  SnackbarHelper.showSuccess(
+                    context,
+                    'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
                   );
 
                   _clearSelection();
@@ -1186,21 +1113,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 break;
             }
           },
-          itemBuilder: (_) => const [
-            PopupMenuItem(
-              value: 'history',
-              child: Text('Version History'),
-            ),
-            PopupMenuDivider(),
-            PopupMenuItem(
-              value: 'download',
-              child: Text('Download'),
-            ),
-            PopupMenuItem(
-              value: 'convertPdf',
-              child: Text('Convert to PDF'),
-            ),
-          ],
         ),
       ],
     );
@@ -1383,20 +1295,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       ),
         ),
         if (_isProcessing)
-          Container(
-            color: Colors.black38,
-            child: Center(
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 16),
-                      Text(_processingText)
-                    ],
-                  ),
+          Positioned.fill(
+            child: ColoredBox(
+              color: Colors.black45,
+              child: Center(
+                child: ProcessingDialog(
+                  operation: _processingText,
                 ),
               ),
             ),
@@ -1465,65 +1369,110 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                  color: Colors.orange.shade50, shape: BoxShape.circle),
-              child: Icon(Icons.warning_amber_rounded,
-                  size: 64, color: Colors.orange.shade400),
-            ),
-            const SizedBox(height: 24),
-            Text(msg,
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade800),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(
-                'Please contact your administrator if this issue persists',
-                style: TextStyle(
-                    fontSize: 14, color: Colors.grey.shade600),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 24),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                OutlinedButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.arrow_back_rounded, size: 18),
-                  label: const Text('Go Back'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.grey.shade700,
-                    side: BorderSide(color: Colors.grey.shade300),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+        padding: const EdgeInsets.all(24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 360),
+          padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: Colors.grey.shade100),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.orange.shade100,
+                      Colors.orange.shade50,
+                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                ElevatedButton.icon(
+                child: Icon(
+                  Icons.warning_amber_rounded,
+                  size: 34,
+                  color: Colors.orange.shade600,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                msg,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1A1A1A),
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Please contact your administrator if this issue persists',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  color: Colors.grey.shade500,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton.icon(
                   onPressed: _refreshThisView,
                   icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text('Try Again'),
+                  label: const Text(
+                    'Try Again',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 12),
                     shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: TextButton.icon(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.arrow_back_rounded,
+                      size: 18, color: Colors.grey.shade600),
+                  label: Text(
+                    'Go Back',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
