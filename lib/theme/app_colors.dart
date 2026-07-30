@@ -6,7 +6,7 @@ class AppColors {
   static const Color surfaceLight = Color(0xFFECF4FC);
 
   // Derived — used throughout the app
-  static const Color primaryDark  = Color(0xFF1A3F7A); // for appBar, splash bg
+  static const Color primaryDark  = Color.fromRGBO(26, 63, 122, 1); // for appBar, splash bg
   static Color primaryFaint       = primary.withOpacity(0.08); // icon bg tints
   static Color primaryLight       = primary.withOpacity(0.10); // section headers
   static Color primaryBorder      = primary.withOpacity(0.35); // scrollbar thumb

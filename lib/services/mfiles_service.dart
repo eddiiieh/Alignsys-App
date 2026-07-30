@@ -39,6 +39,7 @@ class ObjectCreationResult {
 
   const ObjectCreationResult({required this.success, this.objectId});
 }
+
 class MFilesService extends ChangeNotifier {
   // Auth
   String? accessToken;
@@ -81,8 +82,8 @@ class MFilesService extends ChangeNotifier {
 
   /// Returns true if the object is currently in the deleted list.
   bool isObjectDeleted(int objectId) =>
-    deletedObjects.any((o) => o.id == objectId);
-  
+      deletedObjects.any((o) => o.id == objectId);
+
   // Report objects
   List<ViewObject> reportObjects = [];
 
@@ -135,10 +136,7 @@ class MFilesService extends ChangeNotifier {
 
   Map<String, String> get _authHeadersNoJson {
     if (accessToken == null) return const <String, String>{};
-    return {
-      'Authorization': 'Bearer $accessToken',
-      'accept': '*/*',
-    };
+    return {'Authorization': 'Bearer $accessToken', 'accept': '*/*'};
   }
 
   /// Headers for DSS API calls — uses the separate DSS JWT, not the EDMS token.
@@ -193,7 +191,8 @@ class MFilesService extends ChangeNotifier {
 
       final payloadMap = json.decode(decoded) as Map<String, dynamic>;
 
-      final userId = payloadMap['user_id'] ??
+      final userId =
+          payloadMap['user_id'] ??
           payloadMap['userId'] ??
           payloadMap['sub'] ??
           payloadMap['id'];
@@ -268,14 +267,17 @@ class MFilesService extends ChangeNotifier {
         dssUserId = id is int ? id : int.tryParse('${id ?? ''}');
         final company = payload['companyid'] ?? payload['companyId'];
         dssCompanyId = company?.toString();
-        debugPrint('✅ DSS login successful — dssUserId: $dssUserId, companyId: $dssCompanyId');
+        debugPrint(
+          '✅ DSS login successful — dssUserId: $dssUserId, companyId: $dssCompanyId',
+        );
       }
 
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('dss_access_token', access);
       if (refresh != null) await prefs.setString('dss_refresh_token', refresh);
       if (dssUserId != null) await prefs.setInt('dss_user_id', dssUserId!);
-      if (dssCompanyId != null) await prefs.setString('dss_company_id', dssCompanyId!);
+      if (dssCompanyId != null)
+        await prefs.setString('dss_company_id', dssCompanyId!);
 
       notifyListeners();
     } catch (e, stack) {
@@ -303,7 +305,9 @@ class MFilesService extends ChangeNotifier {
       debugPrint('📡 DSS token refresh status: ${response.statusCode}');
 
       if (response.statusCode != 200) {
-        debugPrint('❌ DSS token refresh failed: ${response.statusCode} ${response.body}');
+        debugPrint(
+          '❌ DSS token refresh failed: ${response.statusCode} ${response.body}',
+        );
         return false;
       }
 
@@ -328,7 +332,8 @@ class MFilesService extends ChangeNotifier {
         final company = payload['companyid'] ?? payload['companyId'];
         dssCompanyId = company?.toString();
         if (dssUserId != null) await prefs.setInt('dss_user_id', dssUserId!);
-        if (dssCompanyId != null) await prefs.setString('dss_company_id', dssCompanyId!);
+        if (dssCompanyId != null)
+          await prefs.setString('dss_company_id', dssCompanyId!);
       }
 
       debugPrint('✅ DSS token refreshed — dssUserId: $dssUserId');
@@ -437,8 +442,7 @@ class MFilesService extends ChangeNotifier {
     if (response.statusCode == 401) return true;
     final body = response.body.toLowerCase();
     if (response.statusCode == 400 &&
-        (body.contains('vault is offline') ||
-            body.contains('0x80040061'))) {
+        (body.contains('vault is offline') || body.contains('0x80040061'))) {
       return true;
     }
     return false;
@@ -452,10 +456,10 @@ class MFilesService extends ChangeNotifier {
 
     if (_looksLikeSessionExpired(response) && retryOnAuthFailure) {
       print(
-          '🔄 Session looks expired (status=${response.statusCode}), attempting to refresh token...');
+        '🔄 Session looks expired (status=${response.statusCode}), attempting to refresh token...',
+      );
 
-      final refreshed =
-          (refreshToken != null) && await refreshAccessToken();
+      final refreshed = (refreshToken != null) && await refreshAccessToken();
 
       if (refreshed) {
         print('♻️ Retrying original request with new token...');
@@ -468,7 +472,9 @@ class MFilesService extends ChangeNotifier {
         }
       }
 
-      print('❌ Could not recover session — logging out and redirecting to login');
+      print(
+        '❌ Could not recover session — logging out and redirecting to login',
+      );
       await _forceLogoutAndRedirect();
     }
 
@@ -495,8 +501,7 @@ class MFilesService extends ChangeNotifier {
     refreshToken = refresh;
     username = prefs.getString('username');
     fullname = prefs.getString('full_name');
-    userId =
-        prefs.getInt('user_id') ?? _decodeJwtAndGetUserId(accessToken!);
+    userId = prefs.getInt('user_id') ?? _decodeJwtAndGetUserId(accessToken!);
 
     notifyListeners();
     return true;
@@ -515,9 +520,9 @@ class MFilesService extends ChangeNotifier {
 
     print('📦 Loading tokens from SharedPreferences:');
     print(
-        '   accessToken: ${accessToken != null ? "present (${accessToken!.length} chars)" : "null"}');
-    print(
-        '   refreshToken: ${refreshToken != null ? "present" : "null"}');
+      '   accessToken: ${accessToken != null ? "present (${accessToken!.length} chars)" : "null"}',
+    );
+    print('   refreshToken: ${refreshToken != null ? "present" : "null"}');
     print('   username: $username');
     print('   userEmail: $userEmail');
     print('   userId (from prefs): $userId');
@@ -539,7 +544,9 @@ class MFilesService extends ChangeNotifier {
           dssAccessToken = null; // clear it optimistically
           final refreshed = await _refreshDssToken();
           if (!refreshed) {
-            debugPrint('❌ DSS refresh failed — DSS will be unavailable until next login');
+            debugPrint(
+              '❌ DSS refresh failed — DSS will be unavailable until next login',
+            );
           }
         } else {
           debugPrint('✅ DSS access token is valid until $expiry');
@@ -549,8 +556,7 @@ class MFilesService extends ChangeNotifier {
       }
     }
 
-    print(
-        '   dssAccessToken: ${dssAccessToken != null ? "present" : "null"}');
+    print('   dssAccessToken: ${dssAccessToken != null ? "present" : "null"}');
     print('   dssUserId: $dssUserId');
 
     if (userId == null && accessToken != null) {
@@ -564,13 +570,12 @@ class MFilesService extends ChangeNotifier {
       }
     }
 
-    final hasTokens =
-        accessToken != null && refreshToken != null;
+    final hasTokens = accessToken != null && refreshToken != null;
     print('   Result: hasTokens = $hasTokens, userId = $userId');
 
     // Restore relationship dots so they appear instantly on next launch
     _loadRelationshipsCacheFromPrefs(); // fire-and-forget
-    _loadCheckoutCacheFromPrefs(); 
+    _loadCheckoutCacheFromPrefs();
     return hasTokens;
   }
 
@@ -641,36 +646,32 @@ class MFilesService extends ChangeNotifier {
 
     debugPrint('🔐 Attempting login for: $email');
 
-    try {
-    } catch (e) {
+    try {} catch (e) {
       debugPrint("Certificate test failed:");
       debugPrint(e.toString());
     }
 
     http.Response? response;
 
-    try{
-    response = await http.post(
-      Uri.parse('https://auth.alignsys.tech/api/token/'),
-      headers: const {'Content-Type': 'application/json'},
-      body: json.encode(body),
-    );
+    try {
+      response = await http.post(
+        Uri.parse('https://auth.alignsys.tech/api/token/'),
+        headers: const {'Content-Type': 'application/json'},
+        body: json.encode(body),
+      );
     } on HandshakeException catch (e) {
       debugPrint('❌ TLS HandshakeException');
       debugPrint(e.toString());
       rethrow;
-    }
-    on SocketException catch (e) {
+    } on SocketException catch (e) {
       debugPrint('❌ SocketException');
       debugPrint(e.toString());
       rethrow;
-    }
-    on TimeoutException catch (e) {
+    } on TimeoutException catch (e) {
       debugPrint('❌ TimeoutException');
       debugPrint(e.toString());
       rethrow;
-    }
-    catch (e, stack) {
+    } catch (e, stack) {
       debugPrint('❌ Login Exception: $e');
       debugPrint(stack.toString());
       rethrow;
@@ -722,38 +723,33 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> requestPasswordReset(String email) async {
+    try {
+      final response = await http.post(
+        Uri.parse('https://auth.alignsys.tech/api/password_reset/'),
+        headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: 'email=${Uri.encodeComponent(email)}',
+      );
 
-    try{
-    final response = await http.post(
-      Uri.parse('https://auth.alignsys.tech/api/password_reset/'),
-      headers: const {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: 'email=${Uri.encodeComponent(email)}',
-    );
-
-    if (response.statusCode != 200 &&
-        response.statusCode != 201 &&
-        response.statusCode != 204) {
-      throw Exception(
-          'Password reset failed: ${response.statusCode} — ${response.body}');
-    }
+      if (response.statusCode != 200 &&
+          response.statusCode != 201 &&
+          response.statusCode != 204) {
+        throw Exception(
+          'Password reset failed: ${response.statusCode} — ${response.body}',
+        );
+      }
     } on HandshakeException catch (e) {
       debugPrint('❌ TLS HandshakeException');
       debugPrint(e.toString());
       rethrow;
-    }
-    on SocketException catch (e) {
+    } on SocketException catch (e) {
       debugPrint('❌ SocketException');
       debugPrint(e.toString());
       rethrow;
-    }
-    on TimeoutException catch (e) {
+    } on TimeoutException catch (e) {
       debugPrint('❌ TimeoutException');
       debugPrint(e.toString());
       rethrow;
-    }
-    catch (e, stack) {
+    } catch (e, stack) {
       debugPrint('❌ Login Exception: $e');
       debugPrint(stack.toString());
       rethrow;
@@ -813,8 +809,7 @@ class MFilesService extends ChangeNotifier {
     }
 
     try {
-      final url =
-          '$baseUrl/api/user/mfiles-profile/$vaultGuidNoBraces';
+      final url = '$baseUrl/api/user/mfiles-profile/$vaultGuidNoBraces';
       print('🌐 Fetching: $url');
 
       final response = await _authenticatedRequest(
@@ -840,11 +835,11 @@ class MFilesService extends ChangeNotifier {
       }
 
       if (response.statusCode == 404) {
-        print(
-            '⚠️ User profile not found (404), using fallback mapping');
+        print('⚠️ User profile not found (404), using fallback mapping');
       } else {
         print(
-            '⚠️ Non-200 status (${response.statusCode}), using fallback mapping');
+          '⚠️ Non-200 status (${response.statusCode}), using fallback mapping',
+        );
       }
 
       await _useFallbackMapping();
@@ -894,9 +889,8 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> fetchObjectTypes() async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return;
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
 
     _setLoading(true);
     _setError(null);
@@ -906,16 +900,13 @@ class MFilesService extends ChangeNotifier {
         '$baseUrl/api/MfilesObjects/GetVaultsObjects/$vaultGuidWithBraces/$mfilesUserId',
       );
 
-      final response =
-          await http.get(url, headers: _authHeadersNoJson);
+      final response = await http.get(url, headers: _authHeadersNoJson);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        objectTypes =
-            data.map((e) => VaultObjectType.fromJson(e)).toList();
+        objectTypes = data.map((e) => VaultObjectType.fromJson(e)).toList();
       } else {
-        _setError(
-            'Failed to fetch object types: ${response.statusCode}');
+        _setError('Failed to fetch object types: ${response.statusCode}');
       }
     } catch (e) {
       _setError('Error fetching object types: $e');
@@ -925,9 +916,8 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> fetchObjectClasses(int objectTypeId) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return;
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
 
     if (_classesByObjectType.containsKey(objectTypeId)) {
       _rebuildObjectClassesFromCache();
@@ -942,17 +932,16 @@ class MFilesService extends ChangeNotifier {
         '$baseUrl/api/MfilesObjects/GetObjectClasses/$vaultGuidWithBraces/$objectTypeId/$mfilesUserId',
       );
 
-      final response =
-          await http.get(url, headers: _authHeadersNoJson);
+      final response = await http.get(url, headers: _authHeadersNoJson);
 
       if (response.statusCode == 200) {
         final parsed = ObjectClassesResponse.fromJson(
-            json.decode(response.body));
+          json.decode(response.body),
+        );
         _classesByObjectType[objectTypeId] = parsed;
         _rebuildObjectClassesFromCache();
       } else {
-        _setError(
-            'Failed to fetch object classes: ${response.statusCode}');
+        _setError('Failed to fetch object classes: ${response.statusCode}');
       }
     } catch (e) {
       _setError('Error fetching object classes: $e');
@@ -975,11 +964,9 @@ class MFilesService extends ChangeNotifier {
     objectClasses = result;
   }
 
-  Future<void> fetchClassProperties(
-      int objectTypeId, int classId) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return;
+  Future<void> fetchClassProperties(int objectTypeId, int classId) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
 
     final cacheKey = '$objectTypeId-$classId';
 
@@ -987,7 +974,8 @@ class MFilesService extends ChangeNotifier {
       classProperties = _classPropsCache[cacheKey]!;
       if (kDebugMode) {
         debugPrint(
-            '📦 Using cached class properties for $cacheKey (${classProperties.length} props)');
+          '📦 Using cached class properties for $cacheKey (${classProperties.length} props)',
+        );
       }
       return;
     }
@@ -1000,10 +988,11 @@ class MFilesService extends ChangeNotifier {
         '$baseUrl/api/MfilesObjects/ClassProps/$vaultGuidWithBraces/$objectTypeId/$classId/$mfilesUserId',
       );
 
-      final response =
-          await http.get(url, headers: _authHeadersNoJson);
-      
-      debugPrint('📋 ClassProps raw [${response.statusCode}] (${response.body.length} chars): ${response.body}');
+      final response = await http.get(url, headers: _authHeadersNoJson);
+
+      debugPrint(
+        '📋 ClassProps raw [${response.statusCode}] (${response.body.length} chars): ${response.body}',
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
@@ -1012,24 +1001,25 @@ class MFilesService extends ChangeNotifier {
         debugPrint('📋 Total props from API: ${data.length}');
         for (int i = 0; i < data.length; i++) {
           final p = data[i];
-          debugPrint('📋 prop[$i]: id=${p['propId']} title="${p['title']}" '
-              'type=${p['propertytype']} required=${p['isRequired']} '
-              'hidden=${p['isHidden']} automatic=${p['isAutomatic']}');
+          debugPrint(
+            '📋 prop[$i]: id=${p['propId']} title="${p['title']}" '
+            'type=${p['propertytype']} required=${p['isRequired']} '
+            'hidden=${p['isHidden']} automatic=${p['isAutomatic']}',
+          );
         }
 
-        final props =
-            data.map((e) => ClassProperty.fromJson(e)).toList();
+        final props = data.map((e) => ClassProperty.fromJson(e)).toList();
 
         classProperties = props;
         _classPropsCache[cacheKey] = props;
 
         if (kDebugMode) {
           debugPrint(
-              '✅ Fetched and cached class properties for $cacheKey (${props.length} props)');
+            '✅ Fetched and cached class properties for $cacheKey (${props.length} props)',
+          );
         }
       } else {
-        _setError(
-            'Failed to fetch class properties: ${response.statusCode}');
+        _setError('Failed to fetch class properties: ${response.statusCode}');
       }
     } catch (e) {
       _setError('Error fetching class properties: $e');
@@ -1059,9 +1049,8 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> searchVault(String query) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return;
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
 
     _setLoading(true);
     _setError(null);
@@ -1072,13 +1061,11 @@ class MFilesService extends ChangeNotifier {
         '$baseUrl/api/objectinstance/Search/$vaultGuidWithBraces/$encodedQuery/$mfilesUserId',
       );
 
-      final response =
-          await http.get(url, headers: _authHeadersNoJson);
+      final response = await http.get(url, headers: _authHeadersNoJson);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        searchResults =
-            data.map((e) => ViewObject.fromJson(e)).toList();
+        searchResults = data.map((e) => ViewObject.fromJson(e)).toList();
         warmExtensionsForObjects(searchResults);
         warmRelationshipsForObjects(searchResults);
         syncCheckoutStateForObjects(searchResults);
@@ -1088,6 +1075,66 @@ class MFilesService extends ChangeNotifier {
       }
     } catch (e) {
       _setError('Search error: $e');
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  List<ObjectClass> getAllClasses() {
+    final seen = <int>{};
+    final result = <ObjectClass>[];
+    for (final ot in objectTypes) {
+      for (final group in getClassGroupsForType(ot.id)) {
+        for (final cls in group.members) {
+          if (seen.add(cls.id)) result.add(cls);
+        }
+      }
+    }
+    return result;
+  }
+
+  Future<void> advancedSearchVault({
+    required String query,
+    List<int>? objectTypeIds,
+    int? classId,
+  }) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
+
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      final url = Uri.parse('$baseUrl/api/objectinstance/AdvancedSearch');
+
+      final body = {
+        'searchPhrase': query,
+        'vaultGuid': vaultGuidWithBraces,
+        'userID': mfilesUserId,
+        'objectType': (objectTypeIds != null && objectTypeIds.isNotEmpty)
+            ? objectTypeIds.join(',')
+            : '',
+        'classID': classId != null ? '$classId' : '',
+      };
+
+      final response = await http.post(
+        url,
+        headers: _authHeaders,
+        body: json.encode(body),
+      );
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body) as List;
+        searchResults = data.map((e) => ViewObject.fromJson(e)).toList();
+        warmExtensionsForObjects(searchResults);
+        warmRelationshipsForObjects(searchResults);
+        syncCheckoutStateForObjects(searchResults);
+        notifyListeners();
+      } else {
+        _setError('Advanced search failed: ${response.statusCode}');
+      }
+    } catch (e) {
+      _setError('Advanced search error: $e');
     } finally {
       _setLoading(false);
     }
@@ -1109,7 +1156,8 @@ class MFilesService extends ChangeNotifier {
       );
 
       request.files.add(
-          await http.MultipartFile.fromPath('formFiles', file.path));
+        await http.MultipartFile.fromPath('formFiles', file.path),
+      );
       if (accessToken == null) throw Exception('Not logged in');
       request.headers['Authorization'] = 'Bearer $accessToken';
 
@@ -1131,9 +1179,8 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<List<LookupItem>> fetchLookupItems(int propertyId) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return [];
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return [];
 
     _setLoading(true);
     _setError(null);
@@ -1143,16 +1190,14 @@ class MFilesService extends ChangeNotifier {
         '$baseUrl/api/ValuelistInstance/$vaultGuidWithBraces/$propertyId/$mfilesUserId',
       );
 
-      final response =
-          await http.get(url, headers: _authHeadersNoJson);
+      final response = await http.get(url, headers: _authHeadersNoJson);
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
         return data.map((e) => LookupItem.fromJson(e)).toList();
       }
 
-      _setError(
-          'Failed to fetch lookup items: ${response.statusCode}');
+      _setError('Failed to fetch lookup items: ${response.statusCode}');
       return [];
     } catch (e) {
       _setError('Error fetching lookup items: $e');
@@ -1181,8 +1226,7 @@ class MFilesService extends ChangeNotifier {
     }
 
     try {
-      final url =
-          Uri.parse('$baseUrl/api/ValuelistInstance/AddValuelistItem');
+      final url = Uri.parse('$baseUrl/api/ValuelistInstance/AddValuelistItem');
 
       final body = {
         'vaultGuid': vaultGuidWithBraces,
@@ -1233,7 +1277,8 @@ class MFilesService extends ChangeNotifier {
       if (decoded is num) return decoded.toInt();
 
       if (decoded is Map) {
-        final raw = decoded['id'] ??
+        final raw =
+            decoded['id'] ??
             decoded['Id'] ??
             decoded['itemId'] ??
             decoded['ItemId'] ??
@@ -1254,7 +1299,8 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<ObjectCreationResult> createObject(
-      ObjectCreationRequest request) async {
+    ObjectCreationRequest request,
+  ) async {
     _setLoading(true);
     _setError(null);
 
@@ -1269,14 +1315,12 @@ class MFilesService extends ChangeNotifier {
         return const ObjectCreationResult(success: false);
       }
 
-      final url =
-          Uri.parse('$baseUrl/api/objectinstance/ObjectCreation');
+      final url = Uri.parse('$baseUrl/api/objectinstance/ObjectCreation');
 
       final body = <String, dynamic>{
         "objectID": request.objectID,
         "classID": request.classID,
-        "properties":
-            request.properties.map((p) => p.toJson()).toList(),
+        "properties": request.properties.map((p) => p.toJson()).toList(),
         "vaultGuid": vaultGuidWithBraces,
         "userID": mfilesUserId,
       };
@@ -1290,14 +1334,12 @@ class MFilesService extends ChangeNotifier {
         body: jsonEncode(body),
       );
 
-      if (response.statusCode == 200 ||
-          response.statusCode == 201) {
+      if (response.statusCode == 200 || response.statusCode == 201) {
         final newId = _extractCreatedObjectId(response.body);
         return ObjectCreationResult(success: true, objectId: newId);
       }
 
-      _setError(
-          'Server returned ${response.statusCode}: ${response.body}');
+      _setError('Server returned ${response.statusCode}: ${response.body}');
       return const ObjectCreationResult(success: false);
     } catch (e) {
       _setError('Error creating object: $e');
@@ -1319,7 +1361,8 @@ class MFilesService extends ChangeNotifier {
       if (decoded is num) return decoded.toInt();
 
       if (decoded is Map) {
-        final raw = decoded['objID'] ??
+        final raw =
+            decoded['objID'] ??
             decoded['ObjID'] ??
             decoded['objectId'] ??
             decoded['ObjectId'] ??
@@ -1362,7 +1405,8 @@ class MFilesService extends ChangeNotifier {
 
     try {
       final url = Uri.parse(
-          '$baseUrl/api/Views/GetViews/$vaultGuidWithBraces/$mfilesUserId');
+        '$baseUrl/api/Views/GetViews/$vaultGuidWithBraces/$mfilesUserId',
+      );
       final response = await _authenticatedRequest(
         () => http.get(url, headers: _authHeadersNoJson),
       );
@@ -1370,8 +1414,18 @@ class MFilesService extends ChangeNotifier {
       if (response.statusCode == 200) {
         final decoded = json.decode(response.body);
         if (decoded is Map<String, dynamic>) {
-          final common = (decoded['commonViews'] ?? decoded['CommonViews'] ?? decoded['common_views']) as List? ?? [];
-          final other = (decoded['otherViews'] ?? decoded['OtherViews'] ?? decoded['other_views']) as List? ?? [];
+          final common =
+              (decoded['commonViews'] ??
+                      decoded['CommonViews'] ??
+                      decoded['common_views'])
+                  as List? ??
+              [];
+          final other =
+              (decoded['otherViews'] ??
+                      decoded['OtherViews'] ??
+                      decoded['other_views'])
+                  as List? ??
+              [];
           commonViews = common.map((e) => ViewItem.fromJson(e)).toList();
           otherViews = other.map((e) => ViewItem.fromJson(e)).toList();
           allViews = [...commonViews, ...otherViews];
@@ -1383,7 +1437,8 @@ class MFilesService extends ChangeNotifier {
           _setError(msg);
         }
       } else {
-        final msg = 'Failed to fetch views: ${response.statusCode} ${response.body}';
+        final msg =
+            'Failed to fetch views: ${response.statusCode} ${response.body}';
         viewsError = msg;
         _setError(msg);
       }
@@ -1397,20 +1452,30 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> fetchRecentObjects({bool background = false}) async {
-    if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
     if (!background) _setLoading(true);
     _setError(null);
 
     try {
-      final url = Uri.parse('$baseUrl/api/Views/GetRecent/$vaultGuidWithBraces/$mfilesUserId');
-      final response = await _authenticatedRequest(() => http.get(url, headers: _authHeadersNoJson));
+      final url = Uri.parse(
+        '$baseUrl/api/Views/GetRecent/$vaultGuidWithBraces/$mfilesUserId',
+      );
+      final response = await _authenticatedRequest(
+        () => http.get(url, headers: _authHeadersNoJson),
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        final fetched = data.map((e) => ViewObject.fromJson(e as Map<String, dynamic>)).toList();
+        final fetched =
+            data
+                .map((e) => ViewObject.fromJson(e as Map<String, dynamic>))
+                .toList();
         fetched.sort((a, b) {
-          final ad = a.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
-          final bd = b.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final ad =
+              a.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              b.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
           return bd.compareTo(ad);
         });
         recentObjects = fetched;
@@ -1434,17 +1499,26 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> fetchAssignedObjects({bool background = false}) async {
-    if (selectedVault == null || mfilesUserId == null || accessToken == null) return;
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
     if (!background) _setLoading(true);
     _setError(null);
 
     try {
-      final url = Uri.parse('$baseUrl/api/Views/GetAssigned/$vaultGuidWithBraces/$mfilesUserId');
-      final response = await _authenticatedRequest(() => http.get(url, headers: _authHeadersNoJson));
+      final url = Uri.parse(
+        '$baseUrl/api/Views/GetAssigned/$vaultGuidWithBraces/$mfilesUserId',
+      );
+      final response = await _authenticatedRequest(
+        () => http.get(url, headers: _authHeadersNoJson),
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        assignedObjects = data.whereType<Map<String, dynamic>>().map((e) => ViewObject.fromJson(e)).toList();
+        assignedObjects =
+            data
+                .whereType<Map<String, dynamic>>()
+                .map((e) => ViewObject.fromJson(e))
+                .toList();
         assignedError = null;
         warmExtensionsForObjects(assignedObjects);
         warmRelationshipsForObjects(assignedObjects);
@@ -1473,9 +1547,7 @@ class MFilesService extends ChangeNotifier {
     required int objectId,
     required int objectTypeId,
   }) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
@@ -1488,22 +1560,20 @@ class MFilesService extends ChangeNotifier {
 
     if (resp.statusCode != 200) {
       throw Exception(
-          'GetObjectViewProps failed: ${resp.statusCode} ${resp.body}');
+        'GetObjectViewProps failed: ${resp.statusCode} ${resp.body}',
+      );
     }
 
     final decoded = json.decode(resp.body);
     if (decoded is List) return decoded.cast<Map<String, dynamic>>();
     if (decoded is Map && decoded['props'] is List) {
-      return (decoded['props'] as List)
-          .cast<Map<String, dynamic>>();
+      return (decoded['props'] as List).cast<Map<String, dynamic>>();
     }
     if (decoded is Map && decoded['properties'] is List) {
-      return (decoded['properties'] as List)
-          .cast<Map<String, dynamic>>();
+      return (decoded['properties'] as List).cast<Map<String, dynamic>>();
     }
 
-    throw Exception(
-        'Unexpected GetObjectViewProps shape: ${resp.body}');
+    throw Exception('Unexpected GetObjectViewProps shape: ${resp.body}');
   }
 
   Future<bool> updateObjectProps({
@@ -1520,23 +1590,23 @@ class MFilesService extends ChangeNotifier {
       if (accessToken == null) return false;
       if (mfilesUserId == null) return false;
 
-      final url = Uri.parse(
-          '$baseUrl/api/objectinstance/UpdateObjectProps');
+      final url = Uri.parse('$baseUrl/api/objectinstance/UpdateObjectProps');
 
       final body = {
         "objectid": objectId,
         "objectypeid": objectTypeId,
         "objecttypeid": objectTypeId,
         "classid": classId,
-        "props": props.map((p) {
-          return {
-            "id": p["id"],
-            "value": (p["value"] ?? "").toString(),
-            "datatype": (p["datatype"] ?? "MFDatatypeText")
-                .toString()
-                .replaceAll('MFDataType', 'MFDatatype'),
-          };
-        }).toList(),
+        "props":
+            props.map((p) {
+              return {
+                "id": p["id"],
+                "value": (p["value"] ?? "").toString(),
+                "datatype": (p["datatype"] ?? "MFDatatypeText")
+                    .toString()
+                    .replaceAll('MFDataType', 'MFDatatype'),
+              };
+            }).toList(),
         "vaultGuid": vaultGuidWithBraces,
         "userID": mfilesUserId,
       };
@@ -1567,9 +1637,7 @@ class MFilesService extends ChangeNotifier {
     required int objectId,
     required int classId,
   }) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
@@ -1579,7 +1647,8 @@ class MFilesService extends ChangeNotifier {
     );
 
     debugPrint(
-        '📦 GetObjectFiles args: objectId=$objectId classId=$classId vault=$vaultGuidWithBraces');
+      '📦 GetObjectFiles args: objectId=$objectId classId=$classId vault=$vaultGuidWithBraces',
+    );
 
     final resp = await _authenticatedRequest(
       () => http.get(url, headers: _authHeadersNoJson),
@@ -1588,8 +1657,7 @@ class MFilesService extends ChangeNotifier {
     if (resp.statusCode == 404) return <ObjectFile>[];
 
     if (resp.statusCode != 200) {
-      throw Exception(
-          'GetObjectFiles failed: ${resp.statusCode} ${resp.body}');
+      throw Exception('GetObjectFiles failed: ${resp.statusCode} ${resp.body}');
     }
 
     final data = json.decode(resp.body) as List;
@@ -1637,8 +1705,7 @@ class MFilesService extends ChangeNotifier {
   final Map<int, String> _extByObjectId = {};
   final Set<int> _extInFlight = {};
 
-  String? cachedExtensionForObject(int objectId) =>
-      _extByObjectId[objectId];
+  String? cachedExtensionForObject(int objectId) => _extByObjectId[objectId];
 
   String _normalizeExt(String? ext) {
     final e = (ext ?? '').trim().toLowerCase();
@@ -1658,10 +1725,10 @@ class MFilesService extends ChangeNotifier {
     _extInFlight.add(objectId);
     try {
       final files = await fetchObjectFiles(
-          objectId: objectId, classId: classId);
-      final ext = files.isNotEmpty
-          ? _normalizeExt(files.first.extension)
-          : '';
+        objectId: objectId,
+        classId: classId,
+      );
+      final ext = files.isNotEmpty ? _normalizeExt(files.first.extension) : '';
       _extByObjectId[objectId] = ext;
     } catch (_) {
       _extByObjectId[objectId] = '';
@@ -1676,22 +1743,24 @@ class MFilesService extends ChangeNotifier {
       if (!it.isObject) continue;
       if (it.id <= 0) continue;
       if (isMultiFile(
-          objectTypeId: it.objectTypeId,
-          isSingleFile: it.isSingleFile)) continue;
-      ensureExtensionForObject(
-          objectId: it.id, classId: it.classId);
+        objectTypeId: it.objectTypeId,
+        isSingleFile: it.isSingleFile,
+      ))
+        continue;
+      ensureExtensionForObject(objectId: it.id, classId: it.classId);
     }
   }
 
-  Future<void> warmExtensionsForObjects(
-      List<ViewObject> objects) async {
+  Future<void> warmExtensionsForObjects(List<ViewObject> objects) async {
     final futures = <Future>[];
 
     for (final o in objects) {
       if (o.id <= 0) continue;
       if (isMultiFile(
-          objectTypeId: o.objectTypeId,
-          isSingleFile: o.isSingleFile)) continue;
+        objectTypeId: o.objectTypeId,
+        isSingleFile: o.isSingleFile,
+      ))
+        continue;
       futures.add(
         ensureExtensionForObject(
           objectId: o.id,
@@ -1723,8 +1792,7 @@ class MFilesService extends ChangeNotifier {
   Future<void> _loadRelationshipsCacheFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final keys =
-          prefs.getKeys().where((k) => k.startsWith('rel_')).toList();
+      final keys = prefs.getKeys().where((k) => k.startsWith('rel_')).toList();
       for (final key in keys) {
         final id = int.tryParse(key.substring(4));
         if (id != null) {
@@ -1736,30 +1804,29 @@ class MFilesService extends ChangeNotifier {
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint(
-            '⚠️ Failed to load relationships cache from prefs: $e');
+        debugPrint('⚠️ Failed to load relationships cache from prefs: $e');
       }
     }
   }
 
   void _saveRelationshipToPrefs(int objectId, bool hasRel) {
-    SharedPreferences.getInstance().then((prefs) {
-      prefs.setBool('rel_$objectId', hasRel);
-    }).catchError((_) {});
+    SharedPreferences.getInstance()
+        .then((prefs) {
+          prefs.setBool('rel_$objectId', hasRel);
+        })
+        .catchError((_) {});
   }
 
   Future<void> _clearRelationshipsCacheFromPrefs() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final keys =
-          prefs.getKeys().where((k) => k.startsWith('rel_')).toList();
+      final keys = prefs.getKeys().where((k) => k.startsWith('rel_')).toList();
       for (final key in keys) {
         await prefs.remove(key);
       }
     } catch (e) {
       if (kDebugMode) {
-        debugPrint(
-            '⚠️ Failed to clear relationships cache from prefs: $e');
+        debugPrint('⚠️ Failed to clear relationships cache from prefs: $e');
       }
     }
   }
@@ -1797,13 +1864,16 @@ class MFilesService extends ChangeNotifier {
   Future<void> _warmRelationshipsBatch(
     List<({int objectId, int objectTypeId, int classId})> items,
   ) async {
-    final todo = items
-        .where((it) =>
-            it.objectId > 0 &&
-            it.classId > 0 &&
-            !_hasRelationshipsCache.containsKey(it.objectId) &&
-            !_relInFlight.contains(it.objectId))
-        .toList();
+    final todo =
+        items
+            .where(
+              (it) =>
+                  it.objectId > 0 &&
+                  it.classId > 0 &&
+                  !_hasRelationshipsCache.containsKey(it.objectId) &&
+                  !_relInFlight.contains(it.objectId),
+            )
+            .toList();
 
     if (todo.isEmpty) return;
 
@@ -1842,38 +1912,34 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  Future<void> warmRelationshipsForObjects(
-      List<ViewObject> objects) async {
-    final items = objects
-        .where((o) =>
-            o.id > 0 &&
-            o.classId > 0)
-        .toList();
+  Future<void> warmRelationshipsForObjects(List<ViewObject> objects) async {
+    final items = objects.where((o) => o.id > 0 && o.classId > 0).toList();
 
-    final futures = items.map((o) =>
-        ensureRelationshipsPresenceForObject(
-          objectId: o.id,
-          objectTypeId: o.objectTypeId,
-          classId: o.classId,
-          notify: false,
-        ));
+    final futures = items.map(
+      (o) => ensureRelationshipsPresenceForObject(
+        objectId: o.id,
+        objectTypeId: o.objectTypeId,
+        classId: o.classId,
+        notify: false,
+      ),
+    );
 
     await Future.wait(futures);
     notifyListeners();
   }
 
   void warmRelationshipsForItems(List<ViewContentItem> items) {
-    final batch = items
-        .where((it) =>
-            it.isObject &&
-            it.id > 0 &&
-            it.classId > 0)
-        .map((it) => (
-              objectId: it.id,
-              objectTypeId: it.objectTypeId,
-              classId: it.classId,
-            ))
-        .toList();
+    final batch =
+        items
+            .where((it) => it.isObject && it.id > 0 && it.classId > 0)
+            .map(
+              (it) => (
+                objectId: it.id,
+                objectTypeId: it.objectTypeId,
+                classId: it.classId,
+              ),
+            )
+            .toList();
     _warmRelationshipsBatch(batch); // intentionally not awaited
   }
 
@@ -1919,13 +1985,15 @@ class MFilesService extends ChangeNotifier {
   }
 
   void _saveCheckoutToPrefs(int objectId, bool checkedOut) {
-    SharedPreferences.getInstance().then((prefs) {
-      if (checkedOut) {
-        prefs.setBool('checkout_$objectId', true);
-      } else {
-        prefs.remove('checkout_$objectId');
-      }
-    }).catchError((_) {});
+    SharedPreferences.getInstance()
+        .then((prefs) {
+          if (checkedOut) {
+            prefs.setBool('checkout_$objectId', true);
+          } else {
+            prefs.remove('checkout_$objectId');
+          }
+        })
+        .catchError((_) {});
   }
 
   Future<void> _clearCheckoutCacheFromPrefs() async {
@@ -2008,8 +2076,8 @@ class MFilesService extends ChangeNotifier {
   String? _deepFindBase64(dynamic node) {
     if (node is String) {
       final s = node.trim();
-      final looks = s.length > 100 &&
-          RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(s);
+      final looks =
+          s.length > 100 && RegExp(r'^[A-Za-z0-9+/=\s]+$').hasMatch(s);
       return looks ? s : null;
     }
     if (node is List) {
@@ -2048,7 +2116,7 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<({List<int> bytes, String? contentType})>
-      downloadFileBytesWithFallback({
+  downloadFileBytesWithFallback({
     required int displayObjectId,
     required int classId,
     required int fileId,
@@ -2060,8 +2128,8 @@ class MFilesService extends ChangeNotifier {
     }
 
     final url = Uri.parse(
-            '$baseUrl/api/objectinstance/DownloadOtherFiles')
-        .replace(
+      '$baseUrl/api/objectinstance/DownloadOtherFiles',
+    ).replace(
       queryParameters: {
         'ObjectId': displayObjectId.toString(),
         'VaultGuid': vaultGuidWithBraces,
@@ -2073,24 +2141,21 @@ class MFilesService extends ChangeNotifier {
     debugPrint('📥 Downloading file from: $url');
 
     try {
-      final response =
-          await http.get(url, headers: _authHeadersNoJson);
+      final response = await http.get(url, headers: _authHeadersNoJson);
 
       debugPrint('📡 Response status: ${response.statusCode}');
-      debugPrint(
-          '📡 Content-Type: ${response.headers['content-type']}');
-      debugPrint(
-          '📡 Content-Length: ${response.headers['content-length']}');
+      debugPrint('📡 Content-Type: ${response.headers['content-type']}');
+      debugPrint('📡 Content-Length: ${response.headers['content-length']}');
 
       if (response.statusCode == 200) {
         final contentType = response.headers['content-type'];
         final bytes = response.bodyBytes;
 
         String headAscii(List<int> b) {
-          final take =
-              b.length > 32 ? b.sublist(0, 32) : b;
-          return String.fromCharCodes(take.map(
-              (x) => (x >= 32 && x <= 126) ? x : 46));
+          final take = b.length > 32 ? b.sublist(0, 32) : b;
+          return String.fromCharCodes(
+            take.map((x) => (x >= 32 && x <= 126) ? x : 46),
+          );
         }
 
         bool looksPdf(List<int> b) =>
@@ -2109,10 +2174,7 @@ class MFilesService extends ChangeNotifier {
           int i = 0;
           while (i < b.length) {
             final x = b[i];
-            if (x == 0x20 ||
-                x == 0x0A ||
-                x == 0x0D ||
-                x == 0x09) {
+            if (x == 0x20 || x == 0x0A || x == 0x0D || x == 0x09) {
               i++;
               continue;
             }
@@ -2132,43 +2194,46 @@ class MFilesService extends ChangeNotifier {
           );
         }
 
-        if (head.contains('<!doctype') ||
-            head.contains('<html')) {
+        if (head.contains('<!doctype') || head.contains('<html')) {
           throw Exception(
-              'Server returned HTML instead of file. HEAD=${headAscii(bytes)}');
+            'Server returned HTML instead of file. HEAD=${headAscii(bytes)}',
+          );
         }
 
-        final exp = expectedExtension
-            .trim()
-            .toLowerCase()
-            .replaceFirst('.', '');
+        final exp = expectedExtension.trim().toLowerCase().replaceFirst(
+          '.',
+          '',
+        );
 
         if (contentType?.contains('text') == true) {
           final body = utf8.decode(bytes);
           if (body.contains('not been committed')) {
             throw Exception(
-                'File not committed. Please check in the file in M-Files first.');
+              'File not committed. Please check in the file in M-Files first.',
+            );
           }
           if (body.contains('Could not find')) {
-            throw Exception(
-                'File signature error. File may be corrupted.');
+            throw Exception('File signature error. File may be corrupted.');
           }
           throw Exception(
-              'Server error: ${body.substring(0, body.length > 200 ? 200 : body.length)}');
+            'Server error: ${body.substring(0, body.length > 200 ? 200 : body.length)}',
+          );
         }
 
         if (exp == 'pdf' && !looksPdf(bytes)) {
           throw Exception(
-              'Expected PDF but downloaded content is not PDF. HEAD=${headAscii(bytes)}');
+            'Expected PDF but downloaded content is not PDF. HEAD=${headAscii(bytes)}',
+          );
         }
-        if (['docx', 'xlsx', 'pptx'].contains(exp) &&
-            !looksZip(bytes)) {
+        if (['docx', 'xlsx', 'pptx'].contains(exp) && !looksZip(bytes)) {
           throw Exception(
-              'Expected Office zip ($exp) but downloaded content is not ZIP. HEAD=${headAscii(bytes)}');
+            'Expected Office zip ($exp) but downloaded content is not ZIP. HEAD=${headAscii(bytes)}',
+          );
         }
 
         debugPrint(
-            '🔎 looksPdf=${looksPdf(bytes)} looksZip=${looksZip(bytes)} bytes=${bytes.length}');
+          '🔎 looksPdf=${looksPdf(bytes)} looksZip=${looksZip(bytes)} bytes=${bytes.length}',
+        );
         debugPrint('✅ Downloaded ${bytes.length} bytes');
 
         return (bytes: bytes, contentType: contentType);
@@ -2182,13 +2247,9 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
-  String _safeFilename(
-      String title, String extension, int fileId) {
-    final ext =
-        extension.trim().toLowerCase().replaceFirst('.', '');
-    var base = title.trim().isEmpty
-        ? 'file_$fileId'
-        : title.trim();
+  String _safeFilename(String title, String extension, int fileId) {
+    final ext = extension.trim().toLowerCase().replaceFirst('.', '');
+    var base = title.trim().isEmpty ? 'file_$fileId' : title.trim();
     base = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
     if (ext.isEmpty) return base;
     if (base.toLowerCase().endsWith('.$ext')) return base;
@@ -2211,8 +2272,7 @@ class MFilesService extends ChangeNotifier {
       expectedExtension: extension,
     );
 
-    final filename =
-        _safeFilename(fileTitle, extension, fileId);
+    final filename = _safeFilename(fileTitle, extension, fileId);
     final dir = await getTemporaryDirectory();
     final filePath = '${dir.path}/$filename';
 
@@ -2243,8 +2303,7 @@ class MFilesService extends ChangeNotifier {
       expectedExtension: extension,
     );
 
-    final filename =
-        _safeFilename(fileTitle, extension, fileId);
+    final filename = _safeFilename(fileTitle, extension, fileId);
     final dir = await getApplicationDocumentsDirectory();
     final path = '${dir.path}/$filename';
 
@@ -2263,14 +2322,11 @@ class MFilesService extends ChangeNotifier {
     bool overWriteOriginal = false,
     bool separateFile = true,
   }) async {
-    if (selectedVault == null ||
-        accessToken == null ||
-        mfilesUserId == null) {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
       throw Exception('Session not ready');
     }
 
-    final url =
-        Uri.parse('$baseUrl/api/objectinstance/ConvertToPdf');
+    final url = Uri.parse('$baseUrl/api/objectinstance/ConvertToPdf');
 
     final body = {
       "vaultGuid": vaultGuidWithBraces,
@@ -2282,12 +2338,14 @@ class MFilesService extends ChangeNotifier {
       "userID": mfilesUserId,
     };
 
-    final resp = await http.post(url,
-        headers: _authHeaders, body: jsonEncode(body));
+    final resp = await http.post(
+      url,
+      headers: _authHeaders,
+      body: jsonEncode(body),
+    );
 
     if (resp.statusCode != 200 && resp.statusCode != 201) {
-      throw Exception(
-          'ConvertToPdf failed: ${resp.statusCode} ${resp.body}');
+      throw Exception('ConvertToPdf failed: ${resp.statusCode} ${resp.body}');
     }
 
     // API may return a plain success string instead of JSON
@@ -2305,8 +2363,7 @@ class MFilesService extends ChangeNotifier {
       }
     }
 
-    throw Exception(
-        'ConvertToPdf unexpected response: ${resp.body}');
+    throw Exception('ConvertToPdf unexpected response: ${resp.body}');
   }
 
   int extractPdfFileId(Map<String, dynamic> m) {
@@ -2324,12 +2381,8 @@ class MFilesService extends ChangeNotifier {
       m['fileID'],
       m['convertedFileId'],
       m['ConvertedFileId'],
-      (m['data'] is Map
-          ? (m['data'] as Map)['fileId']
-          : null),
-      (m['result'] is Map
-          ? (m['result'] as Map)['fileId']
-          : null),
+      (m['data'] is Map ? (m['data'] as Map)['fileId'] : null),
+      (m['result'] is Map ? (m['result'] as Map)['fileId'] : null),
     ];
 
     for (final c in candidates) {
@@ -2338,15 +2391,15 @@ class MFilesService extends ChangeNotifier {
     }
 
     throw Exception(
-        'Could not find pdf fileId in ConvertToPdf response. Keys=${m.keys.toList()}');
+      'Could not find pdf fileId in ConvertToPdf response. Keys=${m.keys.toList()}',
+    );
   }
 
   // -------------------- Deleted / Reports --------------------
 
   Future<void> fetchDeletedObjects({bool background = false}) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) return;
+    if (selectedVault == null || mfilesUserId == null || accessToken == null)
+      return;
 
     if (!background) _setLoading(true);
     _setError(null);
@@ -2362,10 +2415,11 @@ class MFilesService extends ChangeNotifier {
 
       if (resp.statusCode == 200) {
         final data = json.decode(resp.body) as List;
-        deletedObjects = data
-            .whereType<Map<String, dynamic>>()
-            .map((e) => ViewObject.fromJson(e))
-            .toList();
+        deletedObjects =
+            data
+                .whereType<Map<String, dynamic>>()
+                .map((e) => ViewObject.fromJson(e))
+                .toList();
         deletedError = null;
         warmExtensionsForObjects(deletedObjects);
         warmRelationshipsForObjects(deletedObjects);
@@ -2374,7 +2428,8 @@ class MFilesService extends ChangeNotifier {
         return;
       }
 
-      final msg = 'Failed to fetch deleted objects: ${resp.statusCode} ${resp.body}';
+      final msg =
+          'Failed to fetch deleted objects: ${resp.statusCode} ${resp.body}';
       deletedError = msg;
       if (!background) _setError(msg);
     } catch (e) {
@@ -2394,17 +2449,12 @@ class MFilesService extends ChangeNotifier {
 
   // -------------------- View details --------------------
 
-  Future<List<ViewContentItem>> fetchObjectsInViewRaw(
-      int viewId) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+  Future<List<ViewContentItem>> fetchObjectsInViewRaw(int viewId) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
-    final url = Uri.parse(
-            '$baseUrl/api/Views/GetObjectsInView')
-        .replace(
+    final url = Uri.parse('$baseUrl/api/Views/GetObjectsInView').replace(
       queryParameters: {
         'vaultGuid': vaultGuidWithBraces,
         'viewId': viewId.toString(),
@@ -2414,28 +2464,30 @@ class MFilesService extends ChangeNotifier {
 
     debugPrint("VIEW FETCH URL: $url");
 
-    final resp =
-        await http.get(url, headers: _authHeadersNoJson);
+    final resp = await http.get(url, headers: _authHeadersNoJson);
 
     if (resp.statusCode != 200) {
       throw Exception(
-          'GetObjectsInView failed: ${resp.statusCode} ${resp.body}');
+        'GetObjectsInView failed: ${resp.statusCode} ${resp.body}',
+      );
     }
 
     final decoded = json.decode(resp.body);
 
-    final List list = decoded is List
-        ? decoded
-        : (decoded is Map && decoded['items'] is List)
+    final List list =
+        decoded is List
+            ? decoded
+            : (decoded is Map && decoded['items'] is List)
             ? decoded['items'] as List
             : (decoded is Map && decoded['data'] is List)
-                ? decoded['data'] as List
-                : <dynamic>[];
+            ? decoded['data'] as List
+            : <dynamic>[];
 
-    final items = list
-        .whereType<Map<String, dynamic>>()
-        .map(ViewContentItem.fromJson)
-        .toList();
+    final items =
+        list
+            .whereType<Map<String, dynamic>>()
+            .map(ViewContentItem.fromJson)
+            .toList();
 
     warmExtensionsForItems(items);
     warmRelationshipsForItems(items);
@@ -2448,21 +2500,17 @@ class MFilesService extends ChangeNotifier {
     required int viewId,
     required List<GroupFilter> filters,
   }) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
-    final url =
-        Uri.parse('$baseUrl/api/Views/GetViewPropObjects');
+    final url = Uri.parse('$baseUrl/api/Views/GetViewPropObjects');
 
     final body = {
       "viewId": viewId,
       "userID": mfilesUserId,
       "vaultGuid": vaultGuidWithBraces,
-      "properties":
-          filters.map((f) => f.toJson()).toList(),
+      "properties": filters.map((f) => f.toJson()).toList(),
     };
 
     if (kDebugMode) {
@@ -2485,16 +2533,18 @@ class MFilesService extends ChangeNotifier {
 
     if (resp.statusCode != 200) {
       throw Exception(
-          'GetViewPropObjects failed: ${resp.statusCode} ${resp.body}');
+        'GetViewPropObjects failed: ${resp.statusCode} ${resp.body}',
+      );
     }
 
     final decoded = json.decode(resp.body);
     if (decoded is! List) return <ViewContentItem>[];
 
-    final items = decoded
-        .whereType<Map<String, dynamic>>()
-        .map(ViewContentItem.fromJson)
-        .toList();
+    final items =
+        decoded
+            .whereType<Map<String, dynamic>>()
+            .map(ViewContentItem.fromJson)
+            .toList();
     warmRelationshipsForItems(items);
     syncCheckoutStateForItems(items);
     return items;
@@ -2509,19 +2559,19 @@ class MFilesService extends ChangeNotifier {
   }) async {
     error = null;
 
-    final uri =
-        Uri.parse('$baseUrl/api/Comments').replace(queryParameters: {
-      'objectId': objectId.toString(),
-      'objectTypeId': objectTypeId.toString(),
-      'vaultGuid': vaultGuid,
-    });
+    final uri = Uri.parse('$baseUrl/api/Comments').replace(
+      queryParameters: {
+        'objectId': objectId.toString(),
+        'objectTypeId': objectTypeId.toString(),
+        'vaultGuid': vaultGuid,
+      },
+    );
 
     final res = await http.get(
       uri,
       headers: {
         'accept': '*/*',
-        if (accessToken != null)
-          'Authorization': 'Bearer $accessToken',
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
       },
     );
 
@@ -2549,13 +2599,11 @@ class MFilesService extends ChangeNotifier {
 
     final uri = Uri.parse('$baseUrl/api/Comments');
 
-    final displayName = (fullname?.trim().isNotEmpty == true
-            ? fullname!
-            : username ?? '')
-        .trim();
-    final prefixedComment = displayName.isNotEmpty
-        ? '$displayName : $comment'
-        : comment;
+    final displayName =
+        (fullname?.trim().isNotEmpty == true ? fullname! : username ?? '')
+            .trim();
+    final prefixedComment =
+        displayName.isNotEmpty ? '$displayName : $comment' : comment;
 
     final payload = {
       "comment": prefixedComment,
@@ -2570,8 +2618,7 @@ class MFilesService extends ChangeNotifier {
       headers: {
         'accept': '*/*',
         'content-type': 'application/json',
-        if (accessToken != null)
-          'Authorization': 'Bearer $accessToken',
+        if (accessToken != null) 'Authorization': 'Bearer $accessToken',
       },
       body: jsonEncode(payload),
     );
@@ -2711,8 +2758,7 @@ class MFilesService extends ChangeNotifier {
       if (accessToken == null) return false;
       if (mfilesUserId == null) return false;
 
-      final url = Uri.parse(
-          '$baseUrl/api/ObjectDeletion/DeleteObject');
+      final url = Uri.parse('$baseUrl/api/ObjectDeletion/DeleteObject');
 
       final body = {
         "vaultGuid": vaultGuidWithBraces,
@@ -2729,10 +2775,10 @@ class MFilesService extends ChangeNotifier {
 
       if (resp.statusCode == 200 ||
           resp.statusCode == 201 ||
-          resp.statusCode == 204) return true;
+          resp.statusCode == 204)
+        return true;
 
-      _setError(
-          'Server returned ${resp.statusCode}: ${resp.body}');
+      _setError('Server returned ${resp.statusCode}: ${resp.body}');
       return false;
     } catch (e) {
       _setError('Error deleting object: $e');
@@ -2754,8 +2800,7 @@ class MFilesService extends ChangeNotifier {
       if (accessToken == null) return false;
       if (mfilesUserId == null) return false;
 
-      final url = Uri.parse(
-          '$baseUrl/api/ObjectDeletion/UnDeleteObject');
+      final url = Uri.parse('$baseUrl/api/ObjectDeletion/UnDeleteObject');
 
       final body = {
         "vaultGuid": vaultGuidWithBraces,
@@ -2772,10 +2817,10 @@ class MFilesService extends ChangeNotifier {
 
       if (resp.statusCode == 200 ||
           resp.statusCode == 201 ||
-          resp.statusCode == 204) return true;
+          resp.statusCode == 204)
+        return true;
 
-      _setError(
-          'Server returned ${resp.statusCode}: ${resp.body}');
+      _setError('Server returned ${resp.statusCode}: ${resp.body}');
       return false;
     } catch (e) {
       _setError('Error restoring object: $e');
@@ -2791,14 +2836,13 @@ class MFilesService extends ChangeNotifier {
     required int objectTypeId,
     required int objectId,
   }) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
     final url = Uri.parse(
-        '$baseUrl/api/WorkflowsInstance/GetObjectworkflowstate');
+      '$baseUrl/api/WorkflowsInstance/GetObjectworkflowstate',
+    );
 
     final body = {
       "vaultGuid": vaultGuidWithBraces,
@@ -2807,14 +2851,18 @@ class MFilesService extends ChangeNotifier {
       "userID": mfilesUserId,
     };
 
-    final resp = await http.post(url,
-        headers: _authHeaders, body: jsonEncode(body));
+    final resp = await http.post(
+      url,
+      headers: _authHeaders,
+      body: jsonEncode(body),
+    );
 
     if (resp.statusCode == 404) return null;
 
     if (resp.statusCode != 200) {
       throw Exception(
-          'GetObjectworkflowstate failed: ${resp.statusCode} ${resp.body}');
+        'GetObjectworkflowstate failed: ${resp.statusCode} ${resp.body}',
+      );
     }
 
     final decoded = json.decode(resp.body);
@@ -2827,14 +2875,13 @@ class MFilesService extends ChangeNotifier {
     required int objectTypeId,
     required int objectId,
   }) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
     final url = Uri.parse(
-        '$baseUrl/api/WorkflowsInstance/GetObjectworkflowAllstates');
+      '$baseUrl/api/WorkflowsInstance/GetObjectworkflowAllstates',
+    );
 
     final body = {
       "vaultGuid": vaultGuidWithBraces,
@@ -2843,12 +2890,16 @@ class MFilesService extends ChangeNotifier {
       "userID": mfilesUserId,
     };
 
-    final resp = await http.post(url,
-        headers: _authHeaders, body: jsonEncode(body));
+    final resp = await http.post(
+      url,
+      headers: _authHeaders,
+      body: jsonEncode(body),
+    );
 
     if (resp.statusCode != 200) {
       throw Exception(
-          'GetObjectworkflowAllstates failed: ${resp.statusCode} ${resp.body}');
+        'GetObjectworkflowAllstates failed: ${resp.statusCode} ${resp.body}',
+      );
     }
 
     final decoded = json.decode(resp.body);
@@ -2875,7 +2926,8 @@ class MFilesService extends ChangeNotifier {
       if (mfilesUserId == null) return false;
 
       final url = Uri.parse(
-          '$baseUrl/api/WorkflowsInstance/SetObjectWorkflowstate');
+        '$baseUrl/api/WorkflowsInstance/SetObjectWorkflowstate',
+      );
 
       final body = {
         "vaultGuid": vaultGuidWithBraces,
@@ -2891,16 +2943,18 @@ class MFilesService extends ChangeNotifier {
         debugPrint('📦 Body: ${jsonEncode(body)}');
       }
 
-      final resp = await http.post(url,
-          headers: _authHeaders, body: jsonEncode(body));
+      final resp = await http.post(
+        url,
+        headers: _authHeaders,
+        body: jsonEncode(body),
+      );
 
       if (resp.statusCode == 200 ||
           resp.statusCode == 201 ||
-          resp.statusCode == 204) return true;
+          resp.statusCode == 204)
+        return true;
 
-      _setError(resp.body.isNotEmpty
-          ? resp.body
-          : 'HTTP ${resp.statusCode}');
+      _setError(resp.body.isNotEmpty ? resp.body : 'HTTP ${resp.statusCode}');
 
       if (kDebugMode) {
         debugPrint('📨 Status: ${resp.statusCode}');
@@ -2920,9 +2974,7 @@ class MFilesService extends ChangeNotifier {
     required int objectTypeId,
     required int classTypeId,
   }) async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
@@ -2931,12 +2983,12 @@ class MFilesService extends ChangeNotifier {
       '$vaultGuidWithBraces/$mfilesUserId/$objectTypeId/$classTypeId',
     );
 
-    final resp =
-        await http.get(url, headers: _authHeadersNoJson);
+    final resp = await http.get(url, headers: _authHeadersNoJson);
 
     if (resp.statusCode != 200) {
       throw Exception(
-          'GetVaultsObjectClassTypeWorkflows failed: ${resp.statusCode} ${resp.body}');
+        'GetVaultsObjectClassTypeWorkflows failed: ${resp.statusCode} ${resp.body}',
+      );
     }
 
     final decoded = json.decode(resp.body);
@@ -2950,9 +3002,7 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<List<WorkflowOption>> fetchVaultWorkflows() async {
-    if (selectedVault == null ||
-        mfilesUserId == null ||
-        accessToken == null) {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
     }
 
@@ -2960,12 +3010,12 @@ class MFilesService extends ChangeNotifier {
       '$baseUrl/api/WorkflowsInstance/GetVaultsWorkflows/$vaultGuidWithBraces/$mfilesUserId',
     );
 
-    final resp =
-        await http.get(url, headers: _authHeadersNoJson);
+    final resp = await http.get(url, headers: _authHeadersNoJson);
 
     if (resp.statusCode != 200) {
       throw Exception(
-          'GetVaultsWorkflows failed: ${resp.statusCode} ${resp.body}');
+        'GetVaultsWorkflows failed: ${resp.statusCode} ${resp.body}',
+      );
     }
     final decoded = json.decode(resp.body);
     if (decoded is! List) return <WorkflowOption>[];
@@ -2977,19 +3027,16 @@ class MFilesService extends ChangeNotifier {
         .toList();
   }
 
-  Future<WorkflowDefinition> fetchWorkflowDefinition(
-      int workflowId) async {
+  Future<WorkflowDefinition> fetchWorkflowDefinition(int workflowId) async {
     final url = Uri.parse(
       '$baseUrl/api/WorkflowsInstance/GetWorkflowDefinition/'
       '$vaultGuidWithBraces/$workflowId/$mfilesUserId',
     );
 
-    final resp =
-        await http.get(url, headers: _authHeadersNoJson);
+    final resp = await http.get(url, headers: _authHeadersNoJson);
 
     if (resp.statusCode != 200) {
-      throw Exception(
-          'Failed to fetch workflow definition: ${resp.body}');
+      throw Exception('Failed to fetch workflow definition: ${resp.body}');
     }
 
     return WorkflowDefinition.fromJson(json.decode(resp.body));
@@ -3013,17 +3060,17 @@ class MFilesService extends ChangeNotifier {
     }
 
     if (res.statusCode != 200) {
-      throw Exception(
-          'LinkedObjects failed ${res.statusCode}: ${res.body}');
+      throw Exception('LinkedObjects failed ${res.statusCode}: ${res.body}');
     }
 
     if (res.body.trim().isEmpty) return <LinkedObjectsGroup>[];
 
     final decoded = jsonDecode(res.body);
 
-    final List list = decoded is List
-        ? decoded
-        : (decoded is Map && decoded['items'] is List)
+    final List list =
+        decoded is List
+            ? decoded
+            : (decoded is Map && decoded['items'] is List)
             ? decoded['items'] as List
             : <dynamic>[];
 
@@ -3033,8 +3080,7 @@ class MFilesService extends ChangeNotifier {
         .toList();
   }
 
-  bool isMultiFile(
-      {required int objectTypeId, required bool isSingleFile}) {
+  bool isMultiFile({required int objectTypeId, required bool isSingleFile}) {
     return objectTypeId == 0 && !isSingleFile;
   }
 
@@ -3043,19 +3089,22 @@ class MFilesService extends ChangeNotifier {
   bool isDocumentObjectType(int objectTypeId) {
     final t = objectTypes.firstWhere(
       (x) => x.id == objectTypeId,
-      orElse: () => VaultObjectType(
-          id: 0,
-          displayName: '',
-          isDocument: false,
-          name: ''),
+      orElse:
+          () => VaultObjectType(
+            id: 0,
+            displayName: '',
+            isDocument: false,
+            name: '',
+          ),
     );
     return t.isDocument;
   }
 
   bool isDocumentViewObject(ViewObject obj) {
     if (isMultiFile(
-        objectTypeId: obj.objectTypeId,
-        isSingleFile: obj.isSingleFile)) {
+      objectTypeId: obj.objectTypeId,
+      isSingleFile: obj.isSingleFile,
+    )) {
       return false;
     }
     return isDocumentObjectType(obj.objectTypeId);
@@ -3064,8 +3113,9 @@ class MFilesService extends ChangeNotifier {
   bool isDocumentContentItem(ViewContentItem item) {
     if (!item.isObject) return false;
     if (isMultiFile(
-        objectTypeId: item.objectTypeId,
-        isSingleFile: item.isSingleFile)) {
+      objectTypeId: item.objectTypeId,
+      isSingleFile: item.isSingleFile,
+    )) {
       return false;
     }
     return isDocumentObjectType(item.objectTypeId);
@@ -3171,22 +3221,18 @@ class MFilesService extends ChangeNotifier {
     required int userId,
     required bool approve,
   }) async {
-    if (selectedVault == null ||
-        accessToken == null ||
-        mfilesUserId == null) {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
       _setError('Session not ready');
       return false;
     }
 
     if (userId != mfilesUserId) {
-      _setError(
-          'You can only approve assignments assigned to you.');
+      _setError('You can only approve assignments assigned to you.');
       return false;
     }
 
     try {
-      final url = Uri.parse(
-          '$baseUrl/api/objectinstance/ApproveAssignment');
+      final url = Uri.parse('$baseUrl/api/objectinstance/ApproveAssignment');
 
       final body = {
         "vaultGuid": vaultGuidWithBraces,
@@ -3202,30 +3248,25 @@ class MFilesService extends ChangeNotifier {
       }
 
       final resp = await _authenticatedRequest(
-        () => http.post(url,
-            headers: _authHeaders, body: jsonEncode(body)),
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
       );
 
       if (kDebugMode) {
-        debugPrint(
-            '📨 ApproveAssignment status: ${resp.statusCode}');
-        debugPrint(
-            '📨 ApproveAssignment body: ${resp.body}');
+        debugPrint('📨 ApproveAssignment status: ${resp.statusCode}');
+        debugPrint('📨 ApproveAssignment body: ${resp.body}');
       }
 
       if (resp.statusCode == 200 ||
           resp.statusCode == 201 ||
           resp.statusCode == 204) {
         if (approve) {
-          assignedObjects
-              .removeWhere((o) => o.id == objectId);
+          assignedObjects.removeWhere((o) => o.id == objectId);
           notifyListeners();
         }
         return true;
       }
 
-      _setError(
-          'ApproveAssignment failed: ${resp.statusCode} ${resp.body}');
+      _setError('ApproveAssignment failed: ${resp.statusCode} ${resp.body}');
       return false;
     } catch (e) {
       _setError('Error approving assignment: $e');
@@ -3237,15 +3278,12 @@ class MFilesService extends ChangeNotifier {
     required int objectId,
     required int classId,
   }) async {
-    if (selectedVault == null ||
-        accessToken == null ||
-        mfilesUserId == null) {
+    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
       return false;
     }
 
     try {
-      final url = Uri.parse(
-          '$baseUrl/api/Assignment/CompleteAssignment');
+      final url = Uri.parse('$baseUrl/api/Assignment/CompleteAssignment');
 
       final body = {
         "vaultGuid": vaultGuidWithBraces,
@@ -3255,8 +3293,7 @@ class MFilesService extends ChangeNotifier {
       };
 
       final resp = await _authenticatedRequest(
-        () => http.post(url,
-            headers: _authHeaders, body: jsonEncode(body)),
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
       );
 
       if (resp.statusCode == 200 ||
@@ -3267,8 +3304,7 @@ class MFilesService extends ChangeNotifier {
         return true;
       }
 
-      _setError(
-          'Complete assignment failed: ${resp.statusCode} ${resp.body}');
+      _setError('Complete assignment failed: ${resp.statusCode} ${resp.body}');
       return false;
     } catch (e) {
       _setError('Error completing assignment: $e');
@@ -3296,8 +3332,7 @@ class MFilesService extends ChangeNotifier {
       () => http.get(url, headers: _authHeadersNoJson),
     );
 
-    debugPrint(
-        '📋 fetchClassTemplate status: ${resp.statusCode}');
+    debugPrint('📋 fetchClassTemplate status: ${resp.statusCode}');
     debugPrint('📋 fetchClassTemplate body: ${resp.body}');
 
     if (resp.statusCode == 200) {
@@ -3313,11 +3348,11 @@ class MFilesService extends ChangeNotifier {
     }
 
     throw Exception(
-        'fetchClassTemplate failed: ${resp.statusCode} ${resp.body}');
+      'fetchClassTemplate failed: ${resp.statusCode} ${resp.body}',
+    );
   }
 
-  Future<void> createObjectFromTemplate(
-      Map<String, dynamic> payload) async {
+  Future<void> createObjectFromTemplate(Map<String, dynamic> payload) async {
     if (accessToken == null || mfilesUserId == null) {
       throw Exception('Session not ready');
     }
@@ -3346,8 +3381,7 @@ class MFilesService extends ChangeNotifier {
     debugPrint('📤 Full JSON body: ${jsonEncode(payload)}');
 
     final resp = await _authenticatedRequest(
-      () => http.post(url,
-          headers: _authHeaders, body: jsonEncode(payload)),
+      () => http.post(url, headers: _authHeaders, body: jsonEncode(payload)),
     );
 
     debugPrint('📨 createObjectFromTemplate status: ${resp.statusCode}');
@@ -3355,7 +3389,8 @@ class MFilesService extends ChangeNotifier {
 
     if (resp.statusCode != 200 && resp.statusCode != 201) {
       throw Exception(
-          'createObjectFromTemplate failed: ${resp.statusCode} ${resp.body}');
+        'createObjectFromTemplate failed: ${resp.statusCode} ${resp.body}',
+      );
     }
 
     // ── Parse the new object's ID from the response and patch properties ──
@@ -3368,7 +3403,8 @@ class MFilesService extends ChangeNotifier {
     try {
       final decoded = jsonDecode(resp.body);
       if (decoded is Map) {
-        final raw = decoded['objID'] ??
+        final raw =
+            decoded['objID'] ??
             decoded['objectId'] ??
             decoded['ObjectId'] ??
             decoded['id'] ??
@@ -3384,15 +3420,24 @@ class MFilesService extends ChangeNotifier {
       return;
     }
 
-    debugPrint('✅ New object ID: $newObjectId — patching ${props.length} props');
+    debugPrint(
+      '✅ New object ID: $newObjectId — patching ${props.length} props',
+    );
 
     // Convert the template payload props into the format updateObjectProps expects
-    final patchProps = props.map<Map<String, dynamic>>((p) => {
-      'id': p['propId'],
-      'value': p['value'].toString(),
-      'datatype': (p['propertytype'] as String)
-          .replaceAll('MFDataType', 'MFDatatype'),
-    }).toList();
+    final patchProps =
+        props
+            .map<Map<String, dynamic>>(
+              (p) => {
+                'id': p['propId'],
+                'value': p['value'].toString(),
+                'datatype': (p['propertytype'] as String).replaceAll(
+                  'MFDataType',
+                  'MFDatatype',
+                ),
+              },
+            )
+            .toList();
 
     final classId = payload['ClassID'] as int? ?? 0;
 
@@ -3437,7 +3482,8 @@ class MFilesService extends ChangeNotifier {
     if (resp.statusCode == 404) return [];
 
     throw Exception(
-        'fetchClassTemplateProps failed: ${resp.statusCode} ${resp.body}');
+      'fetchClassTemplateProps failed: ${resp.statusCode} ${resp.body}',
+    );
   }
 
   Future<List<Map<String, dynamic>>> fetchAllTemplates({
@@ -3447,9 +3493,7 @@ class MFilesService extends ChangeNotifier {
       throw Exception('Session not ready');
     }
 
-    final url = Uri.parse(
-      '$baseUrl/api/Templates/GetTemplate/$vaultGuid',
-    );
+    final url = Uri.parse('$baseUrl/api/Templates/GetTemplate/$vaultGuid');
 
     debugPrint('📋 fetchAllTemplates URL: $url');
 
@@ -3470,7 +3514,8 @@ class MFilesService extends ChangeNotifier {
     if (resp.statusCode == 404) return [];
 
     throw Exception(
-        'fetchAllTemplates failed: ${resp.statusCode} ${resp.body}');
+      'fetchAllTemplates failed: ${resp.statusCode} ${resp.body}',
+    );
   }
 
   // ==================== DSS / e-SIGN ====================
@@ -3491,18 +3536,19 @@ class MFilesService extends ChangeNotifier {
   }) async {
     if (accessToken == null) throw Exception('Session not ready');
 
-    final url = Uri.parse(
-        '$baseUrl/api/objectinstance/DSSPostObjectFile');
+    final url = Uri.parse('$baseUrl/api/objectinstance/DSSPostObjectFile');
 
     if (kDebugMode) {
-      debugPrint('📤 DSSPostObjectFile → objectId=$objectId '
-          'fileId=$fileId signer=$signerEmail');
+      debugPrint(
+        '📤 DSSPostObjectFile → objectId=$objectId '
+        'fileId=$fileId signer=$signerEmail',
+      );
     }
 
     final resp = await _authenticatedRequest(
       () => http.post(
         url,
-        headers: _dssHeaders,   // ← DSS JWT, not EDMS token
+        headers: _dssHeaders, // ← DSS JWT, not EDMS token
         body: jsonEncode({
           'objectid': objectId,
           'classId': classId,
@@ -3515,14 +3561,14 @@ class MFilesService extends ChangeNotifier {
     );
 
     if (kDebugMode) {
-      debugPrint(
-          '📨 DSSPostObjectFile status: ${resp.statusCode}');
+      debugPrint('📨 DSSPostObjectFile status: ${resp.statusCode}');
       debugPrint('📨 DSSPostObjectFile body: ${resp.body}');
     }
 
     if (resp.statusCode < 200 || resp.statusCode >= 300) {
       throw Exception(
-          'DSSPostObjectFile failed [${resp.statusCode}]: ${resp.body}');
+        'DSSPostObjectFile failed [${resp.statusCode}]: ${resp.body}',
+      );
     }
   }
 
@@ -3543,11 +3589,15 @@ class MFilesService extends ChangeNotifier {
   }) async {
     if (accessToken == null) throw Exception('Session not ready');
 
-    final url = Uri.parse('$baseUrl/api/objectinstance/DSSSelfSignPostObjectFile');
+    final url = Uri.parse(
+      '$baseUrl/api/objectinstance/DSSSelfSignPostObjectFile',
+    );
 
     if (kDebugMode) {
-      debugPrint('✍️  DSSSelfSign → objectId=$objectId '
-          'fileId=$fileId userId=$userId email=$signerEmail');
+      debugPrint(
+        '✍️  DSSSelfSign → objectId=$objectId '
+        'fileId=$fileId userId=$userId email=$signerEmail',
+      );
     }
 
     final resp = await _authenticatedRequest(
@@ -3585,108 +3635,152 @@ class MFilesService extends ChangeNotifier {
 
   // ==================== OBJECT VERSIONS ====================
 
-Future<List<ObjectVersion>> fetchObjectVersions({
-  required int displayObjectId,
-  required int classId,
-}) async {
-  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-    throw Exception('Session not ready');
-  }
-
-  final url = Uri.parse(
-    '$baseUrl/api/ObjectVersions/GetObjectVesions'
-    '/$vaultGuidWithBraces/$displayObjectId/$classId/$mfilesUserId',
-  );
-
-  debugPrint('📋 fetchObjectVersions URL: $url');
-
-  final resp = await _authenticatedRequest(
-    () => http.get(url, headers: _authHeadersNoJson),
-  );
-
-  if (resp.statusCode != 200) {
-    throw Exception('GetObjectVersions failed: ${resp.statusCode} ${resp.body}');
-  }
-
-  final decoded = json.decode(resp.body);
-  if (decoded is! List) return <ObjectVersion>[];
-
-  return decoded
-      .whereType<Map<String, dynamic>>()
-      .map(ObjectVersion.fromJson)
-      .toList();
-}
-
-Future<({List<int> bytes, String? contentType})> fetchObjectFileVersion({
-  required int displayObjectId,
-  required int versionId,
-  required int fileId,
-  required int classId,
-}) async {
-  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-    throw Exception('Session not ready');
-  }
-
-  final url = Uri.parse(
-    '$baseUrl/api/ObjectVersions/GetObjectFileVersion'
-    '/$vaultGuidWithBraces/$displayObjectId/$versionId/$fileId/$classId/$mfilesUserId',
-  );
-
-  debugPrint('📥 fetchObjectFileVersion URL: $url');
-
-  final resp = await _authenticatedRequest(
-    () => http.get(url, headers: _authHeadersNoJson),
-  );
-
-  if (resp.statusCode != 200) {
-    throw Exception('GetObjectFileVersion failed: ${resp.statusCode} ${resp.body}');
-  }
-
-  return (
-    bytes: resp.bodyBytes.toList(),
-    contentType: resp.headers['content-type'],
-  );
-}
-
-Future<bool> rollbackToVersion({
-  required int objectId,
-  required int classId,
-  required int versionId,
-}) async {
-  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
-    _setError('Session not ready');
-    return false;
-  }
-
-  try {
-    final url = Uri.parse('$baseUrl/api/ObjectVersions/RollbackToVersion');
-
-    final body = {
-      'vaultGuid': vaultGuidWithBraces,
-      'objectId': objectId,
-      'classId': classId,
-      'userID': mfilesUserId,
-      'versionID': versionId,
-    };
-
-    debugPrint('🔄 rollbackToVersion URL: $url');
-    debugPrint('📦 Body: ${jsonEncode(body)}');
-
-    final resp = await _authenticatedRequest(
-      () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
-    );
-
-    if (resp.statusCode == 200 || resp.statusCode == 201 || resp.statusCode == 204) {
-      return true;
+  Future<List<ObjectVersion>> fetchObjectVersions({
+    required int displayObjectId,
+    required int classId,
+  }) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      throw Exception('Session not ready');
     }
 
-    _setError('Rollback failed: ${resp.statusCode} ${resp.body}');
-    return false;
-  } catch (e) {
-    _setError('Error rolling back: $e');
-    return false;
+    final url = Uri.parse(
+      '$baseUrl/api/ObjectVersions/GetObjectVesions'
+      '/$vaultGuidWithBraces/$displayObjectId/$classId/$mfilesUserId',
+    );
+
+    debugPrint('📋 fetchObjectVersions URL: $url');
+
+    final resp = await _authenticatedRequest(
+      () => http.get(url, headers: _authHeadersNoJson),
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'GetObjectVersions failed: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    final decoded = json.decode(resp.body);
+    if (decoded is! List) return <ObjectVersion>[];
+
+    return decoded
+        .whereType<Map<String, dynamic>>()
+        .map(ObjectVersion.fromJson)
+        .toList();
   }
-}
+
+  Future<({List<int> bytes, String? contentType})> fetchObjectFileVersion({
+    required int displayObjectId,
+    required int versionId,
+    required int fileId,
+    required int classId,
+  }) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      throw Exception('Session not ready');
+    }
+
+    final url = Uri.parse(
+      '$baseUrl/api/ObjectVersions/GetObjectFileVersion'
+      '/$vaultGuidWithBraces/$displayObjectId/$versionId/$fileId/$classId/$mfilesUserId',
+    );
+
+    debugPrint('📥 fetchObjectFileVersion URL: $url');
+
+    final resp = await _authenticatedRequest(
+      () => http.get(url, headers: _authHeadersNoJson),
+    );
+
+    if (resp.statusCode != 200) {
+      throw Exception(
+        'GetObjectFileVersion failed: ${resp.statusCode} ${resp.body}',
+      );
+    }
+
+    // Endpoint wraps the file as JSON: { "base64": "...", "extension": ".pdf" }
+    final decoded = jsonDecode(resp.body) as Map<String, dynamic>;
+    final b64 = decoded['base64'] as String?;
+    if (b64 == null || b64.isEmpty) {
+      throw Exception('GetObjectFileVersion: response missing base64 payload');
+    }
+
+    return (
+      bytes: base64Decode(b64),
+      contentType: resp.headers['content-type'],
+    );
+  }
+
+  Future<bool> rollbackToVersion({
+    required int objectId,
+    required int classId,
+    required int versionId,
+  }) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      _setError('Session not ready');
+      return false;
+    }
+
+    try {
+      final url = Uri.parse('$baseUrl/api/ObjectVersions/RollbackToVersion');
+
+      final body = {
+        'vaultGuid': vaultGuidWithBraces,
+        'objectId': objectId,
+        'classId': classId,
+        'userID': mfilesUserId,
+        'versionID': versionId,
+      };
+
+      debugPrint('🔄 rollbackToVersion URL: $url');
+      debugPrint('📦 Body: ${jsonEncode(body)}');
+
+      final resp = await _authenticatedRequest(
+        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
+      );
+
+      if (resp.statusCode == 200 ||
+          resp.statusCode == 201 ||
+          resp.statusCode == 204) {
+        return true;
+      }
+
+      _setError('Rollback failed: ${resp.statusCode} ${resp.body}');
+      return false;
+    } catch (e) {
+      _setError('Error rolling back: $e');
+      return false;
+    }
+  }
+
+  Future<String> downloadAndOpenObjectVersionFile({
+    required int displayObjectId,
+    required int versionId,
+    required int fileId,
+    required int classId,
+    required String fileTitle,
+    required String extension,
+  }) async {
+    final result = await fetchObjectFileVersion(
+      displayObjectId: displayObjectId,
+      versionId: versionId,
+      fileId: fileId,
+      classId: classId,
+    );
+
+    final filename = _safeFilename(fileTitle, extension, fileId);
+    final dir = await getTemporaryDirectory();
+    final filePath = '${dir.path}/$filename';
+
+    final file = File(filePath);
+    debugPrint('📝 first bytes: ${result.bytes.take(8).toList()}');
+    await file.writeAsBytes(result.bytes, flush: true);
+
+    final opened = await OpenFilex.open(filePath);
+    if (opened.type != ResultType.done) {
+      throw Exception(opened.message);
+    }
+
+    return filePath;
+  }
 }
 
 // ==================== MODELS (kept outside service) ====================
@@ -3725,28 +3819,26 @@ class WorkflowInfo {
   });
 
   factory WorkflowInfo.fromJson(Map<String, dynamic> m) {
-    final next = (m['nextStates'] is List)
-        ? (m['nextStates'] as List)
-            .whereType<Map<String, dynamic>>()
-            .map(WorkflowStateOption.fromJson)
-            .toList()
-        : <WorkflowStateOption>[];
+    final next =
+        (m['nextStates'] is List)
+            ? (m['nextStates'] as List)
+                .whereType<Map<String, dynamic>>()
+                .map(WorkflowStateOption.fromJson)
+                .toList()
+            : <WorkflowStateOption>[];
 
     return WorkflowInfo(
-      workflowTitle:
-          (m['workflowTitle'] as String?) ?? '',
-      workflowId:
-          (m['workflowId'] as num?)?.toInt() ?? 0,
+      workflowTitle: (m['workflowTitle'] as String?) ?? '',
+      workflowId: (m['workflowId'] as num?)?.toInt() ?? 0,
       currentStateId:
           (m['currentStateid'] as num?)?.toInt() ??
-              (m['currentStateId'] as num?)?.toInt() ??
-              0,
-      currentStateTitle:
-          (m['currentStateTitle'] as String?) ?? '',
-      assignmentDesc:
-          (m['assignmentdesc'] as String?) ?? '',
+          (m['currentStateId'] as num?)?.toInt() ??
+          0,
+      currentStateTitle: (m['currentStateTitle'] as String?) ?? '',
+      assignmentDesc: (m['assignmentdesc'] as String?) ?? '',
       nextStates: next,
-      isAssignedToMe: (m['isAssignedToMe'] as bool?) ??
+      isAssignedToMe:
+          (m['isAssignedToMe'] as bool?) ??
           (m['assignedToCurrentUser'] as bool?) ??
           (m['isAssignedToCurrentUser'] as bool?) ??
           false,
@@ -3769,12 +3861,10 @@ class WorkflowOption {
 
     String toStr(dynamic v) => (v ?? '').toString();
 
-    final id = toInt(
-        m['workflowId'] ?? m['id'] ?? m['workflowID']);
-    final title = toStr(m['workflowTitle'] ??
-        m['title'] ??
-        m['name'] ??
-        m['workflowName']);
+    final id = toInt(m['workflowId'] ?? m['id'] ?? m['workflowID']);
+    final title = toStr(
+      m['workflowTitle'] ?? m['title'] ?? m['name'] ?? m['workflowName'],
+    );
 
     return WorkflowOption(id: id, title: title);
   }
@@ -3784,22 +3874,22 @@ class WorkflowDefinition {
   final int workflowId;
   final List<WorkflowStateOption> states;
 
-  WorkflowDefinition({
-    required this.workflowId,
-    required this.states,
-  });
+  WorkflowDefinition({required this.workflowId, required this.states});
 
   int get initialStateId => states.first.id;
 
   factory WorkflowDefinition.fromJson(Map<String, dynamic> m) {
     return WorkflowDefinition(
       workflowId: (m['workflowId'] as num).toInt(),
-      states: (m['states'] as List)
-          .map((s) => WorkflowStateOption(
-                id: (s['stateId'] as num).toInt(),
-                title: s['stateName'],
-              ))
-          .toList(),
+      states:
+          (m['states'] as List)
+              .map(
+                (s) => WorkflowStateOption(
+                  id: (s['stateId'] as num).toInt(),
+                  title: s['stateName'],
+                ),
+              )
+              .toList(),
     );
   }
 }

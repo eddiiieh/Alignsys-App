@@ -14,6 +14,7 @@ import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
 import 'package:mfiles_app/widgets/processing_dialog.dart';
 import 'package:mfiles_app/widgets/relationships_dropdown.dart';
+import 'package:mfiles_app/widgets/version_history_sheet.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_content_item.dart';
@@ -1010,7 +1011,16 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           onSelected: (value) async {
             switch (value) {
               case 'history':
-                // TODO: Version History
+                if (_selectedObjects.length == 1) {
+                  final obj = _selectedObjects.values.first;
+                  _clearSelection();
+                  showVersionHistorySheet(
+                    context,
+                    obj: obj,
+                    onRolledBack: () {
+                    },
+                  );
+                }
                 break;
                 
               case 'download':

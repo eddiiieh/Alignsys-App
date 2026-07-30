@@ -20,6 +20,7 @@ class DocumentPreviewScreen extends StatefulWidget {
   final String extension;
   final String reportGuid;
   final bool canDownload;
+  final int? versionId;
 
   const DocumentPreviewScreen({
     super.key,
@@ -31,6 +32,7 @@ class DocumentPreviewScreen extends StatefulWidget {
     required this.extension,
     required this.reportGuid,
     this.canDownload = false,
+    this.versionId,
   });
 
   @override
@@ -87,11 +89,32 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
   Future<File> _downloadFile() async {
     final svc = context.read<MFilesService>();
 
+    // ── Version-specific preview: bypass cache. fileId is stable across
+    // versions, so caching by fileId alone would serve the wrong version. ──
+    if (widget.versionId != null) {
+      debugPrint('📥 Fetching version ${widget.versionId} for fileId=${widget.fileId}');
+
+      final result = await svc.fetchObjectFileVersion(
+        displayObjectId: widget.displayObjectId,
+        versionId: widget.versionId!,
+        fileId: widget.fileId,
+        classId: widget.classId,
+      );
+
+      final extToUse = _cleanExt(widget.extension);
+      final filename = _safeFilename(widget.fileTitle, extToUse, widget.fileId);
+      final dir = await getTemporaryDirectory();
+      final filePath = '${dir.path}/$filename';
+
+      final file = File(filePath);
+      await file.writeAsBytes(result.bytes, flush: true);
+      return file;
+    }
+
     // ── Cache hit: return immediately ────────────────────────────────
     final cached = svc.cachedFile(widget.fileId);
     if (cached != null && await cached.exists()) {
       debugPrint('📦 File cache hit for fileId=${widget.fileId}');
-      // CHANGED: store reference for the "Open again" button
       return cached;
     }
 
@@ -117,7 +140,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     // ── Store in cache ────────────────────────────────────────────────
     svc.cacheFile(widget.fileId, file);
 
-    // CHANGED: store reference
     return file;
   }
 

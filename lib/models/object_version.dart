@@ -52,6 +52,8 @@ class ObjectVersion {
   /// Convenience: first file, or null if none attached.
   ObjectVersionFile? get firstFile => files.isNotEmpty ? files.first : null;
 
+  DateTime? get lastModifiedUtcParsed => _parseMfilesTimestamp(lastModifiedUtc);
+
   factory ObjectVersion.fromJson(Map<String, dynamic> m) {
     final rawFiles = m['objectFiles'] as List? ?? [];
     return ObjectVersion(
@@ -69,5 +71,34 @@ class ObjectVersion {
           .map(ObjectVersionFile.fromJson)
           .toList(),
     );
+  }
+}
+
+/// Parses M-Files' "M/d/yyyy h:mm a" timestamp format (e.g. "3/25/2026 9:24 AM")
+/// without pulling in intl. Returns null on any mismatch.
+DateTime? _parseMfilesTimestamp(String raw) {
+  final s = raw.trim();
+  if (s.isEmpty) return null;
+
+  final match = RegExp(
+    r'^(\d{1,2})/(\d{1,2})/(\d{4})\s+(\d{1,2}):(\d{2})\s*(AM|PM)$',
+    caseSensitive: false,
+  ).firstMatch(s);
+  if (match == null) return null;
+
+  final month = int.parse(match.group(1)!);
+  final day = int.parse(match.group(2)!);
+  final year = int.parse(match.group(3)!);
+  var hour = int.parse(match.group(4)!);
+  final minute = int.parse(match.group(5)!);
+  final meridiem = match.group(6)!.toUpperCase();
+
+  if (meridiem == 'PM' && hour != 12) hour += 12;
+  if (meridiem == 'AM' && hour == 12) hour = 0;
+
+  try {
+    return DateTime(year, month, day, hour, minute);
+  } catch (_) {
+    return null;
   }
 }

@@ -22,20 +22,8 @@ class ObjectInfoDropdown extends StatefulWidget {
 class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   Future<Map<String, dynamic>>? _infoFuture;
 
-  // Maps propId → friendly display name
   final Map<int, String> _propNameById = {};
 
-  // ── FIX: We no longer gate on a whitelist from classProperties.
-  //         Instead we show every prop the API returns, except a small
-  //         exclusion set (system / noisy props).
-  //
-  //  Excluded:
-  //    100 = Class  (already shown in "Basic Information" as classTypeName)
-  //    20  = Created by
-  //    21  = Last modified by
-  //    23  = Status changed by
-  //    25  = Marked for archiving
-  //    38  = Single file  (internal flag)
   static const Set<int> _excludePropIds = {20, 21, 23, 25, 38, 100};
 
   bool _showAllProps = false;
@@ -74,8 +62,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
   Future<Map<String, dynamic>> _loadInfo() async {
     final svc = context.read<MFilesService>();
 
-    // Always try to fetch classProperties so we get friendly names,
-    // but don't gate visibility on the result.
     try {
       await svc.fetchClassProperties(
           widget.obj.objectTypeId, widget.obj.classId);
@@ -84,7 +70,6 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         ..addAll({0: 'Name or title', 100: 'Class'})
         ..addEntries(svc.classProperties.map((p) => MapEntry(p.id, p.title)));
     } catch (_) {
-      // Non-fatal — we'll fall back to the names embedded in the API response.
       _propNameById
         ..clear()
         ..addAll({0: 'Name or title', 100: 'Class'});
@@ -98,13 +83,11 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
       objectTypeId: widget.obj.objectTypeId,
     ).timeout(const Duration(seconds: 15), onTimeout: () => []);
 
-    // Enrich _propNameById from the raw response (handles cases where
-    // classProperties is empty or mismatched).
     for (final m in propsRaw) {
       final int? id = _extractId(m);
       if (id == null) continue;
-      // Only overwrite if we don't already have a name from classProperties
-      if (!_propNameById.containsKey(id) || _propNameById[id]!.startsWith('Property ')) {
+      if (!_propNameById.containsKey(id) ||
+          _propNameById[id]!.startsWith('Property ')) {
         final candidate = _firstName(m);
         if (candidate != null) _propNameById[id] = candidate;
       }
@@ -220,77 +203,61 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
             padding: const EdgeInsets.all(12),
             child: Text(
               'Error loading info: ${snap.error}',
-              style:
-                  TextStyle(color: Colors.red.shade700, fontSize: 12),
+              style: TextStyle(color: Colors.red.shade700, fontSize: 12),
             ),
           );
         }
 
         final propsRaw = (snap.data!['props'] as List);
 
-        // ── FIX: show all props except the excluded set ──
         final metaProps = propsRaw.where((prop) {
           final int? id = _extractId(prop as Map<String, dynamic>);
           if (id == null) return false;
           if (_excludePropIds.contains(id)) return false;
-
-          // Also skip props whose value is completely empty / null
           final val = _extractValue(prop['value']);
           return val.trim().isNotEmpty;
         }).toList();
 
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceLight,
-            borderRadius: BorderRadius.circular(8),
-          ),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildSectionTitle('Basic Information'),
-              const SizedBox(height: 8),
+              _buildEyebrow('Basic Information'),
+              const SizedBox(height: 6),
               _buildInfoRow('Title', widget.obj.title),
               _buildInfoRow('Class', widget.obj.classTypeName),
-              _buildInfoRow(
-                  'Created', _formatDate(widget.obj.createdUtc)),
+              _buildInfoRow('Created', _formatDate(widget.obj.createdUtc)),
 
-              const SizedBox(height: 12),
-              Divider(height: 1, color: Colors.grey.shade300),
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
+              Divider(height: 1, color: Colors.grey.shade100),
+              const SizedBox(height: 16),
 
-              _buildSectionTitle('Metadata'),
-              const SizedBox(height: 8),
-              // NEW
+              _buildEyebrow('Metadata'),
+              const SizedBox(height: 6),
               if (metaProps.isEmpty)
                 Text(
                   'No metadata available',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                 )
               else ...[
-                // Slice the list
-                ...(_showAllProps ? metaProps : metaProps.take(_initialPropCount).toList())
+                ...(_showAllProps
+                        ? metaProps
+                        : metaProps.take(_initialPropCount).toList())
                     .map((prop) {
-                      final name = _friendlyPropLabel(prop as Map<String, dynamic>);
-                      final value = _extractValue(prop['value']);
-                      return _buildInfoRow(name, value);
-                    }),
+                  final name =
+                      _friendlyPropLabel(prop as Map<String, dynamic>);
+                  final value = _extractValue(prop['value']);
+                  return _buildInfoRow(name, value);
+                }),
 
-                // Show more / show less button
                 if (metaProps.length > _initialPropCount) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
                   GestureDetector(
-                    onTap: () => setState(() => _showAllProps = !_showAllProps),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                          color: AppColors.primary.withOpacity(0.20),
-                          width: 0.5,
-                        ),
-                      ),
+                    onTap: () =>
+                        setState(() => _showAllProps = !_showAllProps),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -298,8 +265,8 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                             _showAllProps
                                 ? Icons.keyboard_arrow_up_rounded
                                 : Icons.keyboard_arrow_down_rounded,
-                            size: 15,
-                            color: AppColors.primary,
+                            size: 16,
+                            color: Colors.grey.shade600,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -309,7 +276,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
+                              color: Colors.grey.shade600,
                             ),
                           ),
                         ],
@@ -325,12 +292,13 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
     );
   }
 
-  Widget _buildSectionTitle(String title) {
+  Widget _buildEyebrow(String title) {
     return Text(
-      title,
-      style: const TextStyle(
-        fontSize: 13,
+      title.toUpperCase(),
+      style: TextStyle(
+        fontSize: 11,
         fontWeight: FontWeight.w700,
+        letterSpacing: 0.8,
         color: AppColors.primary,
       ),
     );
@@ -338,7 +306,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
 
   Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -358,6 +326,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               style: const TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
+                color: Color(0xFF1A1A1A),
               ),
             ),
           ),

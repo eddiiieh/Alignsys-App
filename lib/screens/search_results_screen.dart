@@ -10,6 +10,7 @@ import 'package:mfiles_app/widgets/network_banner.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
 import 'package:mfiles_app/widgets/processing_dialog.dart';
 import 'package:mfiles_app/widgets/relationships_dropdown.dart';
+import 'package:mfiles_app/widgets/version_history_sheet.dart';
 import 'package:provider/provider.dart';
 
 import '../models/view_object.dart';
@@ -57,6 +58,13 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   bool _searchWhileSelecting = false;
 
   bool _showSelectedOnly = false;
+
+  // Advanced filter state
+  final Set<int> _selectedObjectTypeIds = {};
+  int? _selectedClassId;
+
+  bool get _hasActiveFilters =>
+      _selectedObjectTypeIds.isNotEmpty || _selectedClassId != null;
 
   bool _isProcessing = false;
 
@@ -161,7 +169,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     });
 
     try {
-      await svc.searchVault(query);
+      if (_hasActiveFilters) {
+        await svc.advancedSearchVault(
+          query: query,
+          objectTypeIds: _selectedObjectTypeIds.toList(),
+          classId: _selectedClassId,
+        );
+      } else {
+        await svc.searchVault(query);
+      }
       if (!mounted) return;
 
       final results = List<ViewObject>.from(svc.searchResults);
@@ -478,6 +494,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         },
       ),
       actions: [
+        _buildFilterIcon(),
         if (_controller.text.isNotEmpty)
           IconButton(
             icon: const Icon(Icons.close, color: Colors.white70, size: 20),
@@ -495,6 +512,267 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           ),
         const SizedBox(width: 4),
       ],
+    );
+  }
+
+  // Filter icon with indicator for active filters
+  Widget _buildFilterIcon() {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.tune_rounded, color: Colors.white),
+          onPressed: _openFilterSheet,
+        ),
+        if (_hasActiveFilters)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Colors.orangeAccent,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Future<void> _openFilterSheet() async {
+    final svc = context.read<MFilesService>();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      if (svc.objectTypes.isEmpty) await svc.fetchObjectTypes();
+      await Future.wait(
+        svc.objectTypes.map((ot) => svc.fetchObjectClasses(ot.id)),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to load filter options: $e')),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+    Navigator.of(context, rootNavigator: true).pop();
+
+    final allClasses = svc.getAllClasses();
+
+    // Local working copies so closing without Apply doesn't change state
+    Set<int> workingTypes = Set.from(_selectedObjectTypeIds);
+    int? workingClassId = _selectedClassId;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheet) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 14,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.tune_rounded,
+                      color: AppColors.primary,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Filter Search',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.grey),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Flexible(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Object Type',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      ...svc.objectTypes.map((ot) {
+                        final checked = workingTypes.contains(ot.id);
+                        return CheckboxListTile(
+                          value: checked,
+                          onChanged: (v) {
+                            setSheet(() {
+                              if (v == true) {
+                                workingTypes.add(ot.id);
+                              } else {
+                                workingTypes.remove(ot.id);
+                              }
+                            });
+                          },
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          activeColor: AppColors.primary,
+                          title: Text(
+                            ot.displayName,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                        );
+                      }),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Class',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      DropdownButtonFormField<int?>(
+                        value: workingClassId,
+                        isExpanded: true,
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: AppColors.surfaceLight,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 10,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                        ),
+                        hint: const Text('Any class'),
+                        items: [
+                          const DropdownMenuItem<int?>(
+                            value: null,
+                            child: Text('Any class'),
+                          ),
+                          ...allClasses.map(
+                            (c) => DropdownMenuItem<int?>(
+                              value: c.id,
+                              child: Text(c.displayName, overflow: TextOverflow.ellipsis),
+                            ),
+                          ),
+                        ],
+                        onChanged: (v) => setSheet(() => workingClassId = v),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () {
+                        setSheet(() {
+                          workingTypes = {};
+                          workingClassId = null;
+                        });
+                      },
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey.shade700,
+                        side: BorderSide(color: Colors.grey.shade300),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('Clear'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        setState(() {
+                          _selectedObjectTypeIds
+                            ..clear()
+                            ..addAll(workingTypes);
+                          _selectedClassId = workingClassId;
+                        });
+                        Navigator.pop(ctx);
+                        if (_lastQuery.isNotEmpty) {
+                          _runSearch(_lastQuery);
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text('Apply'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -557,7 +835,16 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           onSelected: (value) async {
             switch (value) {
               case 'history':
-                // TODO
+                if (_selectedObjects.length == 1) {
+                  final obj = _selectedObjects.values.first;
+                  _clearSelection();
+                  showVersionHistorySheet(
+                    context,
+                    obj: obj,
+                    onRolledBack: () {
+                    },
+                  );
+                }
                 break;
 
               case 'download':

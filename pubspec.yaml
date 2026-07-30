@@ -2,7 +2,7 @@ name: mfiles_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.8+19
+version: 1.0.9+20
 
 environment:
   sdk: ^3.7.2
@@ -20,6 +20,7 @@ dependencies:
   path_provider: ^2.1.2
   connectivity_plus: ^7.1.1 
   url_launcher: ^6.3.0
+  launcher_shortcuts: ^1.1.4
 
   # DSS dependencies
   flutter_secure_storage: ^10.2.0
@@ -56,6 +57,7 @@ flutter:
     - assets/alignsysnew.png
     - assets/alignsysapplogo.png
     - assets/certs/sectigo_r46.crt
+    - assets/shortcuts/
 
 flutter_launcher_icons:
   android: true

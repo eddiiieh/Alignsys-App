@@ -26,6 +26,7 @@ import 'package:mfiles_app/screens/document_preview_screen.dart';
 import '../utils/error_messages.dart';
 import '../utils/scan_document_flow.dart';
 import 'package:mfiles_app/widgets/batch_actions_menu.dart';
+import 'package:mfiles_app/widgets/version_history_sheet.dart';
 
 enum _MoreSubTab { trash, reports }
 
@@ -836,9 +837,19 @@ class _HomeScreenState extends State<HomeScreen>
           onSelected: (value) async {
             switch (value) {
               case 'history':
-                // TODO
+                if (_selectedObjects.length == 1) {
+                  final obj = _selectedObjects.values.first;
+                  _clearSelection();
+                  showVersionHistorySheet(
+                    context,
+                    obj: obj,
+                    onRolledBack: () {
+                      _refreshActiveTab();
+                    },
+                  );
+                }
                 break;
-
+                
               case 'download':
                 _setProcessing(true, "Downloading files...");
                 try {

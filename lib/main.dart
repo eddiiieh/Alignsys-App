@@ -13,6 +13,7 @@ import 'dss/services/dss_api_service.dart';
 import 'navigation/app_navigator.dart';
 
 import 'security/trusted_http.dart'; //ADDED: Import the TrustedHttpOverrides class
+import 'package:launcher_shortcuts/launcher_shortcuts.dart';
 
 // 🛑 CHANGED: added 'async' here
 void main() async {
@@ -20,6 +21,37 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await initializeTrustedCertificates();
+
+  LauncherShortcuts.setShortcuts([
+    ShortcutItem(
+      type: 'scan',
+      localizedTitle: 'Scan Document',
+      androidConfig: AndroidConfig(
+        icon: 'assets/shortcuts/ic_scan.svg',
+      ),
+    ),
+    ShortcutItem(
+      type: 'create',
+      localizedTitle: 'Create',
+      androidConfig: AndroidConfig(
+        icon: 'assets/shortcuts/ic_create.svg',
+      ),
+    ),
+    ShortcutItem(
+      type: 'search',
+      localizedTitle: 'Search',
+      androidConfig: AndroidConfig(
+        icon: 'assets/shortcuts/ic_search.svg',
+      ),
+    ),
+    ShortcutItem(
+      type: 'assigned',
+      localizedTitle: 'Assigned',
+      androidConfig: AndroidConfig(
+        icon: 'assets/shortcuts/ic_assigned.svg',
+      ),
+    ),
+  ]);
 
   runApp(const MainApp());
 }
