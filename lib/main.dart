@@ -14,6 +14,7 @@ import 'navigation/app_navigator.dart';
 
 import 'security/trusted_http.dart'; //ADDED: Import the TrustedHttpOverrides class
 import 'package:launcher_shortcuts/launcher_shortcuts.dart';
+import 'services/shortcut_router.dart';
 
 // 🛑 CHANGED: added 'async' here
 void main() async {
@@ -21,6 +22,9 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await initializeTrustedCertificates();
+
+  await LauncherShortcuts.initialize();       
+  ShortcutRouter.attachGlobalListener();
 
   LauncherShortcuts.setShortcuts([
     ShortcutItem(

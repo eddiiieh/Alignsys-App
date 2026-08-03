@@ -21,6 +21,7 @@ dependencies:
   connectivity_plus: ^7.1.1 
   url_launcher: ^6.3.0
   launcher_shortcuts: ^1.1.4
+  permission_handler: ^13.0.0
 
   # DSS dependencies
   flutter_secure_storage: ^10.2.0

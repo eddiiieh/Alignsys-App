@@ -8,6 +8,7 @@ import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/template_form_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
+import 'package:mfiles_app/widgets/flashing_dots.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
@@ -27,6 +28,10 @@ import '../utils/error_messages.dart';
 import '../utils/scan_document_flow.dart';
 import 'package:mfiles_app/widgets/batch_actions_menu.dart';
 import 'package:mfiles_app/widgets/version_history_sheet.dart';
+import 'dart:async';
+import 'package:launcher_shortcuts/launcher_shortcuts.dart';
+import 'package:mfiles_app/services/shortcut_router.dart';
+
 
 enum _MoreSubTab { trash, reports }
 
@@ -68,6 +73,8 @@ class _HomeScreenState extends State<HomeScreen>
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   final ScrollController _homeScroll = ScrollController();
+
+  StreamSubscription<String>? _liveShortcutSub;
 
   final TextEditingController _selectionFilterController =
     TextEditingController();
@@ -344,6 +351,12 @@ class _HomeScreenState extends State<HomeScreen>
       }
     });
 
+    _liveShortcutSub = LauncherShortcuts.shortcutStream.listen((type) {
+      if (!mounted) return;
+      _handlePendingAction(ShortcutRouter.parse(type));
+      ShortcutRouter.clearStash();
+    });
+
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadInitialData());
   }
 
@@ -464,6 +477,9 @@ class _HomeScreenState extends State<HomeScreen>
         service.fetchDeletedObjects(),
       ]);
       await service.fetchReportObjects();
+
+      final pending = await ShortcutRouter.consume();
+      if (mounted) _handlePendingAction(pending);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -536,6 +552,7 @@ class _HomeScreenState extends State<HomeScreen>
     _searchController.dispose();
     _searchFocus.dispose();
     super.dispose();
+    _liveShortcutSub?.cancel();
   }
 
   Future<void> _openPreview(ViewObject obj) async {
@@ -1025,26 +1042,20 @@ class _HomeScreenState extends State<HomeScreen>
                       borderRadius: BorderRadius.circular(8),
                       child: Image.asset(
                         'assets/alignsysnew.png',
-                        height: 52,
+                        height: 70,
                         fit: BoxFit.contain,
                       ),
                     ),
                     const SizedBox(height: 40),
-                    const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2.5,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
+                    const FlashingDots(),
+                    const SizedBox(height: 24),
                     Text(
                       'Switching to $_switchingVaultName',
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 14,
+                        fontSize: 16,
                         fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.none,
                       ),
                     ),
                   ],
@@ -1844,6 +1855,32 @@ class _HomeScreenState extends State<HomeScreen>
     if (_moreSubTab == subTab) return;
     setState(() => _moreSubTab = subTab);
     _refreshMoreSubTab(service);
+  }
+
+  // ── Pending shortcut actions ─────────────────────────────────────────────
+  void _handlePendingAction(PendingShortcutAction action) {
+    switch (action) {
+      case PendingShortcutAction.create:
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _showCreateBottomSheet(context),
+        );
+        break;
+      case PendingShortcutAction.scan:
+        WidgetsBinding.instance.addPostFrameCallback((_) => _startDocumentScan());
+        break;
+      case PendingShortcutAction.search:
+        _tabController.animateTo(0); // Home tab, where the search bar lives
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _searchFocus.requestFocus(),
+        );
+        break;
+      case PendingShortcutAction.assigned:
+        _tabController.animateTo(2); // tabs[2] == 'Assigned'
+        _onTabChanged(2);
+        break;
+      case PendingShortcutAction.none:
+        break;
+    }
   }
 
   Widget _buildMoreSubTabButton({
@@ -3596,26 +3633,26 @@ class _HomeScreenState extends State<HomeScreen>
         'Dec',
       ][m];
 
-  // ── Vault switcher ─────────────────────────────────────────────────────────
   void _showVaultSwitcher(BuildContext context) {
-    final service = context.read<MFilesService>();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder:
-          (_) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-            child: SafeArea(
-              top: false,
+      final service = context.read<MFilesService>();
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.3,
+          maxChildSize: 0.85,
+          expand: false,
+          builder: (context, scrollController) {
+            return Container(
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Handle bar
+                  const SizedBox(height: 10),
                   Container(
                     width: 40,
                     height: 4,
@@ -3624,244 +3661,187 @@ class _HomeScreenState extends State<HomeScreen>
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  // Header
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 14),
+                  // Teal header, matching splash branding
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.storage_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
-                        child: const Icon(
-                          Icons.storage_rounded,
-                          color: AppColors.primary,
-                          size: 22,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Switch Repository',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w700,
+                        const SizedBox(width: 12),
+                        const Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Switch Repository',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
                               ),
-                            ),
-                            SizedBox(height: 2),
-                            Text(
-                              'Select a vault to work in',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Color(0xFF64748B),
+                              SizedBox(height: 2),
+                              Text(
+                                'Select a vault to work in',
+                                style: TextStyle(fontSize: 12, color: Colors.white70),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.close, color: Colors.grey.shade500),
-                        onPressed: () => Navigator.pop(context),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () => Navigator.pop(context),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  Divider(height: 1, color: Colors.grey.shade100),
-                  const SizedBox(height: 12),
-                  // Vault list
-                  FutureBuilder<List<Vault>>(
-                    future: service.getUserVaults(),
-                    builder: (context, snapshot) {
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 24),
-                          child: Center(
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: FutureBuilder<List<Vault>>(
+                      future: service.getUserVaults(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(
                             child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        );
-                      }
-                      if (snapshot.hasError) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          child: Text(
-                            'Error loading repositories: ${snapshot.error}',
-                            style: TextStyle(
-                              color: Colors.red.shade700,
-                              fontSize: 13,
+                          );
+                        }
+                        if (snapshot.hasError) {
+                          return Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                'Error loading repositories: ${snapshot.error}',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+                              ),
                             ),
-                          ),
-                        );
-                      }
-                      final vaults = snapshot.data ?? [];
-                      if (vaults.isEmpty) {
-                        return Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 24),
-                          child: Center(
+                          );
+                        }
+                        final vaults = snapshot.data ?? [];
+                        if (vaults.isEmpty) {
+                          return Center(
                             child: Text(
                               'No repositories available',
-                              style: TextStyle(
-                                color: Colors.grey.shade500,
-                                fontSize: 13,
-                              ),
+                              style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
                             ),
-                          ),
-                        );
-                      }
-                      final selectedGuid = service.selectedVault?.guid;
-                      return Column(
-                        children:
-                            vaults.map((v) {
-                              final isSelected = v.guid == selectedGuid;
-                              return Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(12),
-                                  onTap:
-                                      isSelected
-                                          ? null
-                                          : () async {
-                                            Navigator.pop(context);
-                                            setState(() {
-                                              _switchingVault = true;
-                                              _switchingVaultName = v.name;
-                                            });
-                                            try {
-                                              await service.saveSelectedVault(
-                                                v,
-                                              );
-                                              await service.fetchMFilesUserId();
-                                              await service.fetchObjectTypes();
-                                              await service.fetchAllViews();
-                                              await Future.wait([
-                                                service.fetchRecentObjects(),
-                                                service.fetchDeletedObjects(),
-                                                service.fetchAssignedObjects(),
-                                                service.fetchReportObjects(),
-                                              ]);
-                                            } finally {
-                                              if (mounted) {
-                                                setState(
-                                                  () => _switchingVault = false,
-                                                );
-                                              }
-                                            }
-                                          },
-                                  child: Container(
-                                    margin: const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 12,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          isSelected
-                                              ? AppColors.primary.withOpacity(
-                                                0.06,
-                                              )
-                                              : Colors.grey.shade50,
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color:
-                                            isSelected
-                                                ? AppColors.primary.withOpacity(
-                                                  0.3,
-                                                )
-                                                : Colors.grey.shade200,
-                                        width: isSelected ? 1.5 : 1,
+                          );
+                        }
+                        final selectedGuid = service.selectedVault?.guid;
+                        return ListView.separated(
+                          controller: scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          itemCount: vaults.length,
+                          separatorBuilder: (_, __) =>
+                              Divider(height: 1, color: Colors.grey.shade200),
+                          itemBuilder: (context, index) {
+                            final v = vaults[index];
+                            final isSelected = v.guid == selectedGuid;
+                            return InkWell(
+                              onTap: isSelected
+                                  ? null
+                                  : () async {
+                                      Navigator.pop(context);
+                                      setState(() {
+                                        _switchingVault = true;
+                                        _switchingVaultName = v.name;
+                                      });
+                                      try {
+                                        await service.saveSelectedVault(v);
+                                        await service.fetchMFilesUserId();
+                                        await service.fetchObjectTypes();
+                                        await service.fetchAllViews();
+                                        await Future.wait([
+                                          service.fetchRecentObjects(),
+                                          service.fetchDeletedObjects(),
+                                          service.fetchAssignedObjects(),
+                                          service.fetchReportObjects(),
+                                        ]);
+                                      } finally {
+                                        if (mounted) {
+                                          setState(() => _switchingVault = false);
+                                        }
+                                      }
+                                    },
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 13),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: isSelected
+                                            ? AppColors.primary
+                                            : Colors.grey.shade300,
                                       ),
                                     ),
-                                    child: Row(
-                                      children: [
-                                        Container(
-                                          width: 36,
-                                          height: 36,
-                                          decoration: BoxDecoration(
-                                            color:
-                                                isSelected
-                                                    ? AppColors.primary
-                                                        .withOpacity(0.12)
-                                                    : Colors.grey.shade100,
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Center(
-                                            child: Icon(
-                                              Icons.storage_rounded,
-                                              size: 17,
-                                              color:
-                                                  isSelected
-                                                      ? AppColors.primary
-                                                      : Colors.grey.shade500,
-                                            ),
-                                          ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Text(
+                                        v.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontSize: 14.5,
+                                          fontWeight: isSelected
+                                              ? FontWeight.w700
+                                              : FontWeight.w400,
+                                          color: isSelected
+                                              ? AppColors.primary
+                                              : const Color(0xFF1E293B),
                                         ),
-                                        const SizedBox(width: 12),
-                                        Expanded(
-                                          child: Text(
-                                            v.name,
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: TextStyle(
-                                              fontSize: 14,
-                                              fontWeight:
-                                                  isSelected
-                                                      ? FontWeight.w700
-                                                      : FontWeight.w500,
-                                              color:
-                                                  isSelected
-                                                      ? AppColors.primary
-                                                      : const Color(0xFF1E293B),
-                                            ),
-                                          ),
-                                        ),
-                                        if (isSelected)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 3,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.primary
-                                                  .withOpacity(0.10),
-                                              borderRadius:
-                                                  BorderRadius.circular(20),
-                                            ),
-                                            child: const Text(
-                                              'Active',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: AppColors.primary,
-                                              ),
-                                            ),
-                                          )
-                                        else
-                                          Icon(
-                                            Icons.chevron_right_rounded,
-                                            size: 18,
-                                            color: Colors.grey.shade400,
-                                          ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
+                                    if (isSelected)
+                                      const Icon(
+                                        Icons.check_rounded,
+                                        size: 18,
+                                        color: AppColors.primary,
+                                      )
+                                    else
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        size: 18,
+                                        color: Colors.grey.shade400,
+                                      ),
+                                  ],
                                 ),
-                              );
-                            }).toList(),
-                      );
-                    },
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                 ],
               ),
-            ),
-          ),
-    );
-  }
+            );
+          },
+        ),
+      );
+    }
 
   // ── Profile menu ──────────────────────────────────────────────────────────
   void _showProfileMenu(BuildContext context) {
@@ -3894,57 +3874,54 @@ class _HomeScreenState extends State<HomeScreen>
                   const SizedBox(height: 20),
 
                   // ── User header ──────────────────────────────────────────────
-                  Row(
-                    children: [
-                      Container(
-                        width: 48,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.10),
-                          shape: BoxShape.circle,
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(Icons.person_rounded, color: Colors.white, size: 20),
                         ),
-                        child: const Center(
-                          child: Icon(
-                            Icons.person_rounded,
-                            color: AppColors.primary,
-                            size: 24,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "You're logged in as",
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                service.userEmail ?? 'No email on file',
+                                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              service.username ?? 'Unknown',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              service.userEmail ?? 'No email on file',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+                        IconButton(
+                          icon: const Icon(Icons.close, color: Colors.white70),
+                          onPressed: () => Navigator.pop(context),
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
                         ),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.close, color: Colors.grey.shade500),
-                        onPressed: () => Navigator.pop(context),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
 
                   const SizedBox(height: 20),
@@ -4148,46 +4125,102 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _handleLogout(BuildContext context) {
-    showDialog(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (context) => AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              shape: BoxShape.circle,
             ),
-            title: const Text(
-              'Log Out',
-              style: TextStyle(fontWeight: FontWeight.bold),
+            child: Icon(
+              Icons.logout_rounded,
+              size: 28,
+              color: Colors.red.shade500,
             ),
-            content: const Text('Are you sure you want to log out?'),
-            actions: [
-              TextButton(
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Log Out',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Are you sure you want to log out?',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "You'll need to sign in again to access your documents.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+          const SizedBox(height: 4),
+        ],
+      ),
+      actions: [
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton(
                 onPressed: () => Navigator.pop(context),
-                child: Text(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey.shade700,
+                  side: BorderSide(color: Colors.grey.shade300),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text(
                   'Cancel',
-                  style: TextStyle(color: Colors.grey.shade700),
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  elevation: 0,
-                ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
                   context.read<MFilesService>().logout();
                   Navigator.pushReplacementNamed(context, '/login');
                 },
-                child: const Text('Log Out'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade600,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+                child: const Text(
+                  'Log Out',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
-            ],
-          ),
-    );
-  }
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+}
 }
 
 // ── Create entry type ─────────────────────────────────────────────────────────

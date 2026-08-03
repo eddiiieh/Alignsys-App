@@ -5,6 +5,7 @@ import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
+import 'package:permission_handler/permission_handler.dart';
 
 class ScanDocumentFlow {
   ScanDocumentFlow._();
@@ -13,6 +14,14 @@ class ScanDocumentFlow {
   /// Returns null if the user cancels at any step.
   static Future<File?> captureAndConvert(BuildContext context) async {
     try {
+      debugPrint("STEP 0 - Checking camera permission");
+
+      final granted = await _ensureCameraPermission(context);
+      if (!granted) {
+        debugPrint("Camera permission not granted — aborting scan");
+        return null;
+      }
+
       debugPrint("STEP 1 - Opening camera");
 
       // ── Step 1: Camera ────────────────────────────────────────────────────
@@ -112,5 +121,47 @@ class ScanDocumentFlow {
       '(${await pdfFile.length()} bytes)',
     );
     return pdfFile;
+  }
+
+  /// Requests CAMERA permission if needed. Returns true only if the app can
+  /// proceed to open the camera.
+  ///
+  /// Handles the three real states:
+  /// - granted: proceed immediately
+  /// - denied (not yet asked, or previously denied but re-askable): request it
+  /// - permanentlyDenied: Android won't show its own dialog again, so we
+  ///   surface a snackbar that deep-links to this app's Settings page
+  static Future<bool> _ensureCameraPermission(BuildContext context) async {
+    var status = await Permission.camera.status;
+
+    if (status.isGranted) return true;
+
+    if (status.isDenied) {
+      status = await Permission.camera.request();
+      if (status.isGranted) return true;
+    }
+
+    if (status.isPermanentlyDenied || status.isDenied) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Camera access is needed to scan documents. '
+              'Please enable it in Settings.',
+            ),
+            backgroundColor: Colors.orange.shade700,
+            action: SnackBarAction(
+              label: 'Open Settings',
+              textColor: Colors.white,
+              onPressed: openAppSettings,
+            ),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+      return false;
+    }
+
+    return false;
   }
 }
