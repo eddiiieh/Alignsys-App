@@ -2247,12 +2247,13 @@ class _HomeScreenState extends State<HomeScreen>
                           children: [
                             Text(
                               obj.title,
-                              maxLines: 1,
+                              maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
                                 color: Color(0xFF1A1A1A),
+                                height: 1.2,
                               ),
                             ),
                             const SizedBox(height: 4),
@@ -2281,7 +2282,7 @@ class _HomeScreenState extends State<HomeScreen>
                             behavior: HitTestBehavior.opaque,
                             onTap: () => _openPreview(obj),
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: Colors.blueGrey.withOpacity(0.08),
                                 shape: BoxShape.circle,
@@ -2325,7 +2326,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   }),
                               borderRadius: BorderRadius.circular(20),
                               child: Container(
-                                padding: const EdgeInsets.all(8),
+                                padding: const EdgeInsets.all(6),
                                 decoration: BoxDecoration(
                                   color:
                                       infoExpanded

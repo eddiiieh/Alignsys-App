@@ -67,6 +67,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   final Set<int> _approvedUserIds = {};
   final Set<int> _approvingUserIds = {};
 
+  // Captured once so the per-user approval list doesn't flip to the
+  // "Mark as Complete" fallback after the backend clears the assignee
+  // property once every approval is in.
+  List<int>? _assignedIdsSnapshot;
+  Map<int, String> _assignedLabelsSnapshot = {};
+
   bool _headerDetailsExpanded = false;
 
   String _title = '';
@@ -516,13 +522,6 @@ void initState() {
 
     final vms = raw.map(_PropVm.fromJsonLoose).toList();
 
-    // ── ADD THIS ──
-    if (_allowedMetaPropIds.isEmpty) {
-      _allowedMetaPropIds.addAll(
-        vms.map((p) => p.id).where((id) => !_excludeMetaPropIds.contains(id)),
-      );
-    }
-
     _maybeUpdateTitleFromProps(vms);
 
     debugPrint('classProperties count: ${svc.classProperties.length}');
@@ -564,138 +563,178 @@ void initState() {
     showDialog(
       context: context,
       builder: (ctx) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 60),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // ── Header ────────────────────────────────────────────────
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0F6FF),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.lock_outline_rounded,
-                      size: 18, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      'Automatic Permissions',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(ctx),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // ── Header ────────────────────────────────────────────────
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                  border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade200,
-                        borderRadius: BorderRadius.circular(6),
+                        color: AppColors.primary.withOpacity(0.16),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(Icons.close,
-                          size: 16, color: Colors.grey.shade600),
+                      child: const Icon(Icons.lock_outline_rounded,
+                          size: 20, color: AppColors.primary),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Automatic Permissions',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(ctx),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.close,
+                            size: 18, color: Colors.grey.shade600),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
 
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── Object Information ───────────────────────────────
-                  const Text(
-                    'Object Information',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _permKv('Title', _title.isEmpty ? obj.title : _title),
-                        const SizedBox(height: 6),
-                        _permKv('Type', obj.objectTypeName),
-                        const SizedBox(height: 6),
-                        _permKv('Class', obj.classTypeName),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── User Permissions ─────────────────────────────────
-                  const Text(
-                    'User Permissions',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF1E293B),
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Table(
-                      border: TableBorder(
-                        horizontalInside: BorderSide(
-                            color: Colors.grey.shade100, width: 1),
-                        borderRadius: BorderRadius.circular(10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Object Information ───────────────────────────────
+                    const Text(
+                      'Object Information',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
                       ),
-                      children: [
-                        // Header row
-                        TableRow(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
-                            borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(10)),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _permKv('Title', _title.isEmpty ? obj.title : _title),
+                          const SizedBox(height: 8),
+                          _permKv('Type', obj.objectTypeName),
+                          const SizedBox(height: 8),
+                          _permKv('Class', obj.classTypeName),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── User Permissions ─────────────────────────────────
+                    const Text(
+                      'User Permissions',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.shade200),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 14,
+                            offset: const Offset(0, 6),
                           ),
-                          children: [
-                            _permTableHeader('Read'),
-                            _permTableHeader('Edit'),
-                            _permTableHeader('Delete'),
-                            _permTableHeader('Attach')
-                          ],
+                        ],
+                      ),
+                      child: Table(
+                        border: TableBorder(
+                          horizontalInside: BorderSide(
+                              color: Colors.grey.shade100, width: 1),
                         ),
-                        // Values row
-                        TableRow(
-                          children: [
-                            _permTableCell(perms?.readPermission ?? false),
-                            _permTableCell(perms?.editPermission ?? false),
-                            _permTableCell(perms?.deletePermission ?? false),
-                            _permTableCell(perms?.attachObjectsPermission ?? false),
-                          ],
-                        ),
-                      ],
+                        children: [
+                          // Header row
+                          TableRow(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(14)),
+                            ),
+                            children: [
+                              _permTableHeader('Read'),
+                              _permTableHeader('Edit'),
+                              _permTableHeader('Delete'),
+                              _permTableHeader('Attach')
+                            ],
+                          ),
+                          // Values row
+                          TableRow(
+                            children: [
+                              _permTableCell(perms?.readPermission ?? false),
+                              _permTableCell(perms?.editPermission ?? false),
+                              _permTableCell(perms?.deletePermission ?? false),
+                              _permTableCell(perms?.attachObjectsPermission ?? false),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 18, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
+                        ),
+                        child: const Text(
+                          'Close',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -718,12 +757,12 @@ void initState() {
 
   Widget _permTableHeader(String label) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Center(
         child: Text(
           label,
           style: const TextStyle(
-            fontSize: 12.5,
+            fontSize: 13,
             fontWeight: FontWeight.w700,
             color: Color(0xFF475569),
           ),
@@ -734,12 +773,22 @@ void initState() {
 
   Widget _permTableCell(bool allowed) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
       child: Center(
-        child: Icon(
-          allowed ? Icons.check_rounded : Icons.close_rounded,
-          size: 20,
-          color: allowed ? const Color(0xFF22C55E) : const Color(0xFFEF4444),
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: allowed
+                ? const Color(0xFFE6F4EA)
+                : const Color(0xFFFEE8E8),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(
+            allowed ? Icons.check_rounded : Icons.close_rounded,
+            size: 22,
+            color: allowed ? const Color(0xFF16A34A) : const Color(0xFFDC2626),
+          ),
         ),
       ),
     );
@@ -1242,6 +1291,18 @@ void initState() {
   Widget _buildAssignmentApprovalSection(List<_PropVm> props) {
     final svc = context.read<MFilesService>();
     final int? currentUserId = svc.mfilesUserId;
+
+    final freshIds = _assignedUserIds(props);
+    final freshLabels = _assignedUserLabels(props);
+
+    // Capture the assignee list the first time we see it, and only refresh
+    // it when new assignees show up. This stops the card from flipping to
+    // the "Mark as Complete" fallback once the backend clears the assignee
+    // property after everyone has approved.
+    if (_assignedIdsSnapshot == null || freshIds.isNotEmpty) {
+      _assignedIdsSnapshot = freshIds;
+      _assignedLabelsSnapshot = freshLabels;
+    }
 
     final assignedIds = _assignedUserIds(props);
     final labels = _assignedUserLabels(props);
@@ -2085,6 +2146,7 @@ void initState() {
                         _editingPropId = null;
                         _approvedUserIds.clear();
                         _approvingUserIds.clear();
+                        _assignedIdsSnapshot = null;
                       });
                       await _future;
                     },
@@ -2103,12 +2165,18 @@ void initState() {
                           // ── Header card ──────────────────────────────────
                           FutureBuilder<List<ObjectFile>>(
                             future: _filesFuture,
-                            builder: (context, filesSnap) {
-                              final firstFile =
-                                  (filesSnap.data?.isNotEmpty ?? false)
-                                      ? filesSnap.data!.first
-                                      : null;
-                              return _headerCard(obj, firstFile: firstFile);
+                            builder: (context, sigSnap) {
+                              final files = sigSnap.data ?? [];
+                              return Column(
+                                children: [
+                                  const SizedBox(height: 12),
+                                  _headerCard(
+                                    obj,
+                                    firstFile:
+                                        files.isNotEmpty ? files.first : null,
+                                  ),
+                                ],
+                              );
                             },
                           ),
                           const SizedBox(height: 12),
@@ -2160,18 +2228,14 @@ void initState() {
                           FutureBuilder<List<ObjectFile>>(
                             future: _filesFuture,
                             builder: (context, sigSnap) {
-                              final svc = context.read<MFilesService>();
-                              final firstFile =
-                                  (sigSnap.data?.isNotEmpty ?? false)
-                                      ? sigSnap.data!.first
-                                      : null;
-                              if (firstFile == null) {
+                              final files = sigSnap.data ?? [];
+                              if (files.isEmpty) {
                                 return const SizedBox.shrink();
                               }
                               return Column(
                                 children: [
                                   const SizedBox(height: 12),
-                                  _signingCard(firstFile),
+                                  _signingCard(files),
                                 ],
                               );
                             },
@@ -2198,9 +2262,18 @@ void initState() {
   // e-SIGNATURE CARD  ── standalone, clearly optional
   // ─────────────────────────────────────────────────────────────────────────
 
-  Widget _signingCard(ObjectFile file) {
+  Widget _signingCard(List<ObjectFile> files) {
     final busy = _saving || _downloading || _changingWorkflow || _eSigning;
-    final fileName = file.fileTitle.trim().isEmpty ? 'this file' : file.fileTitle;
+
+    ObjectFile? pdfFile;
+    for (final f in files) {
+      if (f.extension.trim().toLowerCase() == 'pdf') {
+        pdfFile = f;
+        break;
+      }
+    }
+    final hasPdf = pdfFile != null;
+    final conversionTarget = files.first; // offered for conversion when no PDF exists
 
     return Container(
       decoration: BoxDecoration(
@@ -2211,123 +2284,147 @@ void initState() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Card header ──────────────────────────────────────────────────
+          // ── Card header (unchanged) ──
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.04),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
               border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.draw_rounded,
-                    size: 16, color: AppColors.primary),
+                const Icon(Icons.draw_rounded, size: 16, color: AppColors.primary),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
                     'e-Sign options',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary),
                   ),
                 ),
                 if (_eSigning)
                   const SizedBox(
-                    height: 16,
-                    width: 16,
+                    height: 16, width: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
               ],
             ),
           ),
 
-          // ── Card body ────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Context note — makes it clear this is optional
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.info_outline,
-                        size: 13, color: Colors.grey.shade400),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Optionally sign or send "$fileName" for signing.',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade500),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // ── Action buttons ───────────────────────────────────────
-                Row(
-                  children: [
-                    // Sign Myself
-                    Expanded(
-                      child: ElevatedButton.icon(
-                        onPressed: busy ? null : () => _selfSign(file),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          elevation: 0,
-                          textStyle: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                        icon: _eSigning
-                            ? const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                      Colors.white),
-                                ),
-                              )
-                            : const Icon(Icons.draw_rounded, size: 15),
-                        label: const Text('Sign Myself'),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    // Send for Signing
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: busy
-                            ? null
-                            : () => _showSendForSigningDialog(file),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.primary,
-                          side: const BorderSide(color: AppColors.primary),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8)),
-                          padding: const EdgeInsets.symmetric(vertical: 11),
-                          elevation: 0,
-                          textStyle: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w600),
-                        ),
-                        icon: const Icon(Icons.send_rounded, size: 15),
-                        label: const Text('Send for Signing'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            child: hasPdf
+                ? _signingReadyBody(pdfFile!, busy)
+                : _signingLockedBody(conversionTarget, busy),
           ),
         ],
       ),
+    );
+  }
+
+  // Extracted from the old body — unchanged buttons, just fed `pdfFile` explicitly
+  Widget _signingReadyBody(ObjectFile file, bool busy) {
+    final fileName = file.fileTitle.trim().isEmpty ? 'this file' : file.fileTitle;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, size: 13, color: Colors.grey.shade400),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Optionally sign or send "$fileName" for signing.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: busy ? null : () => _selfSign(file),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  elevation: 0,
+                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                icon: _eSigning
+                    ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.draw_rounded, size: 15),
+                label: const Text('Sign Myself'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: busy ? null : () => _showSendForSigningDialog(file),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  elevation: 0,
+                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                ),
+                icon: const Icon(Icons.send_rounded, size: 15),
+                label: const Text('Send for Signing'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // New — locked state shown when no PDF version exists yet
+  Widget _signingLockedBody(ObjectFile conversionTarget, bool busy) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.lock_outline_rounded, size: 13, color: Colors.grey.shade400),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Convert this file to PDF to enable e-signing.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: OutlinedButton.icon(
+            onPressed: busy ? null : () => _convertToPdf(widget.obj, conversionTarget),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.primary,
+              side: const BorderSide(color: AppColors.primary),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              padding: const EdgeInsets.symmetric(vertical: 11),
+              elevation: 0,
+              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
+            icon: const Icon(Icons.picture_as_pdf_rounded, size: 15),
+            label: const Text('Convert to PDF'),
+          ),
+        ),
+      ],
     );
   }
 
@@ -2786,29 +2883,38 @@ void initState() {
           const SizedBox(height: 10),
 
           // ── Fields (animated expand/collapse) ─────────────────────────────
-          AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOut,
-            alignment: Alignment.topCenter,
-            child: Column(
-              children: List.generate(
-                visibleProps.length * 2 - 1,
-                (index) {
-                  if (index.isOdd) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 10),
-                      child: Divider(
-                        height: 1,
-                        thickness: 1.5,
-                        color: Color(0xFFCBD5E1),
-                      ),
-                    );
-                  }
-                  return _propField(visibleProps[index ~/ 2]);
-                },
+          if (visibleProps.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'No metadata fields to display',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+              ),
+            )
+          else
+            AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              alignment: Alignment.topCenter,
+              child: Column(
+                children: List.generate(
+                  visibleProps.length * 2 - 1,
+                  (index) {
+                    if (index.isOdd) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Divider(
+                          height: 1,
+                          thickness: 1.5,
+                          color: Color(0xFFCBD5E1),
+                        ),
+                      );
+                    }
+                    return _propField(visibleProps[index ~/ 2]);
+                  },
+                ),
               ),
             ),
-          ),
 
           // ── Show more / less toggle ────────────────────────────────────────
           if (hasMore) ...[

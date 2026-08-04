@@ -22,6 +22,12 @@ String humanizeError(String raw) {
   if (s.contains('404')) {
     return "We couldn't find what you were looking for.";
   }
+  if (s.contains('vault is offline') || s.contains('0x80040061')) {
+    return 'The repository is temporarily unavailable. Please try again shortly.';
+  }
+  if (s.contains('cannot be used to define a grouping level')) {
+    return 'This view has a configuration issue. Please contact your administrator.';
+  }
   if (s.contains('500') || s.contains('502') || s.contains('503')) {
     return 'The server ran into a problem. Please try again shortly.';
   }

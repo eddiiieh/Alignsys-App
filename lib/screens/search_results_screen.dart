@@ -1469,7 +1469,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                           behavior: HitTestBehavior.opaque,
                           onTap: () => _openPreview(obj),
                           child: Container(
-                            padding: const EdgeInsets.all(8),
+                            padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
                               color: Colors.blueGrey.withOpacity(0.08),
                               shape: BoxShape.circle,
@@ -1511,7 +1511,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                             },
                             borderRadius: BorderRadius.circular(20),
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: infoExpanded
                                     ? AppColors.primary.withOpacity(0.15)
@@ -1573,10 +1573,10 @@ class _HighlightedText extends StatelessWidget {
     if (query.isEmpty) {
       return Text(
         text,
-        maxLines: 1,
+        maxLines: 3,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-            fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A)),
+            fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), height: 1.2,),
       );
     }
 
@@ -1608,10 +1608,10 @@ class _HighlightedText extends StatelessWidget {
     return Text.rich(
       TextSpan(
         style: const TextStyle(
-            fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A)),
+            fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), height: 1.2),
         children: spans,
       ),
-      maxLines: 1,
+      maxLines: 3,
       overflow: TextOverflow.ellipsis,
     );
   }

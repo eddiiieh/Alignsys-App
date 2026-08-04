@@ -17,12 +17,16 @@ class RelationshipsDropdown extends StatefulWidget {
   // Indentation / subtle tree styling
   final int depth;
 
+  // Called when a linked object row (at any depth) is long-pressed.
+  final ValueChanged<ViewObject>? onItemLongPress;
+
   const RelationshipsDropdown({
     super.key,
     required this.obj,
     this.initiallyExpanded = false,
     this.isRoot = true,
     this.depth = 0,
+    this.onItemLongPress,
   });
 
   @override
@@ -49,7 +53,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
 
   @override
   Widget build(BuildContext context) {
-    final left = 8.0 + (widget.depth * 14.0);
+    const left = 8.0;
 
     // Missing identity payload: just show a small message (no header if nested)
     final missingIdentity =
@@ -82,6 +86,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
             future: _future,
             loaded: _loaded,
             onLoad: () => setState(_loadOnce),
+            onItemLongPress: widget.onItemLongPress,
           ),
         ],
       );
@@ -93,6 +98,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
       future: _future,
       loaded: _loaded,
       onLoad: () => setState(_loadOnce),
+      onItemLongPress: widget.onItemLongPress,
     );
   }
 }
@@ -162,17 +168,19 @@ class _GroupsBody extends StatelessWidget {
   final VoidCallback onLoad;
   final int depth;
   final bool loaded;
+  final ValueChanged<ViewObject>? onItemLongPress;
 
   const _GroupsBody({
     required this.future,
     required this.onLoad,
     required this.depth,
     required this.loaded,
+    this.onItemLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    final left = 8.0 + (depth * 14.0);
+    const left = 8.0;
 
     // Lazy load the first time this subtree appears (no "Expand to load…" text)
     if (!loaded) {
@@ -226,6 +234,7 @@ class _GroupsBody extends StatelessWidget {
                   propertyName: g.propertyName,
                   items: g.items,
                   depth: depth,
+                  onItemLongPress: onItemLongPress,
                 ),
               )
               .toList(),
@@ -256,52 +265,62 @@ class _RelationshipGroupTileModern extends StatelessWidget {
   final String propertyName;
   final List<LinkedObjectItem> items;
   final int depth;
-
+  final ValueChanged<ViewObject>? onItemLongPress;
   const _RelationshipGroupTileModern({
     required this.propertyName,
     required this.items,
     required this.depth,
+    this.onItemLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    final left = 8.0 + (depth * 14.0);
+    const left = 8.0;
 
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.fromLTRB(left, 2, 8, 2),
-        childrenPadding: EdgeInsets.fromLTRB(left + 12, 0, 8, 6),
-        title: Row(
-          children: [
-            Icon(Icons.link, size: 18, color: Colors.grey.shade700),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                propertyName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+      child: Material(
+        color: Colors.transparent,
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(left, 2, 8, 2),
+          childrenPadding: const EdgeInsets.fromLTRB(left, 0, 8, 6),
+          title: Row(
+            children: [
+              Icon(Icons.link, size: 18, color: Colors.grey.shade700),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  propertyName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              '${items.length}',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              const SizedBox(width: 8),
+              Text(
+                '${items.length}',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              ),
+            ],
+          ),
+          children: [
+            Column(
+              children:
+                  items
+                      .map(
+                        (it) => _LinkedObjectNodeTileModern(
+                          item: it,
+                          depth: depth + 1,
+                          onItemLongPress: onItemLongPress,
+                        ),
+                      )
+                      .toList(),
             ),
           ],
         ),
-        children: [
-          Container(
-            margin: const EdgeInsets.only(left: 6),
-            decoration: BoxDecoration(
-              border: Border(left: BorderSide(color: Colors.grey.shade300, width: 1)),
-            ),
-            child: Column(
-              children: items.map((it) => _LinkedObjectNodeTileModern(item: it, depth: depth + 1)).toList(),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -310,8 +329,13 @@ class _RelationshipGroupTileModern extends StatelessWidget {
 class _LinkedObjectNodeTileModern extends StatelessWidget {
   final LinkedObjectItem item;
   final int depth;
+  final ValueChanged<ViewObject>? onItemLongPress;
 
-  const _LinkedObjectNodeTileModern({required this.item, required this.depth});
+  const _LinkedObjectNodeTileModern({
+    required this.item,
+    required this.depth,
+    this.onItemLongPress,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -321,7 +345,9 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
     final svc = context.watch<MFilesService>();
     final isDoc = svc.isDocumentViewObject(obj);
     final isMultiFileObj = svc.isMultiFile(
-        objectTypeId: obj.objectTypeId, isSingleFile: obj.isSingleFile);
+      objectTypeId: obj.objectTypeId,
+      isSingleFile: obj.isSingleFile,
+    );
 
     // Relationship items never pass through warmExtensionsForObjects, so
     // warm the extension cache here when needed.
@@ -332,69 +358,99 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
     Widget leadingIcon;
     if (isDoc && !isMultiFileObj) {
       final ext = svc.cachedExtensionForObject(obj.id);
-      leadingIcon = (ext != null && ext.isNotEmpty)
-          ? FileTypeBadge(extension: ext, size: 18)
-          : const Icon(Icons.insert_drive_file_outlined,
-              size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+      leadingIcon =
+          (ext != null && ext.isNotEmpty)
+              ? FileTypeBadge(extension: ext, size: 18)
+              : const Icon(
+                Icons.insert_drive_file_outlined,
+                size: 18,
+                color: Color.fromRGBO(25, 76, 129, 1),
+              );
     } else if (isMultiFileObj) {
-      leadingIcon = const Icon(Icons.folder_copy_rounded,
-          size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+      leadingIcon = const Icon(
+        Icons.folder_copy_rounded,
+        size: 18,
+        color: Color.fromRGBO(25, 76, 129, 1),
+      );
     } else {
-      leadingIcon = Icon(iconForObjectTypeName(obj.objectTypeName),
-          size: 18, color: const Color.fromRGBO(25, 76, 129, 1));
+      leadingIcon = Icon(
+        iconForObjectTypeName(obj.objectTypeName),
+        size: 18,
+        color: const Color.fromRGBO(25, 76, 129, 1),
+      );
     }
 
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.fromLTRB(10, 2, 6, 2),
-        childrenPadding: const EdgeInsets.only(left: 6, right: 6, bottom: 6),
-        enabled: true,
-        trailing: canExpand ? const Icon(Icons.expand_more, size: 18) : const SizedBox(width: 18),
-        title: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => ObjectDetailsScreen(obj: obj)),
-            );
-          },
-          child: Row(
-            children: [
-              leadingIcon,
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      obj.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '${obj.objectTypeName} • ${obj.displayId}',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
-                    ),
-                  ],
+      child: Material(
+        color: Colors.transparent,
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.fromLTRB(2, 2, 6, 2),
+          childrenPadding: const EdgeInsets.only(left: 6, right: 6, bottom: 6),
+          enabled: true,
+          trailing:
+              canExpand
+                  ? const Icon(Icons.expand_more, size: 18)
+                  : const SizedBox(width: 18),
+          title: InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ObjectDetailsScreen(obj: obj),
                 ),
-              ),
-            ],
+              );
+            },
+
+            onLongPress:
+                onItemLongPress != null ? () => onItemLongPress!(obj) : null,
+
+            child: Row(
+              children: [
+                leadingIcon,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        obj.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${obj.objectTypeName} • ${obj.displayId}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
+          children:
+              canExpand
+                  ? [
+                    RelationshipsDropdown(
+                      obj: obj,
+                      initiallyExpanded: false,
+                      isRoot: false,
+                      depth: depth,
+                      onItemLongPress: onItemLongPress,
+                    ),
+                  ]
+                  : const [],
         ),
-        children: canExpand
-            ? [
-                RelationshipsDropdown(
-                  obj: obj,
-                  initiallyExpanded: false,
-                  isRoot: false,
-                  depth: depth,
-                ),
-              ]
-            : const [],
       ),
     );
   }

@@ -46,6 +46,15 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
   late Future<File> _fileFuture;
   bool _downloading = false;
 
+  // CHANGED: controller powers custom jump-to-page + in-doc search
+  final PdfViewerController _pdfController = PdfViewerController();
+  int _totalPages = 0;
+
+  bool _searchActive = false;
+  final TextEditingController _searchInputController = TextEditingController();
+  final FocusNode _searchFieldFocus = FocusNode();
+  PdfTextSearchResult? _searchResult;
+
   // CHANGED: tracks whether we have already handed the file off to an
   // external app.  When true, _buildPreview shows a "Opened externally"
   // card instead of the stuck spinner.
@@ -57,12 +66,19 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     _fileFuture = _downloadFile();
     // CHANGED: register for app lifecycle events
     WidgetsBinding.instance.addObserver(this);
+    // CHANGED: rebuild so the pill border can react to focus state
+    _searchFieldFocus.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
-    // CHANGED: always unregister the observer
     WidgetsBinding.instance.removeObserver(this);
+    // CHANGED: release search highlights + controllers
+    _searchResult?.clear();
+    _searchInputController.dispose();
+    _searchFieldFocus.dispose();
     super.dispose();
   }
 
@@ -208,6 +224,251 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     }
   }
 
+  // CHANGED: toggles the inline search bar; clears highlights on close.
+  void _toggleSearch() {
+    setState(() {
+      _searchActive = !_searchActive;
+      if (!_searchActive) {
+        _searchResult?.clear();
+        _searchResult = null;
+        _searchInputController.clear();
+      }
+    });
+  }
+
+  // CHANGED: filled blue circular nav button; light grey + muted icon when disabled.
+  Widget _buildSearchNavButton({
+    required IconData icon,
+    required String tooltip,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: enabled ? AppColors.primary : Colors.grey.shade200,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: enabled ? Colors.white : Colors.grey.shade400,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // CHANGED: runs a text search against the loaded PDF and listens for
+  // async completion so the match counter updates once Syncfusion finishes.
+  void _runSearch(String query) {
+    if (query.trim().isEmpty) {
+      setState(() {
+        _searchResult?.clear();
+        _searchResult = null;
+      });
+      return;
+    }
+    final result = _pdfController.searchText(query.trim());
+    result.addListener(() {
+      if (mounted) setState(() {});
+    });
+    setState(() => _searchResult = result);
+  }
+
+  // CHANGED: custom "go to page" bottom sheet, styled to match the vault
+  // switcher's header treatment — teal icon block, title/subtitle, pill OK.
+  void _showJumpToPageSheet() {
+    if (_totalPages <= 0) return;
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) {
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
+          ),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ── Teal header, matching vault switcher ──
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.pin_drop_outlined,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Go to Page',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(
+                        'of $_totalPages',
+                        style: const TextStyle(fontSize: 12, color: Colors.white70),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                        onPressed: () => Navigator.pop(sheetContext),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Page input ──
+                TextField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E293B),
+                  ),
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: Colors.grey.shade200),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(
+                        color: AppColors.primary,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  onSubmitted: (_) => _submitJumpToPage(sheetContext, controller.text),
+                ),
+
+                const SizedBox(height: 20),
+
+                // ── Actions ──
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.grey.shade700,
+                          side: BorderSide(color: Colors.grey.shade300),
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Cancel',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => _submitJumpToPage(sheetContext, controller.text),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Go',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _submitJumpToPage(BuildContext sheetContext, String value) {
+    final page = int.tryParse(value.trim());
+    if (page == null || page < 1 || page > _totalPages) {
+      ScaffoldMessenger.of(sheetContext).showSnackBar(
+        SnackBar(content: Text('Enter a page between 1 and $_totalPages')),
+      );
+      return;
+    }
+    _pdfController.jumpToPage(page);
+    Navigator.pop(sheetContext);
+  }
+
   // CHANGED: new widget shown after a file has been successfully handed off
   // to an external app.  Replaces the stuck "Opening file…" spinner.
   Widget _buildOpenedExternallyCard(File file) {
@@ -296,9 +557,16 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     if (ext == 'pdf') {
       return SfPdfViewer.file(
         file,
+        controller: _pdfController,
         canShowScrollHead: true,
-        canShowScrollStatus: true,
+        canShowScrollStatus: false, // CHANGED: replaced by custom sheet
         enableDoubleTapZooming: true,
+        onDocumentLoaded: (details) {
+          // CHANGED: capture page count for the jump-to-page sheet
+          if (mounted) {
+            setState(() => _totalPages = details.document.pages.count);
+          }
+        },
       );
     }
 
@@ -391,6 +659,20 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          // CHANGED: custom go-to-page entry point (PDF only)
+          if (_cleanExt(widget.extension) == 'pdf' && _totalPages > 0)
+            IconButton(
+              onPressed: _showJumpToPageSheet,
+              icon: const Icon(Icons.pin_drop_outlined),
+              tooltip: 'Go to page',
+            ),
+          // CHANGED: inline text search toggle (PDF only)
+          if (_cleanExt(widget.extension) == 'pdf')
+            IconButton(
+              onPressed: _toggleSearch,
+              icon: Icon(_searchActive ? Icons.close : Icons.search),
+              tooltip: _searchActive ? 'Close search' : 'Search text',
+            ),
           if (widget.canDownload)
             IconButton(
               onPressed: _downloading ? null : _downloadToDevice,
@@ -494,6 +776,107 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
               },
             ),
             const Divider(height: 1),
+
+            // CHANGED: inline search bar — full pill field with focus-reactive
+            // border, filled blue nav buttons, plain-text match counter.
+            if (_searchActive)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+                color: Colors.white,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceLight,
+                          borderRadius: BorderRadius.circular(22), // CHANGED: full pill
+                          border: Border.all(
+                            color: _searchFieldFocus.hasFocus
+                                ? AppColors.primary
+                                : Colors.grey.shade200,
+                            width: _searchFieldFocus.hasFocus ? 1.5 : 1,
+                          ),
+                        ),
+                        child: TextField(
+                          controller: _searchInputController,
+                          focusNode: _searchFieldFocus,
+                          autofocus: true,
+                          textInputAction: TextInputAction.search,
+                          style: const TextStyle(fontSize: 14),
+                          decoration: InputDecoration(
+                            hintText: 'Find in document',
+                            hintStyle: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey.shade400,
+                            ),
+                            isDense: true,
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              size: 18,
+                              color: _searchFieldFocus.hasFocus
+                                  ? AppColors.primary
+                                  : Colors.grey.shade400,
+                            ),
+                            prefixIconConstraints: const BoxConstraints(
+                              minWidth: 40,
+                              minHeight: 36,
+                            ),
+                          ),
+                          onSubmitted: _runSearch,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+
+                    // ── Match counter — plain text, no fill ──
+                    if (_searchResult != null && _searchResult!.hasResult)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Text(
+                          '${_searchResult!.currentInstanceIndex}/${_searchResult!.totalInstanceCount}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      )
+                    else if (_searchResult != null && _searchResult!.isSearchCompleted)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: Text(
+                          'No results',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ),
+
+                    const SizedBox(width: 8),
+
+                    // ── Prev / next — filled blue, white icon ──
+                    _buildSearchNavButton(
+                      icon: Icons.keyboard_arrow_up,
+                      tooltip: 'Previous match',
+                      enabled: _searchResult?.hasResult ?? false,
+                      onTap: () => setState(() => _searchResult!.previousInstance()),
+                    ),
+                    const SizedBox(width: 6),
+                    _buildSearchNavButton(
+                      icon: Icons.keyboard_arrow_down,
+                      tooltip: 'Next match',
+                      enabled: _searchResult?.hasResult ?? false,
+                      onTap: () => setState(() => _searchResult!.nextInstance()),
+                    ),
+                  ],
+                ),
+              ),
 
             // ── Preview area ───────────────────────────────────────────
             Expanded(

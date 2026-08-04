@@ -1254,13 +1254,30 @@ class MFilesService extends ChangeNotifier {
         return null;
       }
 
-      final newId = _extractCreatedValueListItemId(resp.body);
-      if (newId == null) {
-        _setError('Value added, but its ID could not be parsed');
-        return null;
+      final decoded = jsonDecode(resp.body);
+
+      if (decoded is List && decoded.isNotEmpty) {
+        final item = decoded.first;
+
+        return LookupItem(
+          id: item['id'] as int,
+          displayValue: item['name'] as String,
+        );
       }
 
-      return LookupItem(id: newId, displayValue: name);
+      if (decoded is Map<String, dynamic>) {
+        final id = decoded['id'];
+
+        if (id is int) {
+          return LookupItem(
+            id: id,
+            displayValue: (decoded['name'] ?? name).toString(),
+          );
+        }
+      }
+
+      _setError('Value added, but response format was unexpected');
+      return null;
     } catch (e) {
       _setError('Error adding value: $e');
       return null;
@@ -1270,34 +1287,6 @@ class MFilesService extends ChangeNotifier {
   /// Best-effort parse of the new value list item's ID from
   /// AddValuelistItem's response body. Share a raw response body if this
   /// consistently returns null and I'll tighten the key matching.
-  int? _extractCreatedValueListItemId(String responseBody) {
-    try {
-      final decoded = jsonDecode(responseBody);
-
-      if (decoded is num) return decoded.toInt();
-
-      if (decoded is Map) {
-        final raw =
-            decoded['id'] ??
-            decoded['Id'] ??
-            decoded['itemId'] ??
-            decoded['ItemId'] ??
-            decoded['itemID'] ??
-            decoded['ItemID'] ??
-            decoded['valueListItemId'] ??
-            decoded['ValueListItemId'] ??
-            decoded['value'] ??
-            decoded['Value'];
-        if (raw != null) {
-          return raw is int ? raw : int.tryParse('$raw');
-        }
-      }
-    } catch (e) {
-      debugPrint('⚠️ Could not parse added value list item id: $e');
-    }
-    return null;
-  }
-
   Future<ObjectCreationResult> createObject(
     ObjectCreationRequest request,
   ) async {

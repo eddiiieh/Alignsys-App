@@ -413,12 +413,29 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   List<ViewContentItem> _applyFilter(List<ViewContentItem> items) {
     final q = _filter.trim().toLowerCase();
-    if (q.isEmpty) return items;
-    return items.where((o) {
-      final title = o.title.toLowerCase();
-      final label = _subtitleLabel(o)?.toLowerCase() ?? '';
-      return title.contains(q) || label.contains(q);
-    }).toList();
+    final source = q.isEmpty
+        ? items
+        : items.where((o) {
+            final title = o.title.toLowerCase();
+            final label = _subtitleLabel(o)?.toLowerCase() ?? '';
+            return title.contains(q) || label.contains(q);
+          }).toList();
+    return List<ViewContentItem>.from(source)
+      ..sort((a, b) => _alphaCompare(a.title, b.title));
+  }
+
+  int _alphaCompare(String a, String b) {
+    int category(String s) {
+      if (s.isEmpty) return 1; // treat empty as digit-tier, arbitrary but consistent
+      final ch = s[0];
+      if (RegExp(r'[a-zA-Z]').hasMatch(ch)) return 2;
+      if (RegExp(r'[0-9]').hasMatch(ch)) return 1;
+      return 0; // symbols/punctuation
+    }
+    final catA = category(a);
+    final catB = category(b);
+    if (catA != catB) return catA.compareTo(catB);
+    return a.toLowerCase().compareTo(b.toLowerCase());
   }
 
   Widget _buildBreadcrumbs() {
@@ -697,11 +714,13 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                             children: [
                               Text(
                                 item.title,
-                                maxLines: 1,
+                                maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
                                     fontSize: 14,
-                                    fontWeight: FontWeight.w600),
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.2,
+                                  ),
                               ),
                               if (subtitle != null &&
                                   subtitle.trim().isNotEmpty) ...[
@@ -726,7 +745,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                             behavior: HitTestBehavior.opaque,
                             onTap: () => _openPreview(item),
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: Colors.blueGrey.withOpacity(0.08),
                                 shape: BoxShape.circle,
@@ -761,7 +780,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                               _toggleInfo(item.id);
                             },
                             child: Container(
-                              padding: const EdgeInsets.all(8),
+                              padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
                                 color: infoExpanded
                                     ? AppColors.primary.withOpacity(0.15)
