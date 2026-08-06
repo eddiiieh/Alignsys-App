@@ -31,6 +31,7 @@ import 'package:mfiles_app/widgets/version_history_sheet.dart';
 import 'dart:async';
 import 'package:launcher_shortcuts/launcher_shortcuts.dart';
 import 'package:mfiles_app/services/shortcut_router.dart';
+import 'package:mfiles_app/widgets/loading_overlay.dart';
 
 
 enum _MoreSubTab { trash, reports }
@@ -105,8 +106,10 @@ class _HomeScreenState extends State<HomeScreen>
 
   String _processingText = '';
 
-  
+  bool _scanLoading = false;
+  String? _scanMessage;
 
+  
   void _setProcessing(bool value, [String text = '']) {
     if (!mounted) return;
 
@@ -976,8 +979,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
-    return SafeArea(
+Widget build(BuildContext context) {
+  return LoadingOverlay(
+    isLoading: _scanLoading,
+    message: _scanMessage,
+    child: SafeArea(
       top: false,
       child: Stack(
         children: [
@@ -1075,6 +1081,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ],
       ),
+    ),
     );
   }
 
@@ -2536,51 +2543,66 @@ class _HomeScreenState extends State<HomeScreen>
 
   // ── Scan document ──────────────────────────────────────────
   Future<void> _startDocumentScan() async {
-  try {
-    final service = context.read<MFilesService>();
+    try {
+      final service = context.read<MFilesService>();
 
-    debugPrint("HOME A");
+      debugPrint("HOME A");
 
-    final docType = service.objectTypes.firstWhere(
-      (t) => t.isDocument,
-      orElse: () => service.objectTypes.first,
-    );
+      final docType = service.objectTypes.firstWhere(
+        (t) => t.isDocument,
+        orElse: () => service.objectTypes.first,
+      );
 
-    debugPrint("HOME B");
+      debugPrint("HOME B");
 
-    final pdfFile = await ScanDocumentFlow.captureAndConvert(context);
+      final pdfFile = await ScanDocumentFlow.captureAndConvert(
+        context,
+        onStatusChange: (message) {
+          if (!mounted) return;
+          setState(() {
+            _scanLoading = message != null;
+            _scanMessage = message;
+          });
+        },
+      );
 
-    debugPrint("HOME C");
+      debugPrint("HOME C");
 
-    if (pdfFile == null) {
-      debugPrint("HOME D");
-      return;
-    }
+      if (pdfFile == null) {
+        debugPrint("HOME D");
+        return;
+      }
 
-    debugPrint("HOME E");
+      debugPrint("HOME E");
 
-    //if (!context.mounted) {
+      //if (!context.mounted) {
       //debugPrint("HOME F");
       //return;
-    //}
+      //}
 
-    debugPrint("HOME G");
+      debugPrint("HOME G");
 
-    await Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => DynamicFormScreen(
-        objectType: docType,
-        scannedFile: pdfFile,
-      ),
-    ),
-  );
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder:
+              (_) =>
+                  DynamicFormScreen(objectType: docType, scannedFile: pdfFile),
+        ),
+      );
 
-    debugPrint("HOME I");
-  } catch (e, st) {
-    debugPrint("HOME ERROR");
-    debugPrint(e.toString());
-    debugPrint(st.toString());
-  }
+      debugPrint("HOME I");
+    } catch (e, st) {
+      debugPrint("HOME ERROR");
+      debugPrint(e.toString());
+      debugPrint(st.toString());
+    } finally {
+      if (mounted) {
+        setState(() {
+          _scanLoading = false;
+          _scanMessage = null;
+        });
+      }
+    }
 }
 
   // ── Create bottom sheet ───────────────────────────────────────────────────

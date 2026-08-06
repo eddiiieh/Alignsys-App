@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/widgets/flashing_dots.dart';
+import '../theme/app_colors.dart';
 
 class LoadingOverlay extends StatelessWidget {
   final bool isLoading;
@@ -27,7 +29,7 @@ class LoadingOverlay extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const CircularProgressIndicator(),
+                      const FlashingDots(color: AppColors.primary),
                       if (message != null) ...[
                         const SizedBox(height: 16),
                         Text(message!),

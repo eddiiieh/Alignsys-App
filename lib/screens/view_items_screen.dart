@@ -25,6 +25,7 @@ import '../screens/search_results_screen.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/utils/error_messages.dart';
+import 'package:mfiles_app/widgets/loading_overlay.dart';
 
 class ViewItemsScreen extends StatefulWidget {
   final String title;
@@ -48,6 +49,16 @@ class ViewItemsScreen extends StatefulWidget {
   State<ViewItemsScreen> createState() => _ViewItemsScreenState();
 }
 
+enum _SortField {
+  name,
+  dateCreated,
+  lastModified,
+  classType,
+  displayId,
+  id,
+  objectType,
+  versionId,
+}
 class _ViewItemsScreenState extends State<ViewItemsScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _showSearch = false;
@@ -76,6 +87,12 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   bool _isProcessing = false;
 
   String _processingText = '';
+
+  bool _navLoading = false;
+  String? _navMessage;
+
+  _SortField _sortField = _SortField.name;
+  bool _sortAscending = true;
 
   void _setProcessing(bool value, [String text = '']) {
     if (!mounted) return;
@@ -420,16 +437,66 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   List<ViewContentItem> _applyFilter(List<ViewContentItem> items) {
     final q = _filter.trim().toLowerCase();
-    final source = q.isEmpty
-        ? items
-        : items.where((o) {
-            final title = o.title.toLowerCase();
-            final label = _subtitleLabel(o)?.toLowerCase() ?? '';
-            return title.contains(q) || label.contains(q);
-          }).toList();
-    return List<ViewContentItem>.from(source)
-      ..sort((a, b) => _alphaCompare(a.title, b.title));
+    if (q.isEmpty) return items;
+    return items.where((o) {
+      final title = o.title.toLowerCase();
+      final label = _subtitleLabel(o)?.toLowerCase() ?? '';
+      return title.contains(q) || label.contains(q);
+    }).toList();
   }
+
+  List<ViewContentItem> _applySort(List<ViewContentItem> items) {
+    final folders = items
+        .where((i) => i.isViewFolder || i.isGroupFolder)
+        .toList()
+      ..sort((a, b) => _alphaCompare(a.title, b.title));
+
+    final objects =
+        items.where((i) => !i.isViewFolder && !i.isGroupFolder).toList();
+
+    int compare(ViewContentItem a, ViewContentItem b) {
+      switch (_sortField) {
+        case _SortField.name:
+          return _alphaCompare(a.title, b.title);
+        case _SortField.dateCreated:
+          return _compareDates(a.createdUtc, b.createdUtc);
+        case _SortField.lastModified:
+          return _compareDates(a.lastModifiedUtc, b.lastModifiedUtc);
+        case _SortField.classType:
+          return _compareStrings(a.classTypeName, b.classTypeName);
+        case _SortField.displayId:
+          return _compareStrings(a.displayId, b.displayId);
+        case _SortField.id:
+          return _compareInts(a.id, b.id);
+        case _SortField.objectType:
+          return _compareStrings(a.objectTypeName, b.objectTypeName);
+        case _SortField.versionId:
+          return _compareInts(a.versionId, b.versionId);
+      }
+    }
+
+    objects.sort((a, b) => _sortAscending ? compare(a, b) : compare(b, a));
+
+    return [...folders, ...objects];
+  }
+
+  int _compareDates(DateTime? a, DateTime? b) {
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    return a.compareTo(b);
+  }
+
+  int _compareStrings(String? a, String? b) {
+    final sa = (a ?? '').trim();
+    final sb = (b ?? '').trim();
+    if (sa.isEmpty && sb.isEmpty) return 0;
+    if (sa.isEmpty) return 1;
+    if (sb.isEmpty) return -1;
+    return _alphaCompare(sa, sb);
+  }
+
+  int _compareInts(int a, int b) => a.compareTo(b);
 
   int _alphaCompare(String a, String b) {
     int category(String s) {
@@ -857,6 +924,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         GroupFilter(propId: key, propDatatype: dtype),
       ];
 
+      setState(() {
+        _navLoading = true;
+        _navMessage = 'Loading ${item.title}...';
+      });
+
       List<ViewContentItem> children;
       try {
         children = await svc.fetchViewPropItems(
@@ -864,11 +936,24 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           filters: nextFilters,
         );
       } catch (e) {
+        if (mounted) {
+          setState(() {
+            _navLoading = false;
+            _navMessage = null;
+          });
+        }
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(humanizeError(e.toString()))),
         );
         return;
+      }
+
+      if (mounted) {
+        setState(() {
+          _navLoading = false;
+          _navMessage = null;
+        });
       }
 
       if (!context.mounted) return;
@@ -917,6 +1002,16 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         overflow: TextOverflow.ellipsis,
       ),
       actions: [
+        IconButton(
+          tooltip: 'Sort',
+          icon: Icon(
+            Icons.sort_rounded,
+            color: (_sortField != _SortField.name || !_sortAscending)
+                ? Colors.white
+                : Colors.white70,
+          ),
+          onPressed: _showSortSheet,
+        ),
         IconButton(
           icon: Icon(_showSearch ? Icons.close : Icons.search),
           onPressed: _toggleSearch,
@@ -1193,95 +1288,103 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final filtered = _applyFilter(_items);
+    final filtered = _applySort(_applyFilter(_items));
 
-    return Stack(
-      children: [
-        Scaffold(
-      backgroundColor: AppColors.surfaceLight,
-      appBar: _buildAppBar(),
-      body: NetworkBanner(
-        child: Column(
-          children: [
-            if (_selectionMode) ...[
-              _buildSelectAllBar(),
-              const SizedBox(height: 2),
-            ],
-            if (!_selectionMode || !_searchWhileSelecting)
-              _buildBreadcrumbs(),
-            if ((!_selectionMode && _showSearch) || (_selectionMode && _searchWhileSelecting))
-              _buildSearchBar(),
-            Expanded(
-              child:
-                  filtered.isEmpty
-                      ? const Center(child: Text('No items found'))
-                      // ✅ Dismiss expanded dropdowns when tapping empty list space.
-                      : GestureDetector(
-                        behavior: HitTestBehavior.translucent,
-                        onTap: () {
-                          if (_expandedInfoItemId != null ||
-                              _expandedRelationshipsItemId != null) {
-                            setState(() {
-                              _expandedInfoItemId = null;
-                              _expandedRelationshipsItemId = null;
-                            });
-                          }
-                        },
-                        child: Scrollbar(
-                          controller: _itemsScroll,
-                          interactive: true,
-                          thickness: 6,
-                          radius: const Radius.circular(8),
-                          child: ListView(
-                            controller: _itemsScroll,
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            padding: const EdgeInsets.all(10),
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                    color: Colors.grey.shade100,
-                                    width: 0.5,
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Colors.black.withOpacity(0.04),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 2),
+    return LoadingOverlay(
+      isLoading: _navLoading,
+      message: _navMessage,
+      child: Stack(
+        children: [
+          Scaffold(
+            backgroundColor: AppColors.surfaceLight,
+            appBar: _buildAppBar(),
+            body: NetworkBanner(
+              child: Column(
+                children: [
+                  if (_selectionMode) ...[
+                    _buildSelectAllBar(),
+                    const SizedBox(height: 2),
+                  ],
+                  if (!_selectionMode || !_searchWhileSelecting)
+                    _buildBreadcrumbs(),
+                  if ((!_selectionMode && _showSearch) ||
+                      (_selectionMode && _searchWhileSelecting))
+                    _buildSearchBar(),
+                  Expanded(
+                    child:
+                        filtered.isEmpty
+                            ? const Center(child: Text('No items found'))
+                            // ✅ Dismiss expanded dropdowns when tapping empty list space.
+                            : GestureDetector(
+                              behavior: HitTestBehavior.translucent,
+                              onTap: () {
+                                if (_expandedInfoItemId != null ||
+                                    _expandedRelationshipsItemId != null) {
+                                  setState(() {
+                                    _expandedInfoItemId = null;
+                                    _expandedRelationshipsItemId = null;
+                                  });
+                                }
+                              },
+                              child: Scrollbar(
+                                controller: _itemsScroll,
+                                interactive: true,
+                                thickness: 6,
+                                radius: const Radius.circular(8),
+                                child: ListView(
+                                  controller: _itemsScroll,
+                                  physics:
+                                      const AlwaysScrollableScrollPhysics(),
+                                  padding: const EdgeInsets.all(10),
+                                  children: [
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: Colors.white,
+                                        borderRadius: BorderRadius.circular(14),
+                                        border: Border.all(
+                                          color: Colors.grey.shade100,
+                                          width: 0.5,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(
+                                              0.04,
+                                            ),
+                                            blurRadius: 12,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                        ],
+                                      ),
+                                      child: Column(
+                                        children: List.generate(
+                                          filtered.length,
+                                          (i) => _buildRow(
+                                            filtered[i],
+                                            i == filtered.length - 1,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ],
                                 ),
-                                child: Column(
-                                  children: List.generate(
-                                    filtered.length,
-                                    (i) => _buildRow(
-                                      filtered[i],
-                                      i == filtered.length - 1,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ), // Scrollbar
-                      ), // GestureDetector
-            ),
-          ],
-        ),
-      ),
-      ),
-      if (_isProcessing)
-          Positioned.fill(
-            child: ColoredBox(
-              color: Colors.black45,
-              child: Center(
-                child: ProcessingDialog(operation: _processingText),
+                              ), // Scrollbar
+                            ), // GestureDetector
+                  ),
+                ],
               ),
             ),
           ),
-      ],
+          if (_isProcessing)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black45,
+                child: Center(
+                  child: ProcessingDialog(operation: _processingText),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1370,6 +1473,82 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  // ───────────────────── SORT SHEET ─────────────────────────────────────────────────────────
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        Widget option(String label, _SortField field, bool ascending) {
+          final selected = _sortField == field && _sortAscending == ascending;
+          return ListTile(
+            title: Text(label),
+            trailing: selected
+                ? const Icon(Icons.check, color: AppColors.primary)
+                : null,
+            onTap: () {
+              setState(() {
+                _sortField = field;
+                _sortAscending = ascending;
+              });
+              Navigator.pop(sheetContext);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.75,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Sort by',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.primary)),
+                  ),
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        option('Name (A–Z)', _SortField.name, true),
+                        option('Name (Z–A)', _SortField.name, false),
+                        option('Date Created (Newest first)', _SortField.dateCreated, false),
+                        option('Date Created (Oldest first)', _SortField.dateCreated, true),
+                        option('Last Modified (Newest first)', _SortField.lastModified, false),
+                        option('Last Modified (Oldest first)', _SortField.lastModified, true),
+                        option('Class Type (A–Z)', _SortField.classType, true),
+                        option('Class Type (Z–A)', _SortField.classType, false),
+                        option('Display ID (A–Z)', _SortField.displayId, true),
+                        option('Display ID (Z–A)', _SortField.displayId, false),
+                        option('ID (Low–High)', _SortField.id, true),
+                        option('ID (High–Low)', _SortField.id, false),
+                        option('Object Type (A–Z)', _SortField.objectType, true),
+                        option('Object Type (Z–A)', _SortField.objectType, false),
+                        option('Version (Low–High)', _SortField.versionId, true),
+                        option('Version (High–Low)', _SortField.versionId, false),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

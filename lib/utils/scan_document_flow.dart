@@ -12,9 +12,13 @@ class ScanDocumentFlow {
 
   /// Full pipeline: camera → crop → PDF.
   /// Returns null if the user cancels at any step.
-  static Future<File?> captureAndConvert(BuildContext context) async {
+  static Future<File?> captureAndConvert(
+    BuildContext context, {
+    void Function(String? message)? onStatusChange,
+  }) async {
     try {
       debugPrint("STEP 0 - Checking camera permission");
+      
 
       final granted = await _ensureCameraPermission(context);
       if (!granted) {
@@ -23,6 +27,7 @@ class ScanDocumentFlow {
       }
 
       debugPrint("STEP 1 - Opening camera");
+      onStatusChange?.call("Opening camera...");
 
       // ── Step 1: Camera ────────────────────────────────────────────────────
       final picker = ImagePicker();
@@ -40,6 +45,7 @@ class ScanDocumentFlow {
       debugPrint("STEP 2 - Camera complete: ${shot.path}");
 
       // ── Step 2: Crop ──────────────────────────────────────────────────────
+      onStatusChange?.call("Opening cropper");
       debugPrint("STEP 3 - Opening cropper");
 
       final cropped = await ImageCropper().cropImage(
@@ -69,9 +75,11 @@ class ScanDocumentFlow {
         return null;
       }
 
+      onStatusChange?.call("Crop complete: ${cropped.path}");
       debugPrint("STEP 4 - Crop complete: ${cropped.path}");
 
       // ── Step 3: Image → single-page PDF ───────────────────────────────────
+      onStatusChange?.call("Creating PDF");
       debugPrint("STEP 5 - Creating PDF");
 
       final pdf = await _imageToPdf(File(cropped.path));

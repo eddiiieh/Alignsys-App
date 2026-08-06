@@ -27,7 +27,18 @@ import 'document_preview_screen.dart';
 import '../screens/search_results_screen.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
+import 'package:mfiles_app/widgets/loading_overlay.dart';
 
+enum _SortField {
+  name,
+  dateCreated,
+  lastModified,
+  classType,
+  objectType,
+  displayId,
+  id,
+  versionId,
+}
 class ViewDetailsScreen extends StatefulWidget {
   const ViewDetailsScreen({
     super.key,
@@ -70,6 +81,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   bool _isProcessing = false;
 
   String _processingText = '';
+
+  bool _navLoading = false;
+  String? _navMessage;
+
+  _SortField _sortField = _SortField.name;
+  bool _sortAscending = true;
 
   void _setProcessing(bool value, [String text = '']) {
     if (!mounted) return;
@@ -413,16 +430,66 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   List<ViewContentItem> _applyFilter(List<ViewContentItem> items) {
     final q = _filter.trim().toLowerCase();
-    final source = q.isEmpty
-        ? items
-        : items.where((o) {
-            final title = o.title.toLowerCase();
-            final label = _subtitleLabel(o)?.toLowerCase() ?? '';
-            return title.contains(q) || label.contains(q);
-          }).toList();
-    return List<ViewContentItem>.from(source)
-      ..sort((a, b) => _alphaCompare(a.title, b.title));
+    if (q.isEmpty) return items;
+    return items.where((o) {
+      final title = o.title.toLowerCase();
+      final label = _subtitleLabel(o)?.toLowerCase() ?? '';
+      return title.contains(q) || label.contains(q);
+    }).toList();
   }
+
+  List<ViewContentItem> _applySort(List<ViewContentItem> items) {
+    final folders = items
+        .where((i) => i.isViewFolder || i.isGroupFolder)
+        .toList()
+      ..sort((a, b) => _alphaCompare(a.title, b.title));
+
+    final objects =
+        items.where((i) => !i.isViewFolder && !i.isGroupFolder).toList();
+
+    int compare(ViewContentItem a, ViewContentItem b) {
+      switch (_sortField) {
+        case _SortField.name:
+          return _alphaCompare(a.title, b.title);
+        case _SortField.dateCreated:
+          return _compareDates(a.createdUtc, b.createdUtc);
+        case _SortField.lastModified:
+          return _compareDates(a.lastModifiedUtc, b.lastModifiedUtc);
+          case _SortField.classType:
+        return _compareStrings(a.classTypeName, b.classTypeName);
+        case _SortField.displayId:
+          return _compareStrings(a.displayId, b.displayId);
+        case _SortField.id:
+          return _compareInts(a.id, b.id);
+        case _SortField.objectType:
+          return _compareStrings(a.objectTypeName, b.objectTypeName);
+        case _SortField.versionId:
+          return _compareInts(a.versionId, b.versionId);
+      }
+    }
+
+    objects.sort((a, b) => _sortAscending ? compare(a, b) : compare(b, a));
+
+    return [...folders, ...objects];
+  }
+
+  int _compareDates(DateTime? a, DateTime? b) {
+    if (a == null && b == null) return 0;
+    if (a == null) return 1;
+    if (b == null) return -1;
+    return a.compareTo(b);
+  }
+
+  int _compareStrings(String? a, String? b) {
+    final sa = (a ?? '').trim();
+    final sb = (b ?? '').trim();
+    if (sa.isEmpty && sb.isEmpty) return 0;
+    if (sa.isEmpty) return 1;
+    if (sb.isEmpty) return -1;
+    return _alphaCompare(sa, sb);
+  }
+
+  int _compareInts(int a, int b) => a.compareTo(b);
 
   int _alphaCompare(String a, String b) {
     int category(String s) {
@@ -868,6 +935,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         final svc = context.read<MFilesService>();
         final vid = (item.viewId > 0) ? item.viewId : widget.view.id;
 
+        setState(() {
+          _navLoading = true;
+          _navMessage = 'Loading ${item.title}...';
+        });
+
         try {
           final items = await svc.fetchViewPropItems(
             viewId: vid,
@@ -875,6 +947,14 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               GroupFilter(propId: propId, propDatatype: propDatatype)
             ],
           );
+
+          if (mounted) {
+            setState(() {
+              _navLoading = false;
+              _navMessage = null;
+            });
+          }
+
           if (!context.mounted) return;
           Navigator.push(
             context,
@@ -892,6 +972,13 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             ),
           );
         } catch (e) {
+          if (mounted) {
+            setState(() {
+              _navLoading = false;
+              _navMessage = null;
+            });
+          }
+
           if (!context.mounted) return;
           ScaffoldMessenger.of(context)
               .showSnackBar(SnackBar(content: Text(humanizeError(e.toString()))));
@@ -953,6 +1040,16 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       title: Text(widget.view.name,
           maxLines: 1, overflow: TextOverflow.ellipsis),
       actions: [
+        IconButton(
+          tooltip: 'Sort',
+          icon: Icon(
+            Icons.sort_rounded,
+            color: (_sortField != _SortField.name || !_sortAscending)
+                ? Colors.white
+                : Colors.white,
+          ),
+          onPressed: _showSortSheet,
+        ),
         IconButton(
           icon: Icon(_showSearch ? Icons.close : Icons.search),
           onPressed: _toggleSearch,
@@ -1205,9 +1302,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         _selectedObjects.values.every(
           (obj) => svc.isCheckedOutLocally(obj.id),
         );
-    return Stack(
-      children: [
-        PopScope(
+    return LoadingOverlay(
+      isLoading: _navLoading,
+      message: _navMessage,
+      child: Stack(
+        children: [
+          PopScope(
           canPop: !_selectionMode,
           onPopInvokedWithResult: (didPop, result) {
             if (didPop) return;
@@ -1246,7 +1346,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   }
 
                   final items = snap.data ?? [];
-                  final filtered = _applyFilter(items);
+                  final filtered = _applySort(_applyFilter(items));
 
                   if (items.isEmpty) return _buildEmptyState();
                   if (filtered.isEmpty) return _buildNoMatchesState();
@@ -1335,6 +1435,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             ),
           ),
       ],
+      ),
     );
   }
 
@@ -1548,6 +1649,82 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  // ───────────────────── SORT SHEET ─────────────────────────────────────────────────────────
+  void _showSortSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        Widget option(String label, _SortField field, bool ascending) {
+          final selected = _sortField == field && _sortAscending == ascending;
+          return ListTile(
+            title: Text(label),
+            trailing: selected
+                ? const Icon(Icons.check, color: AppColors.primary)
+                : null,
+            onTap: () {
+              setState(() {
+                _sortField = field;
+                _sortAscending = ascending;
+              });
+              Navigator.pop(sheetContext);
+            },
+          );
+        }
+
+        return SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(sheetContext).size.height * 0.75,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('Sort by',
+                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.primary)),
+                  ),
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      children: [
+                        option('Name (A–Z)', _SortField.name, true),
+                        option('Name (Z–A)', _SortField.name, false),
+                        option('Date Created (Newest first)', _SortField.dateCreated, false),
+                        option('Date Created (Oldest first)', _SortField.dateCreated, true),
+                        option('Last Modified (Newest first)', _SortField.lastModified, false),
+                        option('Last Modified (Oldest first)', _SortField.lastModified, true),
+                        option('Class Type (A–Z)', _SortField.classType, true),
+                        option('Class Type (Z–A)', _SortField.classType, false),
+                        option('Display ID (A–Z)', _SortField.displayId, true),
+                        option('Display ID (Z–A)', _SortField.displayId, false),
+                        option('ID (Low–High)', _SortField.id, true),
+                        option('ID (High–Low)', _SortField.id, false),
+                        option('Object Type (A–Z)', _SortField.objectType, true),
+                        option('Object Type (Z–A)', _SortField.objectType, false),
+                        option('Version (Low–High)', _SortField.versionId, true),
+                        option('Version (High–Low)', _SortField.versionId, false),
+                        const SizedBox(height: 8),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
