@@ -79,7 +79,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   final Map<int, String> _propNameById = {};
   final Set<int> _allowedMetaPropIds = {};
-  static const Set<int> _excludeMetaPropIds = {100}; // Class
+  static const Set<int> _excludeMetaPropIds = {20, 21, 23, 25, 38, 100};
   final Map<int, _PropVm> _dirty = {};
 
   final Map<int, List<String>> _dirtyLookupLabels = {};
@@ -471,20 +471,6 @@ void initState() {
   Future<List<_PropVm>> _loadProps() async {
     final svc = context.read<MFilesService>();
     await svc.fetchClassProperties(widget.obj.objectTypeId, widget.obj.classId);
-    _allowedMetaPropIds
-      ..clear()
-      ..addAll(
-        svc.classProperties.where((p) => !p.isHidden && !p.isAutomatic).map((p) => p.id),
-      )
-      ..add(0)
-      ..removeAll(_excludeMetaPropIds);
-
-      // ── ADD THIS: if class properties returned very few results,
-      //    fall back to showing all raw props instead of filtering
-      if (svc.classProperties.length <= 2) {
-        _allowedMetaPropIds.clear();
-        // will be populated from raw props below
-      }
 
     _propNameById
       ..clear()
@@ -504,6 +490,21 @@ void initState() {
       objectId: displayIdInt,
       objectTypeId: widget.obj.objectTypeId,
     );
+
+    // Allow-list is now derived from what the server actually returned for
+    // this object — same approach as ObjectInfoDropdown — instead of
+    // classProperties.isHidden/isAutomatic, which was silently hiding fields
+    // the dropdown shows fine.
+    _allowedMetaPropIds
+      ..clear()
+      ..addAll(raw.map((m) {
+        final id = (m['id'] as num?)?.toInt() ??
+            (m['propId'] as num?)?.toInt() ??
+            (m['propertyId'] as num?)?.toInt();
+        return id;
+      }).whereType<int>())
+      ..add(0)
+      ..removeAll(_excludeMetaPropIds);
 
     for (final m in raw) {
       final int? id = (m['id'] as num?)?.toInt() ??
@@ -563,120 +564,135 @@ void initState() {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      'Permissions',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => Navigator.pop(ctx),
-                    child: Container(
-                      width: 30,
-                      height: 30,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(Icons.close, size: 16, color: Colors.grey.shade600),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'OBJECT INFORMATION',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.grey.shade400,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              _permInfoRow('Title', _title.isEmpty ? obj.title : _title),
-              _permInfoRow('Type', obj.objectTypeName),
-              _permInfoRow('Class', obj.classTypeName),
-              const SizedBox(height: 16),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'PERMISSIONS',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.grey.shade400,
-                    letterSpacing: 0.8,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              Container(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
+      isScrollControlled: true,
+      builder: (ctx) {
+        final screenHeight = MediaQuery.of(ctx).size.height; // NEW
+        return ConstrainedBox(
+          // NEW — caps height so it never runs off-screen
+          constraints: BoxConstraints(maxHeight: screenHeight * 0.85),
+          child: Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: SafeArea(
+              top: false,
+              child: SingleChildScrollView(
+                // NEW — content scrolls instead of overflowing
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    _permListRow(
-                      icon: Icons.visibility_outlined,
-                      label: 'Read',
-                      allowed: perms?.readPermission ?? false,
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
-                    _permListRow(
-                      icon: Icons.edit_outlined,
-                      label: 'Edit',
-                      allowed: perms?.editPermission ?? false,
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            'Permissions',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.pop(ctx),
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade100,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Icon(
+                              Icons.close,
+                              size: 16,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    _permListRow(
-                      icon: Icons.delete_outline_rounded,
-                      label: 'Delete',
-                      allowed: perms?.deletePermission ?? false,
+                    const SizedBox(height: 20),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'OBJECT INFORMATION',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: const Color.fromARGB(255, 0, 0, 0),
+                          letterSpacing: 0.8,
+                        ),
+                      ),
                     ),
-                    _permListRow(
-                      icon: Icons.attach_file_rounded,
-                      label: 'Attach',
-                      allowed: perms?.attachObjectsPermission ?? false,
-                      isLast: true,
+                    const SizedBox(height: 10),
+                    _permInfoRow('Title', _title.isEmpty ? obj.title : _title),
+                    _permInfoRow('Type', obj.objectTypeName),
+                    _permInfoRow('Class', obj.classTypeName),
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'PERMISSIONS',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: const Color.fromARGB(255, 5, 5, 5),
+                          letterSpacing: 0.8,
+                        ),
+                      ),
                     ),
+                    const SizedBox(height: 10),
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Column(
+                        children: [
+                          _permListRow(
+                            icon: Icons.visibility_outlined,
+                            label: 'Read',
+                            allowed: perms?.readPermission ?? false,
+                          ),
+                          _permListRow(
+                            icon: Icons.edit_outlined,
+                            label: 'Edit',
+                            allowed: perms?.editPermission ?? false,
+                          ),
+                          _permListRow(
+                            icon: Icons.delete_outline_rounded,
+                            label: 'Delete',
+                            allowed: perms?.deletePermission ?? false,
+                          ),
+                          _permListRow(
+                            icon: Icons.attach_file_rounded,
+                            label: 'Attach',
+                            allowed: perms?.attachObjectsPermission ?? false,
+                            isLast: true,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

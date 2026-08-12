@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/network_service.dart';
 
-/// Wrap any Scaffold body with this to get an automatic
-/// top banner when offline or on a slow connection.
+/// Wrap any Scaffold body with this to get an automatic snackbar
+/// when connectivity drops to a genuinely weak or offline state,
+/// and another when it recovers.
 ///
 /// Usage:
 ///   body: NetworkBanner(child: YourWidget()),
@@ -15,30 +16,8 @@ class NetworkBanner extends StatefulWidget {
   State<NetworkBanner> createState() => _NetworkBannerState();
 }
 
-class _NetworkBannerState extends State<NetworkBanner>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<Offset> _slideAnimation;
+class _NetworkBannerState extends State<NetworkBanner> {
   NetworkQuality? _lastQuality;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 350),
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, -1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
 
   void _handleQualityChange(NetworkQuality quality) {
     if (_lastQuality == quality) return;
@@ -46,36 +25,67 @@ class _NetworkBannerState extends State<NetworkBanner>
     final wasGood = _lastQuality == NetworkQuality.good || _lastQuality == null;
     final isGood = quality == NetworkQuality.good;
 
-    if (!isGood && wasGood) {
-      _controller.forward();
-    } else if (isGood && !wasGood) {
-      _controller.reverse();
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
 
-    // Show "back online" snackbar
-    if (isGood && !wasGood) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.wifi, color: Colors.white, size: 16),
-                SizedBox(width: 8),
-                Text('Back online', style: TextStyle(fontSize: 13)),
-              ],
-            ),
-            backgroundColor: const Color(0xFF22c55e),
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-            margin: const EdgeInsets.all(12),
-          ),
+      if (quality == NetworkQuality.offline) {
+        _showStatusSnackbar(
+          icon: Icons.wifi_off_rounded,
+          message: "You're offline. Some content can't be loaded.",
+          backgroundColor: const Color(0xFFef4444),
         );
-      });
-    }
+      }
+
+      // Only announce slow on the transition down from good, not on
+      // every repeated slow reading while it stays slow.
+      if (quality == NetworkQuality.slow && wasGood) {
+        final network = context.read<NetworkService>();
+        final latency = network.latencyMs;
+        _showStatusSnackbar(
+          icon: Icons.wifi_find_rounded,
+          message: latency != null
+              ? 'Slow connection detected (${latency}ms). Things may take longer to load.'
+              : 'Slow connection detected. Things may take longer to load.',
+          backgroundColor: const Color(0xFFf59e0b),
+        );
+      }
+
+      if (isGood && !wasGood) {
+        _showStatusSnackbar(
+          icon: Icons.wifi,
+          message: 'Back online',
+          backgroundColor: const Color(0xFF22c55e),
+        );
+      }
+    });
 
     _lastQuality = quality;
+  }
+
+  void _showStatusSnackbar({
+    required IconData icon,
+    required String message,
+    required Color backgroundColor,
+  }) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Icon(icon, color: Colors.white, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(message, style: const TextStyle(fontSize: 13)),
+            ),
+          ],
+        ),
+        backgroundColor: backgroundColor,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        margin: const EdgeInsets.all(12),
+      ),
+    );
   }
 
   @override
@@ -83,75 +93,8 @@ class _NetworkBannerState extends State<NetworkBanner>
     return Consumer<NetworkService>(
       builder: (context, network, _) {
         _handleQualityChange(network.quality);
-
-        return Column(
-          children: [
-            SlideTransition(
-              position: _slideAnimation,
-              child: _NetworkStatusBanner(network: network),
-            ),
-            Expanded(child: widget.child),
-          ],
-        );
+        return widget.child;
       },
-    );
-  }
-}
-
-class _NetworkStatusBanner extends StatelessWidget {
-  final NetworkService network;
-  const _NetworkStatusBanner({required this.network});
-
-  @override
-  Widget build(BuildContext context) {
-    if (network.quality == NetworkQuality.good) return const SizedBox.shrink();
-
-    final isOffline = network.quality == NetworkQuality.offline;
-
-    final bgColor = isOffline
-        ? const Color(0xFF3b0a0a)
-        : const Color(0xFF2d1f00);
-
-    final borderColor = isOffline
-        ? const Color(0xFFef4444)
-        : const Color(0xFFf59e0b);
-
-    final textColor = isOffline
-        ? const Color(0xFFfca5a5)
-        : const Color(0xFFfde68a);
-
-    final icon = isOffline ? Icons.wifi_off_rounded : Icons.wifi_find_rounded;
-
-    final message = isOffline
-        ? 'You\'re offline — some content cannot be loaded'
-        : 'Slow connection detected${network.latencyMs != null ? ' (${network.latencyMs}ms)' : ''} — things may take longer to load';
-
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: bgColor,
-        border: Border(
-          bottom: BorderSide(color: borderColor.withOpacity(0.4), width: 1),
-        ),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-      child: Row(
-        children: [
-          Icon(icon, size: 15, color: textColor),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                fontSize: 12,
-                color: textColor,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.1,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

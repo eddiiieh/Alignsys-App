@@ -139,7 +139,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
 
       setState(() {
         _vaults = vaults;
-        _selectedVault = vaults.first;
+        _selectedVault = null;
       });
       _animController.forward();
     } catch (e) {
@@ -157,6 +157,60 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
       );
     }
     setState(() => _loading = false);
+  }
+
+  //
+  Widget _buildVaultSelector() {
+    final hasSelection = _selectedVault != null;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: _vaults.isEmpty ? null : _showVaultPickerSheet,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color:
+                hasSelection
+                    ? _accentBlue.withOpacity(0.4)
+                    : Colors.grey.shade300,
+          ),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                _selectedVault?.name ?? 'Select a repository',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                  color: hasSelection ? Colors.black87 : Colors.grey.shade500,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right, size: 20, color: Colors.grey.shade400),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showVaultPickerSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (_) => _VaultPickerSheet(
+            vaults: _vaults,
+            selected: _selectedVault,
+            onSelected: (v) {
+              setState(() => _selectedVault = v);
+              Navigator.pop(context);
+            },
+          ),
+    );
   }
 
   void _proceedToVault() async {
@@ -386,49 +440,10 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                       ],
                                     ),
                                     const SizedBox(height: 16),
-                                    DropdownButtonFormField<Vault>(
-                                      value: _selectedVault,
-                                      items: _vaults
-                                          .map((v) => DropdownMenuItem(
-                                                value: v,
-                                                child: Row(
-                                                  children: [
-                                                    const Icon(Icons.folder,
-                                                        size: 18,
-                                                        color: _accentBlue),
-                                                    const SizedBox(width: 8),
-                                                    Text(v.name),
-                                                  ],
-                                                ),
-                                              ))
-                                          .toList(),
-                                      onChanged: (v) =>
-                                          setState(() => _selectedVault = v),
-                                      decoration: InputDecoration(
-                                        border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12)),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          borderSide: BorderSide(
-                                              color: Colors.grey.shade300),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          borderSide: const BorderSide(
-                                              color: _accentBlue, width: 2),
-                                        ),
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                                horizontal: 16, vertical: 12),
-                                        filled: true,
-                                        fillColor: AppColors.surfaceLight,
-                                      ),
-                                      icon: const Icon(Icons.arrow_drop_down,
-                                          color: _accentBlue),
-                                    ),
+
+                                    // ── VAULT SELECTOR DROPDOWN ──
+                                    _buildVaultSelector(),
+
                                     const SizedBox(height: 16),
                                     ElevatedButton(
                                       onPressed: (_selectedVault == null ||
@@ -805,6 +820,175 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
           ],
         ],
       ),
+    );
+  }
+}
+
+// ----------------------------------VAULT PICKER-----------------------------------------
+class _VaultPickerSheet extends StatelessWidget {
+  final List<Vault> vaults;
+  final Vault? selected;
+  final ValueChanged<Vault> onSelected;
+
+  const _VaultPickerSheet({
+    required this.vaults,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.6,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 14),
+              // Header, matching home screen's vault switcher
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(
+                        Icons.storage_rounded,
+                        color: Colors.white,
+                        size: 20,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Select Repository',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'Choose a vault to work in',
+                            style: TextStyle(fontSize: 12, color: Colors.white70),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white70),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: vaults.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No repositories available',
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                        ),
+                      )
+                    : ListView.separated(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: vaults.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: Colors.grey.shade200),
+                        itemBuilder: (context, index) {
+                          final v = vaults[index];
+                          final isSelected = v.guid == selected?.guid;
+                          return InkWell(
+                            onTap: () => onSelected(v),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: isSelected
+                                          ? AppColors.primary
+                                          : Colors.grey.shade300,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Text(
+                                      v.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 14.5,
+                                        fontWeight: isSelected
+                                            ? FontWeight.w700
+                                            : FontWeight.w400,
+                                        color: isSelected
+                                            ? AppColors.primary
+                                            : const Color(0xFF1E293B),
+                                      ),
+                                    ),
+                                  ),
+                                  if (isSelected)
+                                    const Icon(
+                                      Icons.check_rounded,
+                                      size: 18,
+                                      color: AppColors.primary,
+                                    )
+                                  else
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 18,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 }

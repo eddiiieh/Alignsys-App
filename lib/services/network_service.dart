@@ -11,6 +11,13 @@ class NetworkService extends ChangeNotifier {
   StreamSubscription? _connectivitySub;
   Timer? _pingTimer;
 
+  // Raised from 400ms. Only genuinely weak connections should surface a banner.
+  static const int _slowThresholdMs = 600;
+  // Require two consecutive slow pings (16s of sustained slowness) before
+  // flagging, so a single blip doesn't flip the UI on and off.
+  static const int _consecutiveSlowRequired = 2;
+  int _consecutiveSlowCount = 0;
+
   NetworkQuality get quality => _quality;
   int? get latencyMs => _latencyMs;
   bool get isOffline => _quality == NetworkQuality.offline;
@@ -47,17 +54,20 @@ class NetworkService extends ChangeNotifier {
       stopwatch.stop();
 
       final rtt = stopwatch.elapsedMilliseconds;
-      NetworkQuality quality;
 
-      if (rtt > 400) {
-        quality = NetworkQuality.slow;
+      if (rtt > _slowThresholdMs) {
+        _consecutiveSlowCount++;
+        if (_consecutiveSlowCount >= _consecutiveSlowRequired) {
+          _setQuality(NetworkQuality.slow, rtt);
+        }
+        // Below the debounce count: leave quality as is, don't flap yet.
       } else {
-        quality = NetworkQuality.good;
+        _consecutiveSlowCount = 0;
+        _setQuality(NetworkQuality.good, rtt);
       }
-
-      _setQuality(quality, rtt);
     } catch (_) {
       stopwatch.stop();
+      _consecutiveSlowCount = 0;
       _setQuality(NetworkQuality.offline, null);
     }
   }

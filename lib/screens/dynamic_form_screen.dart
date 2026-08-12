@@ -56,6 +56,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   ObjectClass? _selectedClass;
   bool _isLoadingClasses = false;
 
+  // Track whether the user has attempted to submit the form, so we can show validation errors only after the first attempt.
+  bool _submitAttempted = false;
+
   // ── FIX: local snapshot of properties for the currently selected class.
   //         This prevents the service's shared `classProperties` list (which
   //         holds whatever was fetched last) from leaking into this form when
@@ -393,7 +396,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           ),
         ],
 
-        _requiredHint(required && !hasValue),
+        _requiredHint(_submitAttempted && required && !hasValue),
       ],
     );
   }
@@ -863,7 +866,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             ),
           ),
         ),
-        _requiredHint(p.isRequired && !has),
+        _requiredHint(_submitAttempted && p.isRequired && !has),
       ],
     );
   }
@@ -932,12 +935,15 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             ),
           ),
         ),
-        _requiredHint(p.isRequired && !has),
+        _requiredHint(_submitAttempted && p.isRequired && !has),
       ],
     );
   }
 
   Widget _buildField(ClassProperty property) {
+    if (property.isAutomatic) {
+      return _automaticFieldTile(property);
+    }
     switch (property.propertyType) {
       case 'MFDatatypeLookup':
         {
@@ -1235,6 +1241,64 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           );
         }
     }
+  }
+
+  // ---------- Automatic field tile ----------
+  Widget _automaticFieldTile(ClassProperty property) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              Text(property.title, style: _labelStyle),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  'Automatic',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade100,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, size: 16, color: Colors.grey.shade400),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Generated automatically by M-Files',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
   }
 
   void _showSnackBar(String message, {bool isError = false}) {
@@ -1576,6 +1640,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   // ── SUBMIT ────────────────────────────────────────────────────────────────
 
   Future<void> _submitForm() async {
+    setState(() => _submitAttempted = true);
+    
     if (_selectedClass == null) {
       _showSnackBar('Please select a class first', isError: true);
       return;
@@ -1675,22 +1741,21 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       );
     }
 
-    // ── FIX: use _localProperties
-    final classHasTitleProp =
-        _localProperties.any((p) => p.id == 0);
-    final hasTitleInPayload = properties.any((p) => p.propId == 0);
+    // ── FIX: ensure Title property (id 0) is included if required
+    final titleProp = _localProperties.where((p) => p.id == 0).toList();
+      final titlePropIsAutomatic = titleProp.isNotEmpty && titleProp.first.isAutomatic;
+      final classHasTitleProp = titleProp.isNotEmpty;
+      final hasTitleInPayload = properties.any((p) => p.propId == 0);
 
-    if (classHasTitleProp && !hasTitleInPayload) {
-      final title = (_formValues[0] ?? '').toString().trim();
-      if (title.isEmpty) {
-        _showSnackBar('Name or title is required', isError: true);
-        return;
+      if (classHasTitleProp && !hasTitleInPayload && !titlePropIsAutomatic) {
+        final title = (_formValues[0] ?? '').toString().trim();
+        if (title.isEmpty) {
+          _showSnackBar('Name or title is required', isError: true);
+          return;
+        }
+        properties.add(PropertyValueRequest(
+            propId: 0, value: title, propertyType: 'MFDatatypeText'));
       }
-      properties.add(PropertyValueRequest(
-          propId: 0,
-          value: title,
-          propertyType: 'MFDatatypeText'));
-    }
 
     final request = ObjectCreationRequest(
       objectID: _currentObjectType.id,
@@ -1776,12 +1841,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                         cls.objectTypeId == _currentObjectType.id)
                     .toList();
 
-                // ── FIX: build visibleProperties from _localProperties
-                //         (the snapshot tied to _selectedClass), NOT from
-                //         service.classProperties which is a shared global.
+
                 final visibleProperties = _localProperties
-                    .where((p) => !p.isHidden && !p.isAutomatic)
-                    .toList()
+                  .where((p) => !p.isHidden)   // keep hidden filter, drop automatic filter
+                  .toList()
                   ..sort((a, b) {
                     if (a.id == 0) return -1;
                     if (b.id == 0) return 1;
