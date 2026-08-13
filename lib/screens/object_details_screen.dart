@@ -2690,28 +2690,28 @@ void initState() {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               firstFile != null
-              ? _CheckoutBadge(
-                  objectId: obj.id,
-                  child: FileTypeBadge(extension: firstFile.extension, size: 36),
-                )
-              : _CheckoutBadge(
-                  objectId: obj.id,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Center(
-                      child: Icon(
-                        iconForObjectTypeName(obj.objectTypeName),
-                        size: 20,
-                        color: AppColors.primary,
+                ? _CheckoutBadge(
+                    objectId: obj.id,
+                    child: FileTypeBadge(extension: firstFile.extension, size: 36),
+                  )
+                : _CheckoutBadge(
+                    objectId: obj.id,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          context.read<MFilesService>().iconForViewObject(obj),
+                          size: 20,
+                          color: AppColors.primary,
+                        ),
                       ),
                     ),
                   ),
-                ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(

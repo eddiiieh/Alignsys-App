@@ -335,7 +335,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: const Icon(
-                          Icons.pin_drop_outlined,
+                          Icons.find_in_page_outlined,
                           color: Colors.white,
                           size: 20,
                         ),
@@ -663,7 +663,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
           if (_cleanExt(widget.extension) == 'pdf' && _totalPages > 0)
             IconButton(
               onPressed: _showJumpToPageSheet,
-              icon: const Icon(Icons.pin_drop_outlined),
+              icon: const Icon(Icons.find_in_page_outlined),
               tooltip: 'Go to page',
             ),
           // CHANGED: inline text search toggle (PDF only)

@@ -14,6 +14,7 @@ import 'package:mfiles_app/utils/file_icon_resolver.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:public_file_saver/public_file_saver.dart';
 
 import '../models/class_property.dart';
 import '../models/lookup_item.dart';
@@ -1048,9 +1049,14 @@ class MFilesService extends ChangeNotifier {
     return _classesByObjectType[objectTypeId]?.grouped ?? [];
   }
 
-  Future<void> searchVault(String query) async {
-    if (selectedVault == null || mfilesUserId == null || accessToken == null)
-      return;
+  int _searchToken = 0;
+
+  Future<List<ViewObject>> searchVault(String query) async {
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      return [];
+    }
+
+    final int token = ++_searchToken;
 
     _setLoading(true);
     _setError(null);
@@ -1063,20 +1069,28 @@ class MFilesService extends ChangeNotifier {
 
       final response = await http.get(url, headers: _authHeadersNoJson);
 
+      if (token != _searchToken) return []; // superseded by a newer search
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        searchResults = data.map((e) => ViewObject.fromJson(e)).toList();
-        warmExtensionsForObjects(searchResults);
-        warmRelationshipsForObjects(searchResults);
-        syncCheckoutStateForObjects(searchResults);
+        final results = data.map((e) => ViewObject.fromJson(e)).toList();
+
+        searchResults = results;
+        warmExtensionsForObjects(results);
+        warmRelationshipsForObjects(results);
+        syncCheckoutStateForObjects(results);
         notifyListeners();
+
+        return results;
       } else {
         _setError('Search failed: ${response.statusCode}');
+        return [];
       }
     } catch (e) {
-      _setError('Search error: $e');
+      if (token == _searchToken) _setError('Search error: $e');
+      return [];
     } finally {
-      _setLoading(false);
+      if (token == _searchToken) _setLoading(false);
     }
   }
 
@@ -1093,13 +1107,16 @@ class MFilesService extends ChangeNotifier {
     return result;
   }
 
-  Future<void> advancedSearchVault({
+  Future<List<ViewObject>> advancedSearchVault({
     required String query,
     List<int>? objectTypeIds,
     int? classId,
   }) async {
-    if (selectedVault == null || mfilesUserId == null || accessToken == null)
-      return;
+    if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+      return [];
+    }
+
+    final int token = ++_searchToken;
 
     _setLoading(true);
     _setError(null);
@@ -1123,24 +1140,33 @@ class MFilesService extends ChangeNotifier {
         body: json.encode(body),
       );
 
+      if (token != _searchToken) return []; // superseded by a newer search
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        searchResults = data.map((e) => ViewObject.fromJson(e)).toList();
-        warmExtensionsForObjects(searchResults);
-        warmRelationshipsForObjects(searchResults);
-        syncCheckoutStateForObjects(searchResults);
+        final results = data.map((e) => ViewObject.fromJson(e)).toList();
+
+        searchResults = results;
+        warmExtensionsForObjects(results);
+        warmRelationshipsForObjects(results);
+        syncCheckoutStateForObjects(results);
         notifyListeners();
+
+        return results;
       } else {
         _setError('Advanced search failed: ${response.statusCode}');
+        return [];
       }
     } catch (e) {
-      _setError('Advanced search error: $e');
+      if (token == _searchToken) _setError('Advanced search error: $e');
+      return [];
     } finally {
-      _setLoading(false);
+      if (token == _searchToken) _setLoading(false);
     }
   }
 
   void clearSearchResults() {
+    _searchToken++; // invalidate any in-flight search so it can't repopulate results after clearing
     searchResults = [];
     notifyListeners();
   }
@@ -2293,13 +2319,23 @@ class MFilesService extends ChangeNotifier {
     );
 
     final filename = _safeFilename(fileTitle, extension, fileId);
-    final dir = await getApplicationDocumentsDirectory();
-    final path = '${dir.path}/$filename';
 
-    final out = File(path);
-    await out.writeAsBytes(result.bytes, flush: true);
+    final saved = await PublicFileSaver().saveBytes(
+      bytes: Uint8List.fromList(result.bytes),
+      fileName: filename,
+      mimeType: result.contentType ?? 'application/octet-stream',
+    );
 
-    return path;
+    if (saved == null || !saved.isSuccess) {
+      throw Exception('Failed to save file to Downloads');
+    }
+
+    debugPrint('✅ File saved to Downloads: ${saved.fileName}');
+    debugPrint('📁 URI: ${saved.uri}');
+    debugPrint('📁 Path: ${saved.path}');
+
+    // Android 10+ returns a content:// URI rather than a filesystem path.
+    return saved.uri ?? saved.path ?? filename;
   }
 
   // ==================== CONVERT TO PDF ====================
@@ -3112,7 +3148,7 @@ class MFilesService extends ChangeNotifier {
 
   IconData iconForViewObject(ViewObject obj) {
     if (!isDocumentViewObject(obj)) {
-      return FileIconResolver.nonDocumentIcon;
+      return FileIconResolver.iconForObjectType(obj.objectTypeId);
     }
 
     final ext = cachedExtensionForObject(obj.id);
@@ -3123,9 +3159,9 @@ class MFilesService extends ChangeNotifier {
   }
 
   IconData iconForContentItem(ViewContentItem item) {
-    if (!item.isObject) return FileIconResolver.nonDocumentIcon;
+    if (!item.isObject) return FileIconResolver.iconForObjectType(item.objectTypeId);
     if (!isDocumentContentItem(item)) {
-      return FileIconResolver.nonDocumentIcon;
+      return FileIconResolver.iconForObjectType(item.objectTypeId);
     }
 
     final ext = cachedExtensionForObject(item.id);
@@ -3134,6 +3170,11 @@ class MFilesService extends ChangeNotifier {
     }
     return FileIconResolver.unknownIcon;
   }
+
+  // Add near the two methods above — used where only a VaultObjectType
+  // is available (e.g. the Create bottom sheet), not a full ViewObject.
+  IconData iconForObjectTypeId(int objectTypeId) =>
+      FileIconResolver.iconForObjectType(objectTypeId);
 
   // ==================== VAULT SELECTION PERSISTENCE ====================
 

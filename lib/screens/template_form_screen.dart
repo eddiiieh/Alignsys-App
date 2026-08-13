@@ -59,6 +59,9 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   final Map<int, bool?> _boolValues = {};
 
+  // Tracks whether the user has attempted to submit the form, used to trigger validation messages on required fields.
+  bool _submitAttempted = false;
+
   @override
   void initState() {
     super.initState();
@@ -135,6 +138,23 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     final id = (prop['propId'] as num?)?.toInt() ?? 0;
     return _propObjectTypeVL[id] ?? false;
   }
+
+  // Keep _isReadOnly() exactly as-is — still used for controller setup,
+  // validation, and payload building (automatic fields should never be
+  // submitted by the user regardless of UI treatment).
+
+  // NEW — used only to decide what appears in the form list at all.
+  // System props and permission-locked fields stay hidden; automatic
+  // fields are no longer excluded here, since we want to show them.
+  bool _isFullyExcluded(Map<String, dynamic> prop) {
+    final id = prop['propId'] as int;
+    final canEdit =
+        prop['userPermission']?['editPermission'] as bool? ?? true;
+    return _systemPropIds.contains(id) || !canEdit;
+  }
+
+  bool _isAutomatic(Map<String, dynamic> prop) =>
+      prop['isAutomatic'] as bool? ?? false;
 
   Future<void> _loadProps() async {
     final service = context.read<MFilesService>();
@@ -306,6 +326,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   }
 
   Future<void> _submit() async {
+    setState(() => _submitAttempted = true);
     for (final prop in _props) {
       if (!_isVisible(prop) || _isReadOnly(prop)) continue;
       final required = prop['isRequired'] as bool? ?? false;
@@ -484,7 +505,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   Widget _buildForm() {
     final editableProps =
-        _props.where((p) => _isVisible(p) && !_isReadOnly(p)).toList();
+        _props.where((p) => _isVisible(p) && !_isFullyExcluded(p)).toList();
     if (editableProps.isEmpty) {
       return Center(
           child: Padding(
@@ -572,42 +593,101 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     );
   }
 
+  // Builds a single editable field widget based on the property map. Handles automatic fields, text fields, date pickers, lookups, booleans, etc.
   Widget _buildEditableField(Map<String, dynamic> prop) {
-    final id = prop['propId'] as int;
-    final title = prop['title'] as String? ?? 'Field $id';
-    final type = prop['propertytype'] as String? ?? '';
-    final required = prop['isRequired'] as bool? ?? false;
+      final id = prop['propId'] as int;
+      final title = prop['title'] as String? ?? 'Field $id';
+      final required = prop['isRequired'] as bool? ?? false;
 
-    // CHANGED: use _resolveTypeId for resilient key lookup with diagnostics
-    final typeId = _resolveTypeId(prop);
-    final allowAdding = _resolveAllowAdding(prop);
-    final objectTypeVL = _resolveObjectTypeVL(prop);
-    return Column(
+      if (_isAutomatic(prop)) {
+        return _automaticFieldTile(title: title, required: required);
+      }
+
+      final type = prop['propertytype'] as String? ?? '';
+      final typeId = _resolveTypeId(prop);
+      final allowAdding = _resolveAllowAdding(prop);
+      final objectTypeVL = _resolveObjectTypeVL(prop);
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: RichText(
-                text: TextSpan(
-              text: title,
+              text: TextSpan(
+                text: title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475569),
+                ),
+                children:
+                    required
+                        ? const [
+                          TextSpan(
+                            text: ' *',
+                            style: TextStyle(
+                              color: Colors.red,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ]
+                        : [],
+              ),
+            ),
+          ),
+          _buildInputForType(
+            id,
+            type,
+            title,
+            required,
+            typeId,
+            allowAdding,
+            objectTypeVL,
+          ),
+        ],
+      );
+    }
+
+  // A read-only tile for automatic fields, showing the title and a note that
+  Widget _automaticFieldTile({required String title, required bool required}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          RichText(
+            text: TextSpan(
               style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                   color: Color(0xFF475569)),
-              children: required
-                  ? const [
-                      TextSpan(
-                          text: ' *',
-                          style: TextStyle(
-                              color: Colors.red,
-                              fontWeight: FontWeight.w800))
-                    ]
-                  : [],
-            )),
+              children: [
+                TextSpan(text: title),
+                if (required)
+                  const TextSpan(
+                    text: ' *',
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800),
+                  ),
+                const TextSpan(text: ' :'),
+              ],
+            ),
           ),
-          _buildInputForType(
-              id, type, title, required, typeId, allowAdding, objectTypeVL),
-        ]);
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '(Automatic)',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.w400,
+                color: Colors.grey.shade400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildInputForType(int id, String type, String label, bool required,
@@ -1007,7 +1087,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                   );
                 })),
           ],
-          if (required && !hasValue)
+          if (_submitAttempted && required && !hasValue)
             Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Row(children: [

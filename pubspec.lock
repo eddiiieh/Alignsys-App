@@ -1104,6 +1104,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.2.0"
+  public_file_saver:
+    dependency: "direct main"
+    description:
+      name: public_file_saver
+      sha256: "1cfc42057125fe7860832797457c92e04c7f4b111743c7c8c40d603ccf84d9a4"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.0"
   pubspec_parse:
     dependency: transitive
     description:

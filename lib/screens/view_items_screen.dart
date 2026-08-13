@@ -427,9 +427,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
               ? item.displayId!.trim()
               : '${item.id}';
       final t = (item.objectTypeName ?? '').trim();
-      if (t.isNotEmpty) return '$t | ID $idPart';
+      if (t.isNotEmpty) return '$t • ID $idPart';
       final c = (item.classTypeName ?? '').trim();
-      if (c.isNotEmpty) return '$c | ID $idPart';
+      if (c.isNotEmpty) return '$c • ID $idPart';
       return 'ID $idPart';
     }
     return null;
@@ -1008,7 +1008,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             Icons.sort_rounded,
             color: (_sortField != _SortField.name || !_sortAscending)
                 ? Colors.white
-                : Colors.white70,
+                : Colors.white,
           ),
           onPressed: _showSortSheet,
         ),
@@ -1478,77 +1478,294 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   // ───────────────────── SORT SHEET ─────────────────────────────────────────────────────────
   void _showSortSheet() {
+    // Each group: field, display label, and whether it currently has a
+    // direction selected — used to auto-expand the active group on open.
+    final groups = <_SortGroup>[
+      _SortGroup('Name', _SortField.name, 'A–Z', 'Z–A'),
+      _SortGroup('Date Created', _SortField.dateCreated, 'Oldest first', 'Newest first'),
+      _SortGroup('Last Modified', _SortField.lastModified, 'Oldest first', 'Newest first'),
+      _SortGroup('Class Type', _SortField.classType, 'A–Z', 'Z–A'),
+      _SortGroup('Display ID', _SortField.displayId, 'A–Z', 'Z–A'),
+      _SortGroup('ID', _SortField.id, 'Low–High', 'High–Low'),
+      _SortGroup('Object Type', _SortField.objectType, 'A–Z', 'Z–A'),
+      _SortGroup('Version', _SortField.versionId, 'Low–High', 'High–Low'),
+    ];
+
+    // Track expansion state locally; auto-expand whichever group is active.
+    final Map<_SortField, bool> expanded = {
+      for (final g in groups) g.field: g.field == _sortField,
+    };
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (sheetContext) {
-        Widget option(String label, _SortField field, bool ascending) {
-          final selected = _sortField == field && _sortAscending == ascending;
-          return ListTile(
-            title: Text(label),
-            trailing: selected
-                ? const Icon(Icons.check, color: AppColors.primary)
-                : null,
-            onTap: () {
-              setState(() {
-                _sortField = field;
-                _sortAscending = ascending;
-              });
-              Navigator.pop(sheetContext);
-            },
-          );
-        }
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        final screenHeight = MediaQuery.of(context).size.height;
+        final isShortScreen = screenHeight < 700;
 
-        return SafeArea(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(sheetContext).size.height * 0.75,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Padding(
-                  padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text('Sort by',
-                        style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700, color: AppColors.primary)),
+        return DraggableScrollableSheet(
+          initialChildSize: isShortScreen ? 0.75 : 0.62,
+          minChildSize: isShortScreen ? 0.55 : 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return StatefulBuilder(
+              builder: (ctx, setSheet) {
+                final screenWidth = MediaQuery.of(ctx).size.width;
+                final sheetWidth = screenWidth > 480 ? 480.0 : screenWidth;
+
+                // Find the display label for the currently active sort, for the subtitle.
+                final activeGroup = groups.firstWhere((g) => g.field == _sortField);
+                final activeLabel = _sortAscending ? activeGroup.ascLabel : activeGroup.descLabel;
+
+                return Center(
+                  child: SizedBox(
+                    width: sheetWidth,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 10),
+                          Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+
+                          // Teal header, matching filter sheet / vault switcher branding
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.sort_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Sort By',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        '${activeGroup.label} · $activeLabel',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white70,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, color: Colors.white70),
+                                  onPressed: () => Navigator.pop(ctx),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          const SizedBox(height: 8),
+
+                          Expanded(
+                            child: ListView(
+                              controller: scrollController,
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                              children: [
+                                for (int gi = 0; gi < groups.length; gi++) ...[
+                                  _buildSortSectionHeader(
+                                    group: groups[gi],
+                                    isActive: groups[gi].field == _sortField,
+                                    activeLabel: groups[gi].field == _sortField ? activeLabel : null,
+                                    expanded: expanded[groups[gi].field]!,
+                                    onToggle: () => setSheet(
+                                      () => expanded[groups[gi].field] =
+                                          !expanded[groups[gi].field]!,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  AnimatedSize(
+                                    duration: const Duration(milliseconds: 200),
+                                    curve: Curves.easeInOut,
+                                    alignment: Alignment.topCenter,
+                                    child: expanded[groups[gi].field]!
+                                        ? Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade50,
+                                              borderRadius: BorderRadius.circular(14),
+                                              border: Border.all(color: Colors.grey.shade200),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                _buildSortRow(
+                                                  label: groups[gi].ascLabel,
+                                                  selected: _sortField == groups[gi].field &&
+                                                      _sortAscending == true,
+                                                  onTap: () {
+                                                    setState(() {
+                                                      _sortField = groups[gi].field;
+                                                      _sortAscending = true;
+                                                    });
+                                                    Navigator.pop(ctx);
+                                                  },
+                                                ),
+                                                Divider(height: 1, color: Colors.grey.shade200, indent: 16),
+                                                _buildSortRow(
+                                                  label: groups[gi].descLabel,
+                                                  selected: _sortField == groups[gi].field &&
+                                                      _sortAscending == false,
+                                                  onTap: () {
+                                                    setState(() {
+                                                      _sortField = groups[gi].field;
+                                                      _sortAscending = false;
+                                                    });
+                                                    Navigator.pop(ctx);
+                                                  },
+                                                ),
+                                              ],
+                                            ),
+                                          )
+                                        : const SizedBox.shrink(),
+                                  ),
+                                  if (gi != groups.length - 1) const SizedBox(height: 16),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildSortSectionHeader({
+    required _SortGroup group,
+    required bool isActive,
+    required String? activeLabel,
+    required bool expanded,
+    required VoidCallback onToggle,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Row(
+            children: [
+              Text(
+                group.label.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: Colors.grey.shade500,
                 ),
-                Flexible(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      children: [
-                        option('Name (A–Z)', _SortField.name, true),
-                        option('Name (Z–A)', _SortField.name, false),
-                        option('Date Created (Newest first)', _SortField.dateCreated, false),
-                        option('Date Created (Oldest first)', _SortField.dateCreated, true),
-                        option('Last Modified (Newest first)', _SortField.lastModified, false),
-                        option('Last Modified (Oldest first)', _SortField.lastModified, true),
-                        option('Class Type (A–Z)', _SortField.classType, true),
-                        option('Class Type (Z–A)', _SortField.classType, false),
-                        option('Display ID (A–Z)', _SortField.displayId, true),
-                        option('Display ID (Z–A)', _SortField.displayId, false),
-                        option('ID (Low–High)', _SortField.id, true),
-                        option('ID (High–Low)', _SortField.id, false),
-                        option('Object Type (A–Z)', _SortField.objectType, true),
-                        option('Object Type (Z–A)', _SortField.objectType, false),
-                        option('Version (Low–High)', _SortField.versionId, true),
-                        option('Version (High–Low)', _SortField.versionId, false),
-                        const SizedBox(height: 8),
-                      ],
+              ),
+              if (isActive) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    activeLabel ?? '',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
                     ),
                   ),
                 ),
               ],
-            ),
+              const Spacer(),
+              Icon(
+                expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: Colors.grey.shade500,
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSortRow({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? AppColors.primary : const Color(0xFF1E293B),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              selected
+                  ? const Icon(Icons.check_rounded, size: 20, color: AppColors.primary)
+                  : const SizedBox(width: 20),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1588,4 +1805,14 @@ class _CheckoutBadge extends StatelessWidget {
       ],
     );
   }
+}
+
+// ───────────────────── SORT GROUP CLASS ─────────────────────────────────────────────────────────
+class _SortGroup {
+  final String label;
+  final _SortField field;
+  final String ascLabel;
+  final String descLabel;
+
+  const _SortGroup(this.label, this.field, this.ascLabel, this.descLabel);
 }

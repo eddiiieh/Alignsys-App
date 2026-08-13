@@ -44,6 +44,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   int? _expandedInfoItemId;
   int? _expandedRelationshipsItemId;
 
+  // Incrementing request ID to track the latest search request
+  int _searchRequestId = 0;
+
   final Set<int> _previewLoading = {};
 
   final ScrollController _scrollController = ScrollController();
@@ -161,6 +164,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     if (query.isEmpty) return;
     final svc = context.read<MFilesService>();
 
+    final int requestId = ++_searchRequestId;
+
     setState(() {
       _isSearching = true;
       _isWarming = false;
@@ -169,21 +174,20 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     });
 
     try {
-      if (_hasActiveFilters) {
-        await svc.advancedSearchVault(
-          query: query,
-          objectTypeIds: _selectedObjectTypeIds.toList(),
-          classId: _selectedClassId,
-        );
-      } else {
-        await svc.searchVault(query);
-      }
-      if (!mounted) return;
+      final List<ViewObject> results = _hasActiveFilters
+          ? await svc.advancedSearchVault(
+              query: query,
+              objectTypeIds: _selectedObjectTypeIds.toList(),
+              classId: _selectedClassId,
+            )
+          : await svc.searchVault(query);
 
-      final results = List<ViewObject>.from(svc.searchResults);
+      if (!mounted || requestId != _searchRequestId) return;
+
+      final sorted = List<ViewObject>.from(results);
 
       final q = query.toLowerCase();
-      results.sort((a, b) {
+      sorted.sort((a, b) {
         final aTitle = a.title.toLowerCase();
         final bTitle = b.title.toLowerCase();
         final aScore = aTitle.startsWith(q) ? 0 : aTitle.contains(q) ? 1 : 2;
@@ -192,7 +196,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       });
 
       setState(() {
-        _results = results;
+        _results = sorted;
         _hasSearched = true;
         _isSearching = false;
         _isWarming = true;
@@ -201,15 +205,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       });
 
       await Future.wait([
-        svc.warmExtensionsForObjects(results),
-        svc.warmRelationshipsForObjects(results),
+        svc.warmExtensionsForObjects(sorted),
+        svc.warmRelationshipsForObjects(sorted),
       ]);
 
-      if (!mounted) return;
+      if (!mounted || requestId != _searchRequestId) return;
       setState(() => _isWarming = false);
 
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || requestId != _searchRequestId) return;
       setState(() {
         _isSearching = false;
         _isWarming = false;
@@ -573,202 +577,486 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     Set<int> workingTypes = Set.from(_selectedObjectTypeIds);
     int? workingClassId = _selectedClassId;
 
+    bool objectTypeExpanded = true;
+    bool classExpanded = true;
+
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheet) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 14,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-          ),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.tune_rounded,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Filter Search',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    onPressed: () => Navigator.pop(ctx),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Object Type',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade600,
+      builder: (_) {
+        // On short screens (e.g. landscape, older/smaller phones), reserve a
+        // larger starting fraction so the list isn't reduced to 1-2 visible rows
+        // once the fixed-height header + bottom bar are subtracted.
+        final screenHeight = MediaQuery.of(context).size.height;
+        final isShortScreen = screenHeight < 700;
+
+        return DraggableScrollableSheet(
+          initialChildSize: isShortScreen ? 0.75 : 0.62,
+          minChildSize: isShortScreen ? 0.55 : 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (context, scrollController) {
+            return StatefulBuilder(
+              builder: (ctx, setSheet) {
+                final activeCount =
+                    workingTypes.length + (workingClassId != null ? 1 : 0);
+
+                // Cap sheet width on tablets/large screens so it doesn't stretch
+                // edge-to-edge; center it like Apple's sheets do on iPad.
+                final screenWidth = MediaQuery.of(ctx).size.width;
+                final sheetWidth = screenWidth > 480 ? 480.0 : screenWidth;
+
+                return Center(
+                  child: SizedBox(
+                    width: sheetWidth,
+                    child: Container(
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
                         ),
                       ),
-                      const SizedBox(height: 4),
-                      ...svc.objectTypes.map((ot) {
-                        final checked = workingTypes.contains(ot.id);
-                        return CheckboxListTile(
-                          value: checked,
-                          onChanged: (v) {
-                            setSheet(() {
-                              if (v == true) {
-                                workingTypes.add(ot.id);
-                              } else {
-                                workingTypes.remove(ot.id);
-                              }
-                            });
-                          },
-                          contentPadding: EdgeInsets.zero,
-                          controlAffinity: ListTileControlAffinity.leading,
-                          activeColor: AppColors.primary,
-                          title: Text(
-                            ot.displayName,
-                            style: const TextStyle(fontSize: 14),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 10),
+                          Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(2),
+                            ),
                           ),
-                        );
-                      }),
-                      const SizedBox(height: 12),
-                      Text(
-                        'Class',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      DropdownButtonFormField<int?>(
-                        value: workingClassId,
-                        isExpanded: true,
-                        decoration: InputDecoration(
-                          filled: true,
-                          fillColor: AppColors.surfaceLight,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
+                          const SizedBox(height: 14),
+
+                          // Teal header, matching vault switcher branding
+                          Container(
+                            width: double.infinity,
+                            margin: const EdgeInsets.symmetric(horizontal: 20),
+                            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: const Icon(
+                                    Icons.tune_rounded,
+                                    color: Colors.white,
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'Filter Search',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.white,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        activeCount == 0
+                                            ? 'Refine results by type or class'
+                                            : '$activeCount filter${activeCount == 1 ? '' : 's'} selected',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.white70,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white70,
+                                  ),
+                                  onPressed: () => Navigator.pop(ctx),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                              ],
+                            ),
                           ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
+
+                          const SizedBox(height: 8),
+
+                          Expanded(
+                            child: ListView(
+                              controller: scrollController,
+                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                              children: [
+                                _buildFilterSectionHeader(
+                                  text: 'OBJECT TYPE',
+                                  count: workingTypes.length,
+                                  expanded: objectTypeExpanded,
+                                  onToggle:
+                                      () => setSheet(
+                                        () =>
+                                            objectTypeExpanded =
+                                                !objectTypeExpanded,
+                                      ),
+                                ),
+                                const SizedBox(height: 6),
+                                AnimatedSize(
+                                  duration: const Duration(milliseconds: 200),
+                                  curve: Curves.easeInOut,
+                                  alignment: Alignment.topCenter,
+                                  child:
+                                      objectTypeExpanded
+                                          ? Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              border: Border.all(
+                                                color: Colors.grey.shade200,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                for (
+                                                  int i = 0;
+                                                  i < svc.objectTypes.length;
+                                                  i++
+                                                ) ...[
+                                                  _buildFilterRow(
+                                                    label:
+                                                        svc
+                                                            .objectTypes[i]
+                                                            .displayName,
+                                                    selected: workingTypes
+                                                        .contains(
+                                                          svc.objectTypes[i].id,
+                                                        ),
+                                                    multiSelect: true,
+                                                    onTap: () {
+                                                      setSheet(() {
+                                                        final id =
+                                                            svc
+                                                                .objectTypes[i]
+                                                                .id;
+                                                        if (!workingTypes
+                                                            .remove(id)) {
+                                                          workingTypes.add(id);
+                                                        }
+                                                      });
+                                                    },
+                                                  ),
+                                                  if (i !=
+                                                      svc.objectTypes.length -
+                                                          1)
+                                                    Divider(
+                                                      height: 1,
+                                                      color:
+                                                          Colors.grey.shade200,
+                                                      indent: 16,
+                                                    ),
+                                                ],
+                                              ],
+                                            ),
+                                          )
+                                          : const SizedBox.shrink(),
+                                ),
+
+                                const SizedBox(height: 22),
+
+                                _buildFilterSectionHeader(
+                                  text: 'CLASS',
+                                  count: workingClassId != null ? 1 : 0,
+                                  expanded: classExpanded,
+                                  onToggle:
+                                      () => setSheet(
+                                        () => classExpanded = !classExpanded,
+                                      ),
+                                ),
+                                const SizedBox(height: 6),
+                                AnimatedSize(
+                                  duration: const Duration(milliseconds: 200),
+                                  curve: Curves.easeInOut,
+                                  alignment: Alignment.topCenter,
+                                  child:
+                                      classExpanded
+                                          ? Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.grey.shade50,
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              border: Border.all(
+                                                color: Colors.grey.shade200,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              children: [
+                                                _buildFilterRow(
+                                                  label: 'Any class',
+                                                  selected:
+                                                      workingClassId == null,
+                                                  multiSelect: false,
+                                                  onTap:
+                                                      () => setSheet(
+                                                        () =>
+                                                            workingClassId =
+                                                                null,
+                                                      ),
+                                                ),
+                                                for (
+                                                  int i = 0;
+                                                  i < allClasses.length;
+                                                  i++
+                                                ) ...[
+                                                  Divider(
+                                                    height: 1,
+                                                    color: Colors.grey.shade200,
+                                                    indent: 16,
+                                                  ),
+                                                  _buildFilterRow(
+                                                    label:
+                                                        allClasses[i]
+                                                            .displayName,
+                                                    selected:
+                                                        workingClassId ==
+                                                        allClasses[i].id,
+                                                    multiSelect: false,
+                                                    onTap:
+                                                        () => setSheet(
+                                                          () =>
+                                                              workingClassId =
+                                                                  allClasses[i]
+                                                                      .id,
+                                                        ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          )
+                                          : const SizedBox.shrink(),
+                                ),
+
+                                const SizedBox(height: 16),
+                              ],
+                            ),
                           ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
-                          ),
-                        ),
-                        hint: const Text('Any class'),
-                        items: [
-                          const DropdownMenuItem<int?>(
-                            value: null,
-                            child: Text('Any class'),
-                          ),
-                          ...allClasses.map(
-                            (c) => DropdownMenuItem<int?>(
-                              value: c.id,
-                              child: Text(c.displayName, overflow: TextOverflow.ellipsis),
+
+                          // Sticky bottom actions
+                          Container(
+                            padding: EdgeInsets.fromLTRB(
+                              20,
+                              12,
+                              20,
+                              MediaQuery.of(ctx).viewInsets.bottom + 16,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              border: Border(
+                                top: BorderSide(color: Colors.grey.shade100),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed:
+                                        activeCount == 0
+                                            ? null
+                                            : () {
+                                              setSheet(() {
+                                                workingTypes = {};
+                                                workingClassId = null;
+                                              });
+                                            },
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: Colors.grey.shade700,
+                                      side: BorderSide(
+                                        color: Colors.grey.shade300,
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Clear',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  flex: 2,
+                                  child: ElevatedButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _selectedObjectTypeIds
+                                          ..clear()
+                                          ..addAll(workingTypes);
+                                        _selectedClassId = workingClassId;
+                                      });
+                                      Navigator.pop(ctx);
+                                      if (_lastQuery.isNotEmpty) {
+                                        _runSearch(_lastQuery);
+                                      }
+                                    },
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: AppColors.primary,
+                                      foregroundColor: Colors.white,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      activeCount == 0
+                                          ? 'Apply'
+                                          : 'Apply ($activeCount)',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ],
-                        onChanged: (v) => setSheet(() => workingClassId = v),
                       ),
-                      const SizedBox(height: 20),
-                    ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFilterSectionHeader({
+    required String text,
+    required int count,
+    required bool expanded,
+    required VoidCallback onToggle,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onToggle,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          child: Row(
+            children: [
+              Text(
+                text,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: Colors.grey.shade500,
+                ),
+              ),
+              if (count > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
+              ],
+              const Spacer(),
+              Icon(
+                expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
+                size: 20,
+                color: Colors.grey.shade500,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterRow({
+    required String label,
+    required bool selected,
+    required bool multiSelect,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected ? AppColors.primary : const Color(0xFF1E293B),
                   ),
                 ),
               ),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {
-                        setSheet(() {
-                          workingTypes = {};
-                          workingClassId = null;
-                        });
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey.shade700,
-                        side: BorderSide(color: Colors.grey.shade300),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text('Clear'),
+              const SizedBox(width: 8),
+              if (multiSelect)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.primary : Colors.transparent,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected ? AppColors.primary : Colors.grey.shade400,
+                      width: 1.5,
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        setState(() {
-                          _selectedObjectTypeIds
-                            ..clear()
-                            ..addAll(workingTypes);
-                          _selectedClassId = workingClassId;
-                        });
-                        Navigator.pop(ctx);
-                        if (_lastQuery.isNotEmpty) {
-                          _runSearch(_lastQuery);
-                        }
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text('Apply'),
-                    ),
-                  ),
-                ],
-              ),
+                  child: selected
+                      ? const Icon(Icons.check, size: 14, color: Colors.white)
+                      : null,
+                )
+              else
+                selected
+                    ? const Icon(Icons.check_rounded, size: 20, color: AppColors.primary)
+                    : const SizedBox(width: 20),
             ],
           ),
         ),
@@ -1289,7 +1577,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     final svc = context.watch<MFilesService>();
     final type = obj.objectTypeName.trim();
     final idPart = obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
-    final subtitle = type.isEmpty ? 'ID $idPart' : '$type | ID $idPart';
+    // Display type if available, otherwise just show ID
+    final subtitle = type.isEmpty ? 'ID $idPart' : '$type • ID $idPart';
 
     final bool canExpand = obj.id != 0;
     final bool isDoc = svc.isDocumentViewObject(obj);
