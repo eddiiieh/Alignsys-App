@@ -708,8 +708,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                                 borderRadius:
                                                     BorderRadius.circular(10),
                                               ),
-                                              child: const Icon(
-                                                Icons.folder_rounded,
+                                              child: Icon(
+                                                isObject ? svc.iconForViewObject(asViewObj) : Icons.folder_rounded,
                                                 color: AppColors.primary,
                                                 size: 20,
                                               ),

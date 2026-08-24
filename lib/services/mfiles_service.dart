@@ -3010,6 +3010,11 @@ class MFilesService extends ChangeNotifier {
 
     final resp = await http.get(url, headers: _authHeadersNoJson);
 
+    if (resp.statusCode == 404) {
+      // No workflows configured for this object type/class — not an error.
+      return <WorkflowOption>[];
+    }
+
     if (resp.statusCode != 200) {
       throw Exception(
         'GetVaultsObjectClassTypeWorkflows failed: ${resp.statusCode} ${resp.body}',

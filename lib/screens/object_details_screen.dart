@@ -16,7 +16,6 @@ import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
 import 'package:mfiles_app/dss/screens/dss_signing_screen.dart';
-import 'package:mfiles_app/utils/object_type_icons.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
@@ -103,6 +102,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   // ── Design constant — fields visible before "Show all" ──
   static const int _metaPreviewCount = 5;
+
+  // Tracks who we've already sent each file to signing this session, so the
+  // dialog can warn against re-sending to the same person and avoid the
+  // "already sent" error from DSS.
+  final Map<int, Set<String>> _sentSigneesByFile = {};
 
   // ── Collapsible metadata state ──
   bool _metadataExpanded = false;
@@ -771,6 +775,7 @@ void initState() {
       context: context,
       builder: (_) => _SendForSigningDialog(
         file: file,
+        alreadySent: _sentSigneesByFile[file.fileId] ?? const <String>{},
         onSend: (emails) => _sendForSigning(file: file, emails: emails),
       ),
     );
@@ -793,6 +798,11 @@ void initState() {
           signerEmail: email,
         );
       }
+
+      _sentSigneesByFile
+        .putIfAbsent(file.fileId, () => {})
+        .addAll(emails.map((e) => e.trim().toLowerCase()));
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -882,142 +892,6 @@ void initState() {
         ),
       );
     }
-  }
-
-  //e-Sign options bottom sheet, DO NOT REMOVE
-  void _showESignOptions(ObjectFile file) {
-    final busy = _saving || _downloading || _changingWorkflow || _eSigning;
-    if (busy) return;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40, height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 18),
-              Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.draw_rounded, color: AppColors.primary, size: 22),
-                ),
-                const SizedBox(width: 12),
-                const Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('e-Sign options',
-                        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
-                    SizedBox(height: 2),
-                    Text('Choose a signing action',
-                        style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                  ],
-                ),
-              ]),
-              const SizedBox(height: 20),
-              // Sign myself
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _selfSign(file);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.05),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: AppColors.primary.withOpacity(0.15)),
-                    ),
-                    child: Row(children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.10),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.draw_outlined, size: 18, color: AppColors.primary),
-                      ),
-                      const SizedBox(width: 14),
-                      const Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('Sign myself',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                          SizedBox(height: 2),
-                          Text('Sign this document with your own signature',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF64748B))),
-                        ]),
-                      ),
-                      Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
-                    ]),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              // Send for signing
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(12),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _showSendForSigningDialog(file);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: Colors.grey.shade200),
-                    ),
-                    child: Row(children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Icon(Icons.send_rounded, size: 18, color: Colors.grey.shade600),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Text('Send for signing',
-                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 2),
-                          Text('Request signatures from others via email',
-                              style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-                        ]),
-                      ),
-                      Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
-                    ]),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1639,18 +1513,46 @@ void initState() {
                       );
                     }
                     if (snap.hasError) {
-                      return Text(
-                        'Failed to load workflows: ${snap.error}',
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.red.shade700),
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.error_outline_rounded, size: 15, color: Colors.orange.shade700),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Couldn't load workflows. Pull to refresh or try again.",
+                                style: TextStyle(fontSize: 13, color: Colors.orange.shade800, fontWeight: FontWeight.w500),
+                              ),
+                            ),
+                          ],
+                        ),
                       );
                     }
                     final workflows = snap.data ?? [];
                     if (workflows.isEmpty) {
-                      return Text(
-                        'No workflows available for this object type.',
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey.shade500),
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.info_outline_rounded, size: 15, color: Colors.grey.shade400),
+                            const SizedBox(width: 8),
+                            Text(
+                              "Workflows aren't available for this document type.",
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                            ),
+                          ],
+                        ),
                       );
                     }
                     _selectedWorkflowId ??= workflows.first.id;
@@ -3038,8 +2940,7 @@ void initState() {
                       ),
                     // ── File rows — no signing buttons here ───────────────
                     ...files.map((f) {
-                      final ext =
-                          (f.extension.isEmpty ? '' : '.${f.extension}')
+                      (f.extension.isEmpty ? '' : '.${f.extension}')
                               .toLowerCase();
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
@@ -3068,8 +2969,8 @@ void initState() {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              subtitle: Text(
-                                  'v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+                              //subtitle: Text(
+                                  //'v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (action) async {
                                   final displayIdInt =
@@ -3327,7 +3228,10 @@ void initState() {
                     ),
                     value: overwrite,
                     activeColor: AppColors.primary,
-                    onChanged: (v) => setSheet(() => overwrite = v),
+                    onChanged: (v) => setSheet(() {
+                      overwrite = v;
+                      if (v) separate = false; // Disable separate if overwrite is enabled
+                    }),
                   ),
                   Divider(height: 1, color: Colors.grey.shade100),
 
@@ -3351,7 +3255,10 @@ void initState() {
                     ),
                     value: separate,
                     activeColor: AppColors.primary,
-                    onChanged: (v) => setSheet(() => separate = v),
+                    onChanged: (v) => setSheet(() {
+                      separate = v;
+                      if (v) overwrite = false;
+                    }),
                   ),
                   const SizedBox(height: 24),
 
@@ -4082,6 +3989,33 @@ Widget _buildCommentList(List<ObjectComment> comments) {
     final label = _friendlyPropLabel(p);
     final isThisFieldEditing = _editingPropId == p.id;
 
+    // ── Read-only fields — no pencil, just show the value ──────────────────
+    if (p.isReadOnly) {
+      String display;
+      if (_isLookup(p) || _isMultiLookup(p)) {
+        display = _lookupDisplayText(p);
+      } else if (_isBoolean(p)) {
+        bool b = false;
+        final raw = p.value;
+        if (raw is bool) {
+          b = raw;
+        } else if (raw is String) {
+          b = raw.toLowerCase() == 'true' || raw == '1';
+        } else if (raw is num) {
+          b = raw != 0;
+        }
+        display = b ? 'Yes' : 'No';
+      } else if (_isDate(p) || _isTimestamp(p)) {
+        final text = _valueToText(p.value);
+        display = text.trim().isNotEmpty
+            ? _displayDate(text, includeTime: _isTimestamp(p))
+            : '';
+      } else {
+        display = _valueToText(p.value);
+      }
+      return _readOnlyRow(label, display);
+    }
+
     // ── Lookup fields ─────────────────────────────────────────────────────
     if (_isLookup(p) || _isMultiLookup(p)) {
       final isMulti = _isMultiLookup(p);
@@ -4249,7 +4183,6 @@ Widget _buildCommentList(List<ObjectComment> comments) {
 
     // -- Boolean fields --
     if (_isBoolean(p)) {
-      // Normalise whatever the server sends to a proper bool
       bool currentBool = false;
       final raw = _dirty[p.id]?.editedValue ?? p.value;
       if (raw is bool) {
@@ -4258,6 +4191,55 @@ Widget _buildCommentList(List<ObjectComment> comments) {
         currentBool = raw.toLowerCase() == 'true' || raw == '1';
       } else if (raw is num) {
         currentBool = raw != 0;
+      }
+
+      final busy = _saving || _downloading || _changingWorkflow;
+      final isSavingThis = _saving && _editingPropId == p.id;
+
+      Widget pill(String pillLabel, bool value) {
+        final selected = currentBool == value;
+        return Expanded(
+          child: GestureDetector(
+            onTap: (busy || selected)
+                ? null
+                : () async {
+                    setState(() {
+                      _dirty[p.id] = p.copyWith(editedValue: value);
+                      _editingPropId = p.id;
+                    });
+                    await _saveField(p);
+                  },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              margin: const EdgeInsets.all(4),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: selected ? AppColors.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: (isSavingThis && selected)
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Text(
+                        pillLabel,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: selected ? Colors.white : Colors.grey.shade600,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        );
       }
 
       return Column(
@@ -4272,89 +4254,18 @@ Widget _buildCommentList(List<ObjectComment> comments) {
             ),
           ),
           const SizedBox(height: 8),
-          GestureDetector(
-            onTap: (_saving || _downloading || _changingWorkflow)
-                ? null
-                : () async {
-                    // Toggle the value, mark dirty, auto-save
-                    final newVal = !currentBool;
-                    setState(() {
-                      _dirty[p.id] = p.copyWith(editedValue: newVal);
-                      _editingPropId = p.id;
-                    });
-                    await _saveField(p);
-                  },
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 150),
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              decoration: BoxDecoration(
-                color: currentBool
-                    ? AppColors.primary.withOpacity(0.06)
-                    : Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: currentBool
-                      ? AppColors.primary.withOpacity(0.35)
-                      : Colors.grey.shade200,
-                ),
-              ),
-              child: Row(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 36,
-                    height: 20,
-                    decoration: BoxDecoration(
-                      color: currentBool
-                          ? AppColors.primary
-                          : Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: AnimatedAlign(
-                      duration: const Duration(milliseconds: 150),
-                      alignment: currentBool
-                          ? Alignment.centerRight
-                          : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.all(2),
-                        width: 16,
-                        height: 16,
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Text(
-                    currentBool ? 'Yes' : 'No',
-                    style: TextStyle(
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w500,
-                      color: currentBool
-                          ? AppColors.primary
-                          : Colors.grey.shade600,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (_saving && _editingPropId == p.id)
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  else
-                    Icon(
-                      Icons.swap_horiz_rounded,
-                      size: 16,
-                      color: (_saving || _downloading || _changingWorkflow)
-                          ? Colors.grey.shade300
-                          : Colors.grey.shade400,
-                    ),
-                ],
-              ),
+          Container(
+            decoration: BoxDecoration(
+              color: AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                pill('Yes', true),
+                Container(width: 1, height: 36, color: Colors.grey.shade200),
+                pill('No', false),
+              ],
             ),
           ),
         ],
@@ -4644,6 +4555,74 @@ Widget _buildCommentList(List<ObjectComment> comments) {
       ],
     );
   }
+
+    /// Renders a property that cannot be edited at all — no pencil, no tap
+  /// target, just a "Read only" tag so it's visually distinct from editable
+  /// fields that simply haven't been tapped yet.
+  Widget _readOnlyRow(String label, String value) {
+    final hasValue = value.trim().isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF475569),
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.lock_outline_rounded,
+                      size: 11, color: Colors.grey.shade500),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Read only',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.grey.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Text(
+            hasValue ? value : '—',
+            style: TextStyle(
+              fontSize: 14.5,
+              fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
+              color: hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 // ───────────── CHECKOUT BADGE CLASS ────────────────────────────────────────────────────────────────
@@ -4689,18 +4668,24 @@ class _CheckoutBadge extends StatelessWidget {
 
 class _SendForSigningDialog extends StatefulWidget {
   final ObjectFile file;
+  final Set<String> alreadySent;
   final Future<void> Function(List<String> emails) onSend;
 
-  const _SendForSigningDialog({required this.file, required this.onSend});
+  const _SendForSigningDialog({
+    required this.file,
+    required this.onSend,
+    this.alreadySent = const <String>{},
+  });
 
   @override
   State<_SendForSigningDialog> createState() => _SendForSigningDialogState();
 }
 
 class _SendForSigningDialogState extends State<_SendForSigningDialog> {
-  final _formKey = GlobalKey<FormState>();
   final List<TextEditingController> _controllers = [TextEditingController()];
   bool _sending = false;
+
+  static const _emailRegex = r'^[^@\s]+@[^@\s]+\.[^@\s]+$';
 
   @override
   void dispose() {
@@ -4719,15 +4704,45 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
     });
   }
 
+  bool _isValidFormat(String v) =>
+      RegExp(_emailRegex).hasMatch(v.trim());
+
+  /// Returns an error string for this field, or null if it's fine.
+  String? _fieldError(int index) {
+    final val = _controllers[index].text.trim();
+    if (val.isEmpty) return null; // empty rows are just ignored on send
+    if (!_isValidFormat(val)) return 'Enter a valid email';
+    final lower = val.toLowerCase();
+    if (widget.alreadySent.contains(lower)) {
+      return 'Already sent to this person';
+    }
+    for (int i = 0; i < _controllers.length; i++) {
+      if (i == index) continue;
+      if (_controllers[i].text.trim().toLowerCase() == lower) {
+        return 'Duplicate entry';
+      }
+    }
+    return null;
+  }
+
+  List<String> get _validEmails {
+    final out = <String>[];
+    for (int i = 0; i < _controllers.length; i++) {
+      final val = _controllers[i].text.trim();
+      if (val.isEmpty) continue;
+      if (_fieldError(i) != null) continue;
+      out.add(val);
+    }
+    return out;
+  }
+
+  bool get _canSend => !_sending && _validEmails.isNotEmpty;
+
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (!_canSend) return;
     setState(() => _sending = true);
     try {
-      final emails = _controllers
-          .map((c) => c.text.trim())
-          .where((e) => e.isNotEmpty)
-          .toList();
-      await widget.onSend(emails);
+      await widget.onSend(_validEmails);
       if (mounted) Navigator.pop(context);
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -4736,74 +4751,170 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final fileName =
+        widget.file.fileTitle.trim().isEmpty ? 'this file' : widget.file.fileTitle;
+
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Header — matches auto-suggest dialog styling ──────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.send_rounded,
-                        color: AppColors.primary, size: 22),
+                  Row(
+                    children: [
+                      const Expanded(
+                        child: Text(
+                          'Send for Signing',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _sending ? null : () => Navigator.pop(context),
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.close,
+                              size: 15, color: Colors.white),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Send for Signing',
-                            style: TextStyle(
-                                fontSize: 17, fontWeight: FontWeight.w700)),
-                        SizedBox(height: 2),
-                        Text('Enter signee email addresses',
-                            style: TextStyle(
-                                fontSize: 12, color: Color(0xFF64748B))),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: _sending ? null : () => Navigator.pop(context),
-                    icon: Icon(Icons.close, color: Colors.grey.shade500),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
+                  const SizedBox(height: 4),
+                  Text(
+                    'File: $fileName',
+                    style: const TextStyle(fontSize: 12, color: Colors.white70),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
-              Divider(color: Colors.grey.shade100, height: 1),
-              const SizedBox(height: 20),
-              const Text('Signee Emails',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF475569))),
-              const SizedBox(height: 10),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.3),
-                child: SingleChildScrollView(
-                  child: Column(
-                    children: List.generate(_controllers.length, (i) {
+            ),
+
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Already sent section ───────────────────────────
+                    if (widget.alreadySent.isNotEmpty) ...[
+                      const Text(
+                        'ALREADY SENT',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF64748B),
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF8E1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: const Color(0xFFFFCC02).withOpacity(0.4)),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 4),
+                        child: Column(
+                          children: widget.alreadySent.map((email) {
+                            return Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 8),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.hourglass_top_rounded,
+                                      size: 15, color: Color(0xFF92700A)),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      email,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF5C4A00),
+                                      ),
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFCC02)
+                                          .withOpacity(0.25),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: const Text(
+                                      'Pending signature',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF92700A),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                    ],
+
+                    // ── New signees ─────────────────────────────────────
+                    const Text(
+                      'ADD SIGNEES',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.primary,
+                        letterSpacing: 0.8,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    ...List.generate(_controllers.length, (i) {
+                      final text = _controllers[i].text.trim();
+                      final error = _fieldError(i);
+                      final isValid = text.isNotEmpty && error == null;
+
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Expanded(
-                              child: TextFormField(
+                              child: TextField(
                                 controller: _controllers[i],
                                 keyboardType: TextInputType.emailAddress,
+                                onChanged: (_) => setState(() {}),
                                 decoration: InputDecoration(
                                   hintText: 'name@example.com',
                                   hintStyle: TextStyle(
@@ -4811,8 +4922,16 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                       fontSize: 14),
                                   prefixIcon: Icon(Icons.email_outlined,
                                       color: Colors.grey.shade400, size: 18),
+                                  suffixIcon: isValid
+                                      ? const Icon(Icons.check_circle_rounded,
+                                          color: Color(0xFF2563EB), size: 18)
+                                      : null,
                                   filled: true,
-                                  fillColor: const Color(0xFFF8FAFC),
+                                  fillColor: isValid
+                                      ? const Color(0xFFF0F6FF)
+                                      : const Color(0xFFF8FAFC),
+                                  errorText: error,
+                                  errorStyle: const TextStyle(fontSize: 11.5),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
@@ -4821,32 +4940,27 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                        color: Colors.grey.shade200),
+                                      color: error != null
+                                          ? Colors.red.shade300
+                                          : isValid
+                                              ? const Color(0xFF2563EB)
+                                              : Colors.grey.shade200,
+                                      width: isValid ? 1.5 : 1,
+                                    ),
                                   ),
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(
-                                        color: AppColors.primary, width: 2),
-                                  ),
-                                  errorBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                        color: Colors.red.shade400),
+                                      color: error != null
+                                          ? Colors.red.shade400
+                                          : AppColors.primary,
+                                      width: 2,
+                                    ),
                                   ),
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(
-                                          vertical: 13, horizontal: 14),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      vertical: 13, horizontal: 14),
                                   isDense: true,
                                 ),
-                                validator: (v) {
-                                  final val = v?.trim() ?? '';
-                                  if (val.isEmpty) return 'Email is required';
-                                  if (!RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-                                      .hasMatch(val)) {
-                                    return 'Enter a valid email';
-                                  }
-                                  return null;
-                                },
                               ),
                             ),
                             if (_controllers.length > 1) ...[
@@ -4856,6 +4970,7 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                 child: Container(
                                   width: 32,
                                   height: 32,
+                                  margin: const EdgeInsets.only(top: 2),
                                   decoration: BoxDecoration(
                                     color: Colors.red.shade50,
                                     borderRadius: BorderRadius.circular(8),
@@ -4869,24 +4984,31 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                         ),
                       );
                     }),
-                  ),
+                    TextButton.icon(
+                      onPressed: _sending ? null : _addEmail,
+                      icon: const Icon(Icons.add_circle_outline,
+                          size: 16, color: AppColors.primary),
+                      label: const Text('Add another email',
+                          style: TextStyle(
+                              fontSize: 13,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600)),
+                      style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 4)),
+                    ),
+                  ],
                 ),
               ),
-              TextButton.icon(
-                onPressed: _sending ? null : _addEmail,
-                icon: const Icon(Icons.add_circle_outline,
-                    size: 16, color: AppColors.primary),
-                label: const Text('Add another email',
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.primary,
-                        fontWeight: FontWeight.w600)),
-                style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 4)),
+            ),
+
+            // ── Footer ────────────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: Colors.grey.shade100)),
               ),
-              const SizedBox(height: 20),
-              Row(
+              child: Row(
                 children: [
                   Expanded(
                     child: OutlinedButton(
@@ -4906,7 +5028,7 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: _sending ? null : _submit,
+                      onPressed: _canSend ? _submit : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
@@ -4926,16 +5048,19 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                     Colors.white),
                               ),
                             )
-                          : const Text('Send',
-                              style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700)),
+                          : Text(
+                              _validEmails.isEmpty
+                                  ? 'Send'
+                                  : 'Send (${_validEmails.length})',
+                              style: const TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w700),
+                            ),
                     ),
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -4952,6 +5077,7 @@ class _PropVm {
   final String datatype;
   final dynamic value;
   final dynamic editedValue;
+  final bool isReadOnly;
 
   _PropVm({
     required this.id,
@@ -4959,6 +5085,7 @@ class _PropVm {
     required this.datatype,
     required this.value,
     this.editedValue,
+    this.isReadOnly = false,
   });
 
   _PropVm copyWith({dynamic editedValue}) {
@@ -4968,6 +5095,7 @@ class _PropVm {
       datatype: datatype,
       value: value,
       editedValue: editedValue,
+      isReadOnly: isReadOnly,
     );
   }
 
@@ -4993,7 +5121,15 @@ class _PropVm {
         ? m['value']
         : (m['displayValue'] ?? '');
 
-    return _PropVm(id: id, name: name, datatype: datatype, value: value);
+    // Same read-only signal used by TemplateFormScreen: automatic fields,
+    // or fields where the server says we can't edit them.
+    final isAutomatic = (m['isAutomatic'] as bool?) ?? false;
+    final canEdit = (m['userPermission'] is Map)
+        ? ((m['userPermission'] as Map)['editPermission'] as bool?) ?? true
+        : true;
+    final isReadOnly = isAutomatic || !canEdit;
+
+    return _PropVm(id: id, name: name, datatype: datatype, value: value, isReadOnly: isReadOnly,);
   }
 }
 

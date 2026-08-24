@@ -2175,7 +2175,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                 ],
                               ),
                             ),
-                            _requiredHint(_selectedFile == null),
+                            _requiredHint(_submitAttempted && _selectedFile == null),
                           ],
                         ),
                       ),

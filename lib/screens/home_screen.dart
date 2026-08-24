@@ -1,4 +1,4 @@
-// ignore_for_file: use_build_context_synchronously, duplicate_ignore, deprecated_member_use
+// ignore_for_file: unnecessary_underscores, use_build_context_synchronously, duplicate_ignore, deprecated_member_use
 
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/object_class.dart';
@@ -1852,7 +1852,7 @@ Widget build(BuildContext context) {
                 }).toList()
               : objects;
 
-        final rawError = errorSelector?.call(service);
+        errorSelector?.call(service);
         if (service.isLoading && objects.isEmpty) {
           return const Center(child: CircularProgressIndicator());
         }
@@ -2702,6 +2702,7 @@ Widget build(BuildContext context) {
                                   shrinkWrap: true,
                                   itemCount: filteredEntries.length,
                                   separatorBuilder:
+                                      // ignore: unnecessary_underscores
                                       (_, __) => Divider(
                                         height: 1,
                                         color: Colors.grey.shade100,
