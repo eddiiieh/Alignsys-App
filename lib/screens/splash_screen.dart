@@ -55,10 +55,29 @@ class _SplashScreenState extends State<SplashScreen>
     try {
       print('🚀 Starting auto-login check...');
 
+      await mFilesService.loadServerAddress();
+      print('   Server address: ${mFilesService.serverAddress ?? "(none saved)"}');
+
       final hasTokens = await mFilesService.loadTokens();
       print('   Tokens loaded: $hasTokens');
       print('   AccessToken: ${mFilesService.accessToken != null ? "present" : "null"}');
       print('   UserId: ${mFilesService.userId}');
+
+      if (!mFilesService.hasServerAddress) {
+        if (hasTokens) {
+          // Existing user from before this feature shipped — they have valid
+          // tokens but never entered a server address. Default them silently
+          // to the Alignsys cloud host rather than surprising them with a
+          // new screen; only fresh installs with no tokens see it.
+          print('   Existing user with no server address - defaulting silently to cloud host');
+          await mFilesService.setServerAddress('alignsys.tech');
+        } else {
+          print('   Fresh install, no server address - navigating to server address screen');
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, '/server_address');
+          return;
+        }
+      }
 
       if (!hasTokens) {
         print('   No tokens - navigating to login');

@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart'; // 👈 ADDED: Required for rootBundle
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/screens/server_address_screen.dart';
 import 'package:provider/provider.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_vault_screen.dart';
@@ -122,6 +123,7 @@ class MainApp extends StatelessWidget {
         routes: {
           '/splash': (context) => const SplashScreen(),
           '/login': (context) => const LoginVaultScreen(),
+          '/server_address': (context) => const ServerAddressScreen(),
           '/home': (context) => const HomeScreen(),
         },
       ),

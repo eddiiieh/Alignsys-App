@@ -100,6 +100,18 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     return 'Login failed. Please try again.';
   }
 
+  // Reduces a full server address like "http://192.168.2.100:8080" down
+  // to just the host, so the badge stays compact. Falls back to the raw
+  // address if it can't be parsed.
+  String _serverHost(String? address) {
+    if (address == null || address.isEmpty) return '';
+    final uri = Uri.tryParse(address);
+    if (uri != null && uri.host.isNotEmpty) {
+      return uri.hasPort ? '${uri.host}:${uri.port}' : uri.host;
+    }
+    return address;
+  }
+
   Future<void> _logout() async {
     final s = context.read<MFilesService>();
     await s.logout();
@@ -113,6 +125,13 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
       _loading = false;
       _proceedLoading = false;
     });
+  }
+
+  Future<void> _changeServer() async {
+    final mFilesService = context.read<MFilesService>();
+    await mFilesService.logout(); // clear tokens — different server likely means a different user/vault context
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/server_address');
   }
 
   void _login() async {
@@ -252,6 +271,58 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     );
   }
 
+  // ── SERVER BADGE ──
+  // Shows which server the user is about to log into, with a compact
+  // "Change" action next to it — replaces the old top-right corner button.
+  Widget _buildServerBadge() {
+    final address = context.watch<MFilesService>().serverAddress;
+    final host = _serverHost(address);
+    if (host.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.dns_outlined, size: 14, color: Colors.white70),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              host,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(width: 1, height: 12, color: Colors.white24),
+          const SizedBox(width: 10),
+          InkWell(
+            onTap: _loading ? null : _changeServer,
+            child: const Text(
+              'Change',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                decoration: TextDecoration.underline,
+                decorationColor: Colors.white70,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -267,6 +338,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // ── SERVER BADGE (address + change server) ──
+                if (_vaults.isEmpty) _buildServerBadge(),
                 // Logo Section
                 Container(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),

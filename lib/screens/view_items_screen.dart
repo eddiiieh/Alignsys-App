@@ -702,16 +702,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                             : Container(
                                               width: 38,
                                               height: 38,
-                                              decoration: BoxDecoration(
-                                                color: AppColors.primary
-                                                    .withOpacity(0.10),
-                                                borderRadius:
-                                                    BorderRadius.circular(10),
-                                              ),
                                               child: Icon(
                                                 isObject ? svc.iconForViewObject(asViewObj) : Icons.folder_rounded,
                                                 color: AppColors.primary,
-                                                size: 20,
+                                                size: 28,
                                               ),
                                             ),
                                   ),
@@ -1244,42 +1238,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             height: 1,
             thickness: 1,
             color: Colors.grey.shade200,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSelectionSummary() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 10,
-      ),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.05),
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade300,
-          ),
-        ),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.check_circle,
-            color: AppColors.primary,
-            size: 18,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '${_selectedIds.length} items selected',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
           ),
         ],
       ),

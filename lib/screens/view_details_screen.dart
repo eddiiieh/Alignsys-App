@@ -760,14 +760,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                       : Container(
                                           width: 38,
                                           height: 38,
-                                          decoration: BoxDecoration(
-                                            color: AppColors.primary.withOpacity(0.10),
-                                            borderRadius: BorderRadius.circular(10),
-                                          ),
                                           child: Icon(
                                             isObject ? svc.iconForViewObject(asViewObj!) : Icons.folder_rounded,
                                             color: AppColors.primary,
-                                            size: 20,
+                                            size: 28,
                                           ),
                                         ),
                                 ),
@@ -1296,12 +1292,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final svc = context.watch<MFilesService>();
+    context.watch<MFilesService>();
 
-    final allCheckedOut = _selectedObjects.isNotEmpty &&
-        _selectedObjects.values.every(
-          (obj) => svc.isCheckedOutLocally(obj.id),
-        );
     return LoadingOverlay(
       isLoading: _navLoading,
       message: _navMessage,

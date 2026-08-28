@@ -1714,18 +1714,40 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                 ),
                               )
                             : Container(
-                                key: const ValueKey('normal'),
-                                child: isDoc
-                                    ? FileTypeBadge(
-                                        extension: ext ?? '',
-                                        size: 28,
-                                      )
-                                    : const Icon(
-                                        Icons.folder_rounded,
-                                        color: AppColors.primary,
-                                        size: 22,
-                                      ),
-                              ),
+                              key: const ValueKey('normal'),
+                              child: isDoc
+                                  ? FileTypeBadge(
+                                      extension: ext ?? '',
+                                      size: 28,
+                                    )
+                                  : svc.isMultiFile(
+                                      objectTypeId: obj.objectTypeId,
+                                      isSingleFile: obj.isSingleFile,
+                                    )
+                                      ? Container(
+                                          width: 28,
+                                          height: 28,
+                                          decoration: BoxDecoration(
+                                            color: AppColors.primary.withOpacity(0.10),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: const Icon(
+                                            Icons.folder_copy_rounded,
+                                            size: 22,
+                                            color: AppColors.primary,
+                                          ),
+                                        )
+                                      : Container(
+                                          width: 28,
+                                          height: 28,
+                                          
+                                          child: Icon(
+                                            svc.iconForViewObject(obj),
+                                            size: 28,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                            ),
                       ),
 
                       const SizedBox(width: 12),

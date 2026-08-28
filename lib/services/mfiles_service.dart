@@ -112,7 +112,121 @@ class MFilesService extends ChangeNotifier {
 
   bool isAdmin = false;
 
-  static const String baseUrl = 'https://api.alignsys.tech';
+  // ── SERVER ADDRESS (on-prem/custom deployments) ──
+  // User enters ONE value — either a raw IP or a domain. We derive both the
+  // auth and API URLs from it using fixed conventions:
+  //   IP     → http://<ip>:8003 (auth), http://<ip>:248 (api)
+  //   domain → https://auth.<domain>, https://api.<domain>
+  // This mirrors how the cloud itself is split (auth.alignsys.tech /
+  // api.alignsys.tech) and lets "alignsys.tech" resolve to the same cloud
+  // URLs as the hardcoded defaults below, so there's no separate cloud
+  // special-case.
+  String? _serverAddress;
+
+  String? get serverAddress => _serverAddress;
+  bool get hasServerAddress =>
+      _serverAddress != null && _serverAddress!.trim().isNotEmpty;
+
+  static const int _onPremAuthPort = 8000;
+  static const int _onPremApiPort = 248;
+  static const _knownSubdomainPrefixes = {'auth', 'api', 'www', 'edms', 'dss'};
+
+  bool _isIpAddress(String host) =>
+      RegExp(r'^\d{1,3}(\.\d{1,3}){3}$').hasMatch(host);
+
+  ({String authUrl, String apiUrl}) _resolveServerAddress(String input) {
+    final trimmed = input.trim();
+    final withScheme =
+        trimmed.contains('://') ? trimmed : 'http://$trimmed';
+    final uri = Uri.tryParse(withScheme);
+    final host = uri?.host ?? trimmed;
+
+    if (_isIpAddress(host)) {
+      final scheme = (uri?.scheme.isNotEmpty ?? false) ? uri!.scheme : 'http';
+      return (
+        authUrl: '$scheme://$host:$_onPremAuthPort',
+        apiUrl: '$scheme://$host:$_onPremApiPort',
+      );
+    }
+
+    // Domain path — strip a leading known subdomain (e.g. "api." or
+    // "auth.") if present, so "api.alignsys.tech" and "alignsys.tech"
+    // both resolve the same way.
+    final labels = host.split('.');
+    var bareDomain = host;
+    if (labels.length > 2 && _knownSubdomainPrefixes.contains(labels.first)) {
+      bareDomain = labels.skip(1).join('.');
+    }
+
+    return (
+      authUrl: 'https://auth.$bareDomain',
+      apiUrl: 'https://api.$bareDomain',
+    );
+  }
+
+  String get baseUrl => hasServerAddress
+      ? _resolveServerAddress(_serverAddress!).apiUrl
+      : 'https://api.alignsys.tech';
+
+  String get authBaseUrl => hasServerAddress
+      ? _resolveServerAddress(_serverAddress!).authUrl
+      : 'https://auth.alignsys.tech';
+
+  Future<void> setServerAddress(String address) async {
+    final normalized = address.trim().replaceAll(RegExp(r'/+$'), '');
+    _serverAddress = normalized.isEmpty ? null : normalized;
+
+    final prefs = await SharedPreferences.getInstance();
+    if (_serverAddress != null) {
+      await prefs.setString('server_address', _serverAddress!);
+      await _addToRecentServerAddresses(_serverAddress!, prefs);
+    } else {
+      await prefs.remove('server_address');
+    }
+    notifyListeners();
+  }
+
+  Future<void> loadServerAddress() async {
+    final prefs = await SharedPreferences.getInstance();
+    _serverAddress = prefs.getString('server_address');
+    notifyListeners();
+  }
+
+  // ── RECENT SERVER ADDRESSES ──
+  static const _recentServerAddressesKey = 'recent_server_addresses';
+  static const _maxRecentServerAddresses = 5;
+
+  List<String> _recentServerAddresses = [];
+  List<String> get recentServerAddresses =>
+      List.unmodifiable(_recentServerAddresses);
+
+  Future<void> _addToRecentServerAddresses(
+    String address,
+    SharedPreferences prefs,
+  ) async {
+    _recentServerAddresses.removeWhere(
+      (a) => a.toLowerCase() == address.toLowerCase(),
+    );
+    _recentServerAddresses.insert(0, address);
+    if (_recentServerAddresses.length > _maxRecentServerAddresses) {
+      _recentServerAddresses =
+          _recentServerAddresses.sublist(0, _maxRecentServerAddresses);
+    }
+    await prefs.setStringList(_recentServerAddressesKey, _recentServerAddresses);
+  }
+
+  Future<void> loadRecentServerAddresses() async {
+    final prefs = await SharedPreferences.getInstance();
+    _recentServerAddresses = prefs.getStringList(_recentServerAddressesKey) ?? [];
+    notifyListeners();
+  }
+
+  Future<void> removeRecentServerAddress(String address) async {
+    _recentServerAddresses.removeWhere((a) => a == address);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_recentServerAddressesKey, _recentServerAddresses);
+    notifyListeners();
+  }
 
   void _setLoading(bool loading) {
     isLoading = loading;
@@ -394,7 +508,7 @@ class MFilesService extends ChangeNotifier {
       print('🔄 Refreshing access token...');
 
       final response = await http.post(
-        Uri.parse('https://auth.alignsys.tech/api/token/refresh/'),
+        Uri.parse('$authBaseUrl/api/token/refresh/'),
         headers: const {'Content-Type': 'application/json'},
         body: json.encode({'refresh': refreshToken}),
       );
@@ -656,7 +770,7 @@ class MFilesService extends ChangeNotifier {
 
     try {
       response = await http.post(
-        Uri.parse('https://auth.alignsys.tech/api/token/'),
+        Uri.parse('$authBaseUrl/api/token/'),
         headers: const {'Content-Type': 'application/json'},
         body: json.encode(body),
       );
@@ -726,7 +840,7 @@ class MFilesService extends ChangeNotifier {
   Future<void> requestPasswordReset(String email) async {
     try {
       final response = await http.post(
-        Uri.parse('https://auth.alignsys.tech/api/password_reset/'),
+        Uri.parse('$authBaseUrl/api/password_reset/'),
         headers: const {'Content-Type': 'application/x-www-form-urlencoded'},
         body: 'email=${Uri.encodeComponent(email)}',
       );
@@ -764,7 +878,7 @@ class MFilesService extends ChangeNotifier {
     try {
       response = await _authenticatedRequest(
         () => http.get(
-          Uri.parse('https://auth.alignsys.tech/api/user/vaults/'),
+          Uri.parse('$authBaseUrl/api/user/vaults/'),
           headers: {
             'Authorization': 'Bearer $accessToken',
             'Content-Type': 'application/json',

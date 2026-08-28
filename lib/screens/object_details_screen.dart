@@ -2185,7 +2185,7 @@ void initState() {
           Padding(
             padding: const EdgeInsets.all(12),
             child: hasPdf
-                ? _signingReadyBody(pdfFile!, busy)
+                ? _signingReadyBody(pdfFile, busy)
                 : _signingLockedBody(conversionTarget, busy),
           ),
         ],
@@ -4181,7 +4181,7 @@ Widget _buildCommentList(List<ObjectComment> comments) {
     final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
     final currentText = _valueToText(rawCurrent);
 
-    // -- Boolean fields --
+        // -- Boolean fields --
     if (_isBoolean(p)) {
       bool currentBool = false;
       final raw = _dirty[p.id]?.editedValue ?? p.value;
@@ -4194,21 +4194,80 @@ Widget _buildCommentList(List<ObjectComment> comments) {
       }
 
       final busy = _saving || _downloading || _changingWorkflow;
-      final isSavingThis = _saving && _editingPropId == p.id;
+
+      // ── Read-only tile — pencil icon is the only way into edit mode ────
+      if (!isThisFieldEditing) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF475569),
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: busy
+                      ? null
+                      : () => setState(() => _editingPropId = p.id),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: busy
+                          ? Colors.grey.shade100
+                          : AppColors.primary.withOpacity(0.07),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.edit_outlined,
+                      size: 14,
+                      color: busy ? Colors.grey.shade400 : AppColors.primary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Text(
+                currentBool ? 'Yes' : 'No',
+                style: const TextStyle(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF334155),
+                ),
+              ),
+            ),
+          ],
+        );
+      }
+
+      // ── Editing mode — toggle just marks the field dirty; Save commits ──
+      final isDirty = _dirty.containsKey(p.id);
 
       Widget pill(String pillLabel, bool value) {
         final selected = currentBool == value;
         return Expanded(
           child: GestureDetector(
-            onTap: (busy || selected)
+            onTap: selected
                 ? null
-                : () async {
-                    setState(() {
+                : () => setState(() {
                       _dirty[p.id] = p.copyWith(editedValue: value);
-                      _editingPropId = p.id;
-                    });
-                    await _saveField(p);
-                  },
+                    }),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               margin: const EdgeInsets.all(4),
@@ -4218,24 +4277,14 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Center(
-                child: (isSavingThis && selected)
-                    ? const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : Text(
-                        pillLabel,
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: selected ? Colors.white : Colors.grey.shade600,
-                        ),
-                      ),
+                child: Text(
+                  pillLabel,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : Colors.grey.shade600,
+                  ),
+                ),
               ),
             ),
           ),
@@ -4245,20 +4294,16 @@ Widget _buildCommentList(List<ObjectComment> comments) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF475569),
-            ),
-          ),
+          _fieldLabelRow(label, p, isDirty: isDirty),
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
-              color: AppColors.surfaceLight,
+              color: isDirty ? _filledFill : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(
+                color: isDirty ? _filledBorder : Colors.grey.shade200,
+                width: isDirty ? 1.5 : 1,
+              ),
             ),
             child: Row(
               children: [

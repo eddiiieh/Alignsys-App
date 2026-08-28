@@ -437,7 +437,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             child: const Icon(
               Icons.folder_copy_rounded,
-              size: 18,
+              size: 22,
               color: AppColors.primary,
             ),
           ),
@@ -1605,11 +1605,11 @@ Widget build(BuildContext context) {
           (s) => _searchQuery.isNotEmpty ? s.searchResults : s.recentObjects,
       emptyIcon: Icons.history_rounded,
       emptyText:
-          _searchQuery.isNotEmpty ? 'No results found' : 'No recent documents',
+          _searchQuery.isNotEmpty ? 'No results found' : 'No recent items',
       emptySubtext:
           _searchQuery.isNotEmpty
               ? 'Try a different search term'
-              : 'Documents you open will appear here',
+              : 'Items you open will appear here',
       onRefresh:
           (s) =>
               _searchQuery.isNotEmpty
@@ -1641,7 +1641,7 @@ Widget build(BuildContext context) {
       selector: (s) => s.deletedObjects,
       emptyIcon: Icons.delete_outline_rounded,
       emptyText: 'No deleted items',
-      emptySubtext: 'Deleted documents will appear here',
+      emptySubtext: 'Deleted items will appear here',
       onRefresh: (s) => s.fetchDeletedObjects(),
       onLongPress:
           (obj) => showLongPressRestoreSheet(
@@ -2064,13 +2064,10 @@ Widget build(BuildContext context) {
                                         : Container(
                                             width: 28,
                                             height: 28,
-                                            decoration: BoxDecoration(
-                                              color: AppColors.primary.withOpacity(0.08),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
+                                            
                                             child: Icon(
                                               objIcon,
-                                              size: 18,
+                                              size: 28,
                                               color: AppColors.primary,
                                             ),
                                           ),
@@ -3762,6 +3759,13 @@ Widget build(BuildContext context) {
                               Text(
                                 service.userEmail ?? 'No email on file',
                                 style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                Uri.tryParse(service.baseUrl)?.host ?? service.baseUrl,
+                                style: const TextStyle(fontSize: 11, color: Colors.white60),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
