@@ -370,7 +370,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       final svc = context.read<MFilesService>();
       final files = await svc.fetchObjectFiles(
         objectId: item.id,
-        classId: item.classId,
+        objectTypeId: item.objectTypeId,
       );
 
       if (!mounted) return;
@@ -1102,7 +1102,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     try {
                       final files = await svc.fetchObjectFiles(
                         objectId: obj.id,
-                        classId: obj.classId,
+                        objectTypeId: obj.objectTypeId,
                       );
 
                       if (files.isEmpty) continue;
@@ -1156,7 +1156,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   try {
                     final files = await svc.fetchObjectFiles(
                       objectId: obj.id,
-                      classId: obj.classId,
+                      objectTypeId: obj.objectTypeId,
                     );
 
                     if (files.isEmpty) continue;

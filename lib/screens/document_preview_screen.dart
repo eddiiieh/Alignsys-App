@@ -13,7 +13,6 @@ import '../theme/app_colors.dart';
 
 class DocumentPreviewScreen extends StatefulWidget {
   final int displayObjectId;
-  final int classId;
   final int fileId;
   final int objectTypeId;
   final String fileTitle;
@@ -21,16 +20,17 @@ class DocumentPreviewScreen extends StatefulWidget {
   final String reportGuid;
   final bool canDownload;
   final int? versionId;
+  final int classId;
 
   const DocumentPreviewScreen({
     super.key,
     required this.displayObjectId,
-    required this.classId,
     required this.fileId,
     required this.objectTypeId,
     required this.fileTitle,
     required this.extension,
     required this.reportGuid,
+    required this.classId,
     this.canDownload = false,
     this.versionId,
   });
@@ -114,7 +114,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
         displayObjectId: widget.displayObjectId,
         versionId: widget.versionId!,
         fileId: widget.fileId,
-        classId: widget.classId,
+        classId: widget.classId, // document object type
       );
 
       final extToUse = _cleanExt(widget.extension);
@@ -140,10 +140,10 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
     final result = await svc.downloadFileBytesWithFallback(
       displayObjectId: widget.displayObjectId,
-      classId: widget.classId,
       fileId: widget.fileId,
       reportGuid: widget.reportGuid,
       expectedExtension: extToUse,
+      classId: widget.classId,
     );
 
     final filename = _safeFilename(widget.fileTitle, extToUse, widget.fileId);
@@ -928,7 +928,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                             ? 'This file has not been checked in to M-Files yet. Ask the owner to check it in and try again.'
                             : isCorruptError
                                 ? 'The file could not be read. It may be damaged or in an unsupported format.'
-                                : 'The file could not be downloaded. The file could be trashed.';
+                                : 'The file could not be downloaded. The file could be checked out/trashed.';
 
                     return Center(
                       child: Padding(

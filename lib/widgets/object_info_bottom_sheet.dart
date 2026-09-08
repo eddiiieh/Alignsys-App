@@ -49,7 +49,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
         ? <ObjectFile>[]
         : await svc.fetchObjectFiles(
             objectId: displayIdInt,  // ← was widget.obj.id
-            classId: widget.obj.classId,
+            objectTypeId: widget.obj.objectTypeId,
           );
 
     return {

@@ -1764,7 +1764,7 @@ class MFilesService extends ChangeNotifier {
 
   Future<List<ObjectFile>> fetchObjectFiles({
     required int objectId,
-    required int classId,
+    required int objectTypeId,
   }) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
@@ -1772,11 +1772,11 @@ class MFilesService extends ChangeNotifier {
 
     final url = Uri.parse(
       '$baseUrl/api/objectinstance/GetObjectFiles/'
-      '$vaultGuidWithBraces/$objectId/$classId',
+      '$vaultGuidWithBraces/$objectId/$objectTypeId',
     );
 
     debugPrint(
-      '📦 GetObjectFiles args: objectId=$objectId classId=$classId vault=$vaultGuidWithBraces',
+      '📦 GetObjectFiles args: objectId=$objectId objectTypeId=$objectTypeId vault=$vaultGuidWithBraces',
     );
 
     final resp = await _authenticatedRequest(
@@ -1844,7 +1844,7 @@ class MFilesService extends ChangeNotifier {
 
   Future<void> ensureExtensionForObject({
     required int objectId,
-    required int classId,
+    required int objectTypeId,
     bool notify = true,
   }) async {
     if (objectId <= 0) return;
@@ -1855,7 +1855,7 @@ class MFilesService extends ChangeNotifier {
     try {
       final files = await fetchObjectFiles(
         objectId: objectId,
-        classId: classId,
+        objectTypeId: objectTypeId,
       );
       final ext = files.isNotEmpty ? _normalizeExt(files.first.extension) : '';
       _extByObjectId[objectId] = ext;
@@ -1876,7 +1876,7 @@ class MFilesService extends ChangeNotifier {
         isSingleFile: it.isSingleFile,
       ))
         continue;
-      ensureExtensionForObject(objectId: it.id, classId: it.classId);
+      ensureExtensionForObject(objectId: it.id, objectTypeId: it.objectTypeId, notify: false);
     }
   }
 
@@ -1893,7 +1893,7 @@ class MFilesService extends ChangeNotifier {
       futures.add(
         ensureExtensionForObject(
           objectId: o.id,
-          classId: o.classId,
+          objectTypeId: o.objectTypeId,
           notify: false,
         ),
       );

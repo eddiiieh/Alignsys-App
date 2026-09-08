@@ -230,7 +230,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       final svc = context.read<MFilesService>();
       final files = await svc.fetchObjectFiles(
         objectId: obj.id,
-        classId: obj.classId,
+        objectTypeId: obj.objectTypeId,
       );
 
       if (!mounted) return;
@@ -1147,7 +1147,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     try {
                       final files = await svc.fetchObjectFiles(
                         objectId: obj.id,
-                        classId: obj.classId,
+                        objectTypeId: obj.objectTypeId,
                       );
 
                       if (files.isEmpty) continue;
@@ -1201,7 +1201,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     try {
                       final files = await svc.fetchObjectFiles(
                         objectId: obj.id,
-                        classId: obj.classId,
+                        objectTypeId: obj.objectTypeId,
                       );
 
                       if (files.isEmpty) continue;

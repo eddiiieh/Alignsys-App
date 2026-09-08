@@ -20,7 +20,7 @@ class ObjectFile {
     return ObjectFile(
       fileId: asInt(json['fileId'] ?? json['fileID'] ?? json['id']),
       fileTitle: asStr(json['fileTitle'] ?? json['title'] ?? json['name']),
-      fileVersion: asInt(json['fileVersion'] ?? json['version']),
+      fileVersion: asInt(json['fileVersion'] ?? json['fileversion'] ?? json['version']),
       extension: asStr(json['extension'] ?? json['ext']),
       reportGuid: asStr(json['reportGuid'] ?? json['reportGUID'] ?? ''),
     );

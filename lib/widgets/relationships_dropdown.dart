@@ -352,7 +352,7 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
     // Relationship items never pass through warmExtensionsForObjects, so
     // warm the extension cache here when needed.
     if (isDoc && !isMultiFileObj && obj.id != 0) {
-      svc.ensureExtensionForObject(objectId: obj.id, classId: obj.classId);
+      svc.ensureExtensionForObject(objectId: obj.id, objectTypeId: obj.objectTypeId);
     }
 
     Widget leadingIcon;

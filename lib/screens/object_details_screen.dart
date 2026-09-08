@@ -539,7 +539,7 @@ void initState() {
 
   Future<List<ObjectFile>> _loadFiles() async {
     final svc = context.read<MFilesService>();
-    return svc.fetchObjectFiles(objectId: widget.obj.id, classId: widget.obj.classId);
+    return svc.fetchObjectFiles(objectId: widget.obj.id, objectTypeId: widget.obj.objectTypeId);
   }
 
   Future<WorkflowInfo?> _loadWorkflow() async {
@@ -1548,7 +1548,7 @@ void initState() {
                             Icon(Icons.info_outline_rounded, size: 15, color: Colors.grey.shade400),
                             const SizedBox(width: 8),
                             Text(
-                              "Workflows aren't available for this document type.",
+                              "No workflow available for this item",
                               style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
                             ),
                           ],

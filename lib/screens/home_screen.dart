@@ -565,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen>
       final svc = context.read<MFilesService>();
       final files = await svc.fetchObjectFiles(
         objectId: obj.id,
-        classId: obj.classId,
+        objectTypeId: obj.objectTypeId,
       );
 
       if (!mounted) return;
@@ -753,7 +753,7 @@ class _HomeScreenState extends State<HomeScreen>
                     try {
                       final files = await svc.fetchObjectFiles(
                         objectId: obj.id,
-                        classId: obj.classId,
+                        objectTypeId: obj.objectTypeId,
                       );
 
                       if (files.isEmpty) continue;
@@ -807,7 +807,7 @@ class _HomeScreenState extends State<HomeScreen>
                     try {
                       final files = await svc.fetchObjectFiles(
                         objectId: obj.id,
-                        classId: obj.classId,
+                        objectTypeId: obj.objectTypeId,
                       );
 
                       if (files.isEmpty) continue;
