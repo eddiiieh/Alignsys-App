@@ -19,6 +19,7 @@ import '../services/mfiles_service.dart';
 import '../theme/app_colors.dart';
 import '../models/lookup_item.dart';
 import '../models/quick_create_result.dart';
+import '../models/view_object.dart';
 
 class DynamicFormScreen extends StatefulWidget {
   const DynamicFormScreen({
@@ -27,6 +28,7 @@ class DynamicFormScreen extends StatefulWidget {
     this.objectClass,
     this.isQuickCreate = false,
     this.scannedFile,
+    this.linkTarget,
   });
 
   final VaultObjectType objectType;
@@ -34,6 +36,9 @@ class DynamicFormScreen extends StatefulWidget {
   /// When set, pre-populates the file attachment section with a scanned PDF
   /// so the user only needs to pick a class and fill metadata.
   final File? scannedFile;
+
+  /// The object to which the new object will be linked, if applicable.
+  final ViewObject? linkTarget;
 
   /// True when pushed from the "+" button next to a lookup field on
   /// another form, to create a related object inline. Locks the
@@ -1739,40 +1744,63 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             propId: 0, value: title, propertyType: 'MFDatatypeText'));
       }
 
-    final request = ObjectCreationRequest(
-      objectID: _currentObjectType.id,
-      objectTypeID: _currentObjectType.id,
-      classID: _selectedClass!.id,
-      properties: properties,
-      vaultGuid: service.vaultGuidWithBraces,
-      userID: service.currentUserId,
-      uploadId: uploadId,
-    );
+      final ObjectCreationResult result;
 
-    final result = await service.createObject(request);
+        if (widget.linkTarget != null) {
+          final target = widget.linkTarget!;
+          final linkRequest = LinkObjectRequest(
+            objectID: _currentObjectType.id,
+            classID: _selectedClass!.id,
+            properties: properties,
+            vaultGuid: service.vaultGuidWithBraces,
+            userID: service.currentUserId,
+            uploadId: uploadId,
+            oldObjectType: target.objectTypeId,
+            oldObjectInternalID: target.id,
+            version: target.versionId,
+          );
+          result = await service.linkNewObject(linkRequest);
+        } else {
+          final request = ObjectCreationRequest(
+            objectID: _currentObjectType.id,
+            objectTypeID: _currentObjectType.id,
+            classID: _selectedClass!.id,
+            properties: properties,
+            vaultGuid: service.vaultGuidWithBraces,
+            userID: service.currentUserId,
+            uploadId: uploadId,
+          );
+          result = await service.createObject(request);
+        }
 
-    if (!mounted) return;
+        if (!mounted) return;
 
-    if (result.success) {
-      unawaited(service.fetchRecentObjects());
-      _showSnackBar('Object created successfully!');
+        if (result.success) {
+          unawaited(service.fetchRecentObjects());
 
-      if (widget.isQuickCreate) {
-        Navigator.pop(
-          context,
-          QuickCreateResult(
-            objectId: result.objectId,
-            displayValue: _resolveQuickCreateDisplayValue(),
-          ),
-        );
-      } else {
-        Navigator.pop(context);
-      }
-    } else {
-      _showSnackBar('Failed to create object: ${service.error}',
-          isError: true);
-    }
-  } // end _submitForm
+          if (widget.linkTarget != null) {
+            _showSnackBar('Created and linked to "${widget.linkTarget!.title}"');
+            Navigator.pop(context, true);
+            return;
+          }
+
+          _showSnackBar('Object created successfully!');
+
+          if (widget.isQuickCreate) {
+            Navigator.pop(
+              context,
+              QuickCreateResult(
+                objectId: result.objectId,
+                displayValue: _resolveQuickCreateDisplayValue(),
+              ),
+            );
+          } else {
+            Navigator.pop(context);
+          }
+        } else {
+          _showSnackBar('Failed to create object: ${service.error}', isError: true);
+        }
+      } // end _submitForm
 
   /// Best label for the object just created, used to populate the lookup
   /// field that launched this quick-create screen. Prefers the Title
@@ -1807,8 +1835,20 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Create ${_currentObjectType.displayName}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white)),
-              if (_selectedClass != null)
+              Text(
+                widget.linkTarget != null
+                    ? 'Create & Link ${_currentObjectType.displayName}'
+                    : 'Create ${_currentObjectType.displayName}',
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
+              ),
+              if (widget.linkTarget != null)
+                Text(
+                  'Linking to "${widget.linkTarget!.title}"',
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                )
+              else if (_selectedClass != null)
                 Text(_selectedClass!.displayName, style: const TextStyle(fontSize: 12, color: Colors.white70)),
             ],
           ),

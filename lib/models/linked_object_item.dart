@@ -1,3 +1,4 @@
+// AFTER
 class LinkedObjectItem {
   final int id;
   final int objectID;        // objectTypeId
@@ -6,6 +7,8 @@ class LinkedObjectItem {
   final String objectTypeName;
   final String classTypeName;
   final String displayID;
+  final int versionId;
+  final bool isSingleFile;
 
   LinkedObjectItem({
     required this.id,
@@ -15,11 +18,14 @@ class LinkedObjectItem {
     required this.objectTypeName,
     required this.classTypeName,
     required this.displayID,
+    required this.versionId,
+    required this.isSingleFile,
   });
 
   factory LinkedObjectItem.fromJson(Map<String, dynamic> j) {
     int _i(dynamic v) => v is num ? v.toInt() : int.tryParse('${v ?? 0}') ?? 0;
     String _s(dynamic v) => (v ?? '').toString();
+    bool _b(dynamic v) => v is bool ? v : (v?.toString().toLowerCase() == 'true');
 
     return LinkedObjectItem(
       id: _i(j['id']),
@@ -29,6 +35,8 @@ class LinkedObjectItem {
       objectTypeName: _s(j['objectTypeName']),
       classTypeName: _s(j['classTypeName']),
       displayID: _s(j['displayID']),
+      versionId: _i(j['versionId']),
+      isSingleFile: _b(j['isSingleFile']),
     );
   }
 }

@@ -1595,6 +1595,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
         classId: obj.classId,
+        versionId: obj.versionId,
         notify: false,
       );
     }

@@ -33,6 +33,47 @@ class ObjectCreationRequest {
 }
 
 
+/// Request body for POST /api/CreateOrAddObject/LinkObject.
+/// Creates a new object and links it to an existing object in one call.
+class LinkObjectRequest {
+  final int objectID; // new object's OBJECT TYPE id, same convention as ObjectCreationRequest.objectID
+  final int classID;
+  final List<PropertyValueRequest> properties;
+  final String vaultGuid;
+  final String? uploadId;
+  final int userID;
+  final int oldObjectType;
+  final int oldObjectInternalID;
+  final int version;
+
+  LinkObjectRequest({
+    required this.objectID,
+    required this.classID,
+    required this.properties,
+    required this.vaultGuid,
+    required this.userID,
+    required this.oldObjectType,
+    required this.oldObjectInternalID,
+    this.uploadId,
+    this.version = 0,
+  });
+
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> json = {
+      'objectID': objectID,
+      'classID': classID,
+      'properties': properties.map((pv) => pv.toJson()).toList(),
+      'vaultGuid': vaultGuid,
+      'userID': userID,
+      'oldObjectType': oldObjectType,
+      'oldObjectInternalID': oldObjectInternalID,
+      'version': version,
+    };
+
+    if (uploadId != null) json['uploadId'] = uploadId;
+    return json;
+  }
+}
 
 class PropertyValueRequest {
   final int propId;

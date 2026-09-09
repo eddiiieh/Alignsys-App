@@ -201,9 +201,17 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         if (snap.hasError) {
           return Padding(
             padding: const EdgeInsets.all(12),
-            child: Text(
-              'Error loading info: ${snap.error}',
-              style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 14, color: Colors.grey.shade400),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Additional details aren\'t available for this item right now.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  ),
+                ),
+              ],
             ),
           );
         }

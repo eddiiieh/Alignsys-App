@@ -771,6 +771,48 @@ void initState() {
   // e-SIGN ─ SEND FOR SIGNING DIALOG
   // ─────────────────────────────────────────────────────────────────────────
   Future<void> _showSendForSigningDialog(ObjectFile file) async {
+    final alreadySent = _sentSigneesByFile[file.fileId] ?? const <String>{};
+
+    // DSS only allows one active signing request per file. Once a signee
+    // has been sent the document and their signature is pending, the
+    // backend rejects any further DSSPostObjectFile calls for that file
+    // (400 "Server could not post"). Block "add another signee" at the
+    // source instead of letting the user hit that error.
+    if (alreadySent.isNotEmpty) {
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Text(
+            'Signing already in progress',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          content: Text(
+            'This file has already been sent for signing and is waiting on '
+            '${alreadySent.length == 1 ? 'a signature' : 'signatures'} from '
+            '${alreadySent.join(', ')}.\n\n'
+            'Additional signees cannot be added once sending has started. '
+            'To send to multiple people, include all their emails the first '
+            'time you send for signing.',
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13.5, height: 1.4),
+          ),
+          actions: [
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                elevation: 0,
+              ),
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Got it'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
     await showDialog(
       context: context,
       builder: (_) => _SendForSigningDialog(
@@ -820,19 +862,68 @@ void initState() {
       );
     } catch (e) {
       if (!mounted) return;
+      final msg = e.toString().contains('DSSPostObjectFile failed [400]')
+          ? 'This file already has a signature pending. Additional signees can only be added before the first send.'
+          : 'Failed to send: $e';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to send: $e'),
+          content: Text(msg),
           backgroundColor: Colors.red.shade600,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
   }
 
   Future<void> _selfSign(ObjectFile file) async {
+    final alreadySent = _sentSigneesByFile[file.fileId] ?? const <String>{};
+
+    // Same DSS constraint as sending to others: only one active signing
+    // request per file. If a send-for-signing is already pending, self-sign
+    // will also be rejected with the same 400 "Server could not post."
+    if (alreadySent.isNotEmpty) {
+      await showDialog(
+        context: context,
+        builder:
+            (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text(
+                'Signing already in progress',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              content: Text(
+                'This file is already waiting on '
+                '${alreadySent.length == 1 ? 'a signature' : 'signatures'} from '
+                '${alreadySent.join(', ')} and cannot be signed by anyone else '
+                'until that request is completed or cancelled.',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 13.5,
+                  height: 1.4,
+                ),
+              ),
+              actions: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    elevation: 0,
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Got it'),
+                ),
+              ],
+            ),
+      );
+      return;
+    }
+
     final svc = context.read<MFilesService>();
     final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
     final userEmail = svc.userEmail ?? svc.username ?? '';
@@ -867,28 +958,36 @@ void initState() {
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Row(children: [
-              Icon(Icons.check_circle, color: Colors.white, size: 18),
-              SizedBox(width: 8),
-              Text('Document signing completed'),
-            ]),
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text('Document signing completed'),
+              ],
+            ),
             backgroundColor: Colors.green.shade600,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
       }
     } catch (e) {
       if (!mounted) return;
       setState(() => _eSigning = false);
+      final msg =
+          e.toString().contains('DSSSelfSign failed [400]')
+              ? 'This file already has a signature pending and cannot be self-signed right now.'
+              : 'Signing failed: $e';
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Signing failed: $e'),
+          content: Text(msg),
           backgroundColor: Colors.red.shade600,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     }
@@ -1074,6 +1173,7 @@ void initState() {
       final ok = await svc.approveAssignment(
         objectId: widget.obj.id,
         classId: widget.obj.classId,
+        objectTypeId: widget.obj.objectTypeId,
         userId: userId,
         approve: !currentlyApproved,
       );
@@ -1998,9 +2098,26 @@ void initState() {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
+                  
+                  // ── Error state ─────────
                   if (snap.hasError) {
-                    return Center(child: Text('Error: ${snap.error}'));
+                    return Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline_rounded, size: 16, color: Colors.grey.shade400),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Object details aren\'t available right now. Pull to refresh to try again.',
+                              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
                   }
+
                   final props = snap.data ?? [];
                   final metaProps = props
                       .where((p) => _allowedMetaPropIds.contains(p.id))

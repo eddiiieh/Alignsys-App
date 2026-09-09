@@ -642,6 +642,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             objectId: item.id,
             objectTypeId: item.objectTypeId,
             classId: item.classId,
+            versionId: item.versionId,
             notify: true,
           );
         }

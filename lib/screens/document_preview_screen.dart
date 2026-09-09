@@ -2,6 +2,7 @@
 
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import 'package:photo_view/photo_view.dart';
@@ -114,6 +115,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
         displayObjectId: widget.displayObjectId,
         versionId: widget.versionId!,
         fileId: widget.fileId,
+        objectTypeId: widget.objectTypeId, // CHANGED: use object type instead of class
         classId: widget.classId, // document object type
       );
 
@@ -515,26 +517,25 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
             ),
             const SizedBox(height: 24),
             // "Open again" — re-triggers the external app
-            FilledButton.icon(
+            TextButton.icon(
               onPressed: () => _openExternally(file),
               icon: const Icon(Icons.open_in_new_rounded, size: 16),
               label: const Text('Open again'),
-              style: FilledButton.styleFrom(
+              style: TextButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(18)),
               ),
             ),
             const SizedBox(height: 12),
             // "Go back" — clean exit
-            OutlinedButton.icon(
+            TextButton.icon(
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.arrow_back_rounded, size: 16),
               label: const Text('Go back'),
-              style: OutlinedButton.styleFrom(
+              style: TextButton.styleFrom(
                 foregroundColor: Colors.grey.shade700,
-                side: BorderSide(color: Colors.grey.shade300),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
@@ -707,15 +708,17 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                   color: Colors.white,
                   child: Row(
                     children: [
-                      Icon(Icons.insert_drive_file,
-                          size: 16, color: Colors.grey.shade500),
+                      FileTypeBadge(
+                        extension: _cleanExt(widget.extension),
+                        size: 20,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           '${widget.fileTitle}$bannerExt',
                           style: const TextStyle(
                               fontSize: 13, fontWeight: FontWeight.w500),
-                          maxLines: 1,
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
@@ -729,29 +732,24 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                           onTap: fileReady
                               ? () => _openExternally(snap.data!)
                               : null,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(20),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
+                                horizontal: 12, vertical: 7),
                             decoration: BoxDecoration(
                               color: fileReady
-                                  ? AppColors.primary.withOpacity(0.08)
+                                  ? AppColors.primary
                                   : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: fileReady
-                                    ? AppColors.primary.withOpacity(0.2)
-                                    : Colors.grey.shade200,
-                              ),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  Icons.open_in_new,
+                                  Icons.launch_rounded,
                                   size: 14,
                                   color: fileReady
-                                      ? AppColors.primary
+                                      ? Colors.white
                                       : Colors.grey.shade400,
                                 ),
                                 const SizedBox(width: 5),
@@ -761,7 +759,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
                                     color: fileReady
-                                        ? AppColors.primary
+                                        ? Colors.white
                                         : Colors.grey.shade400,
                                   ),
                                 ),

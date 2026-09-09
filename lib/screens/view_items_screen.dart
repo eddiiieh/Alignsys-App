@@ -552,6 +552,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             objectId: item.id,
             objectTypeId: item.objectTypeId,
             classId: item.classId,
+            versionId: item.versionId,
             notify: true,
           );
         }

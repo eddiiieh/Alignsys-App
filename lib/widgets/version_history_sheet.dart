@@ -51,6 +51,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
     return svc.fetchObjectVersions(
       displayObjectId: _displayObjectId,
       classId: widget.obj.classId,
+      objectTypeId: widget.obj.objectTypeId,
     );
   }
 
@@ -96,9 +97,10 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
         displayObjectId: _displayObjectId,
         versionId: version.versionId,
         fileId: file.fileId,
-        classId: widget.obj.classId,
+        objectTypeId: widget.obj.objectTypeId,
         fileTitle: file.fileTitle,
         extension: file.extension,
+        classId: widget.obj.classId,
       );
     } catch (e) {
       if (!mounted) return;
@@ -135,6 +137,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
       final ok = await svc.rollbackToVersion(
         objectId: _displayObjectId,
         classId: widget.obj.classId,
+        objectTypeId: widget.obj.objectTypeId,
         versionId: version.versionId,
       );
 

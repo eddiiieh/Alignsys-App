@@ -46,7 +46,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
       vaultGuid: s.vaultGuidWithBraces,
       objectTypeId: widget.obj.objectTypeId,
       objectId: widget.obj.id,
-      classId: widget.obj.classId,
+      versionId: widget.obj.versionId,
       userId: s.currentUserId,
     );
   }
@@ -250,13 +250,13 @@ ViewObject _toViewObjectFromLinked(LinkedObjectItem it) {
     title: it.title,
     objectTypeId: it.objectID,
     classId: it.classID,
-    versionId: 0,
+    versionId: it.versionId,
     objectTypeName: it.objectTypeName,
     classTypeName: it.classTypeName,
     displayId: it.displayID,
     createdUtc: null,
     lastModifiedUtc: null,
-    isSingleFile: true,
+    isSingleFile: it.isSingleFile,
   );
 }
 

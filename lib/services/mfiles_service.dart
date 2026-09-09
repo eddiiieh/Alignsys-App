@@ -1290,10 +1290,14 @@ class MFilesService extends ChangeNotifier {
     _setError(null);
 
     try {
+      final fileSize = await file.length();
+      debugPrint('📤 uploadFile: path=${file.path} sizeBytes=$fileSize');
+
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/api/objectinstance/FilesUploadAsync'),
+        Uri.parse('$baseUrl/api/objectinstance/FilesUpload/$vaultGuidWithBraces'),
       );
+      
 
       request.files.add(
         await http.MultipartFile.fromPath('formFiles', file.path),
@@ -1304,13 +1308,32 @@ class MFilesService extends ChangeNotifier {
       final response = await request.send();
       final body = await response.stream.bytesToString();
 
+      debugPrint('📥 uploadFile response: status=${response.statusCode} body=$body');
+
       if (response.statusCode == 200) {
-        return json.decode(body)['uploadID'];
+        final decoded = json.decode(body);
+        final uploadId = (decoded is Map)
+            ? (decoded['uploadID'] ?? decoded['uploadId'] ?? decoded['UploadID'] ?? decoded['UploadId'])
+            : null;
+
+        if (uploadId == null) {
+          debugPrint(
+            '⚠️ uploadFile: got 200 but no upload id key matched. '
+            'Keys=${decoded is Map ? decoded.keys.toList() : decoded.runtimeType}',
+          );
+          _setError('Upload succeeded but response had no recognizable upload id: $body');
+          return null;
+        }
+
+        return uploadId.toString();
       }
 
-      _setError('File upload failed: ${response.statusCode}');
+      debugPrint('❌ uploadFile failed: ${response.statusCode} $body');
+      _setError('File upload failed: ${response.statusCode} $body');
       return null;
-    } catch (e) {
+    } catch (e, stack) {
+      debugPrint('❌ uploadFile EXCEPTION: $e');
+      debugPrint('❌ Stack: $stack');
       _setError('Error uploading file: $e');
       return null;
     } finally {
@@ -1688,6 +1711,21 @@ class MFilesService extends ChangeNotifier {
     final resp = await http.get(url, headers: _authHeadersNoJson);
 
     if (resp.statusCode != 200) {
+      // M-Files reports "object/props not resolvable" as a 400 carrying
+      // COM error 0x8004000B ("Not found") in the body, not a real
+      // server failure — same empty-state class as the 404s we already
+      // swallow in fetchObjectFiles / fetchViewPropItems.
+      final body = resp.body.toLowerCase();
+      final looksLikeNotFound = resp.statusCode == 404 ||
+          (resp.statusCode == 400 && body.contains('0x8004000b'));
+
+      if (looksLikeNotFound) {
+        debugPrint(
+          '⚠️ GetObjectViewProps: treating as empty state '
+          '(obj=$objectId type=$objectTypeId, status=${resp.statusCode})',
+        );
+        return <Map<String, dynamic>>[];
+      }
       throw Exception(
         'GetObjectViewProps failed: ${resp.statusCode} ${resp.body}',
       );
@@ -1964,6 +2002,7 @@ class MFilesService extends ChangeNotifier {
     required int objectId,
     required int objectTypeId,
     required int classId,
+    required int versionId,
     required bool notify,
   }) async {
     if (objectId <= 0 || classId <= 0) return;
@@ -1976,7 +2015,7 @@ class MFilesService extends ChangeNotifier {
         vaultGuid: vaultGuidWithBraces,
         objectTypeId: objectTypeId,
         objectId: objectId,
-        classId: classId,
+        versionId: versionId,
         userId: currentUserId,
       );
       final hasRel = groups.any((g) => g.items.isNotEmpty);
@@ -1991,7 +2030,7 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> _warmRelationshipsBatch(
-    List<({int objectId, int objectTypeId, int classId})> items,
+    List<({int objectId, int objectTypeId, int classId, int versionId})> items,
   ) async {
     final todo =
         items
@@ -2018,7 +2057,7 @@ class MFilesService extends ChangeNotifier {
               vaultGuid: vaultGuidWithBraces,
               objectTypeId: it.objectTypeId,
               objectId: it.objectId,
-              classId: it.classId,
+              versionId: it.versionId,
               userId: currentUserId,
             );
             return (
@@ -2049,6 +2088,7 @@ class MFilesService extends ChangeNotifier {
         objectId: o.id,
         objectTypeId: o.objectTypeId,
         classId: o.classId,
+        versionId: o.versionId,
         notify: false,
       ),
     );
@@ -2066,6 +2106,7 @@ class MFilesService extends ChangeNotifier {
                 objectId: it.id,
                 objectTypeId: it.objectTypeId,
                 classId: it.classId,
+                versionId: it.versionId,
               ),
             )
             .toList();
@@ -3190,14 +3231,16 @@ class MFilesService extends ChangeNotifier {
     required String vaultGuid,
     required int objectTypeId,
     required int objectId,
-    required int classId,
+    required int versionId,
     required int userId,
   }) async {
     final uri = Uri.parse(
-      '$baseUrl/api/objectinstance/LinkedObjects/$vaultGuid/$objectTypeId/$objectId/$classId/$userId',
+      '$baseUrl/api/objectinstance/LinkedObjects/$vaultGuid/$objectTypeId/$objectId/$versionId/$userId',
     );
 
-    final res = await http.get(uri, headers: _authHeadersNoJson);
+    final res = await _authenticatedRequest(
+      () => http.get(uri, headers: _authHeadersNoJson),
+    );
 
     if (res.statusCode == 404 || res.statusCode == 204) {
       return <LinkedObjectsGroup>[];
@@ -3367,6 +3410,7 @@ class MFilesService extends ChangeNotifier {
   Future<bool> approveAssignment({
     required int objectId,
     required int classId,
+    required int objectTypeId,
     required int userId,
     required bool approve,
   }) async {
@@ -3386,6 +3430,7 @@ class MFilesService extends ChangeNotifier {
       final body = {
         "vaultGuid": vaultGuidWithBraces,
         "objectId": objectId,
+        "objectTypeId": objectTypeId,
         "classId": classId,
         "userID": userId,
         "approve": approve,
@@ -3604,6 +3649,42 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
+  /// Creates a new object and links it to [request.oldObjectInternalID] in
+  /// one call, via CreateOrAddObject/LinkObject. Mirrors createObject's
+  /// response parsing since the backend returns the new object's id the
+  /// same way.
+  Future<ObjectCreationResult> linkNewObject(LinkObjectRequest request) async {
+    _setLoading(true);
+    _setError(null);
+
+    try {
+      if (selectedVault == null) return const ObjectCreationResult(success: false);
+      if (accessToken == null) return const ObjectCreationResult(success: false);
+      if (mfilesUserId == null) return const ObjectCreationResult(success: false);
+
+      final url = Uri.parse('$baseUrl/api/CreateOrAddObject/LinkObject');
+
+      final response = await http.post(
+        url,
+        headers: _authHeaders,
+        body: jsonEncode(request.toJson()),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final newId = _extractCreatedObjectId(response.body);
+        return ObjectCreationResult(success: true, objectId: newId);
+      }
+
+      _setError('Server returned ${response.statusCode}: ${response.body}');
+      return const ObjectCreationResult(success: false);
+    } catch (e) {
+      _setError('Error linking object: $e');
+      return const ObjectCreationResult(success: false);
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchClassTemplateProps({
     required String vaultGuid,
     required int classId,
@@ -3705,6 +3786,7 @@ class MFilesService extends ChangeNotifier {
           'versionID': versionId,
           'vaultGuid': vaultGuid,
           'signerEmail': signerEmail,
+          'userID': mfilesUserId,
         }),
       ),
     );
@@ -3787,6 +3869,7 @@ class MFilesService extends ChangeNotifier {
   Future<List<ObjectVersion>> fetchObjectVersions({
     required int displayObjectId,
     required int classId,
+    required int objectTypeId,
   }) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
@@ -3794,7 +3877,7 @@ class MFilesService extends ChangeNotifier {
 
     final url = Uri.parse(
       '$baseUrl/api/ObjectVersions/GetObjectVesions'
-      '/$vaultGuidWithBraces/$displayObjectId/$classId/$mfilesUserId',
+      '/$vaultGuidWithBraces/$displayObjectId/$objectTypeId/$mfilesUserId',
     );
 
     debugPrint('📋 fetchObjectVersions URL: $url');
@@ -3823,6 +3906,7 @@ class MFilesService extends ChangeNotifier {
     required int versionId,
     required int fileId,
     required int classId,
+    required int objectTypeId,
   }) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
@@ -3830,7 +3914,7 @@ class MFilesService extends ChangeNotifier {
 
     final url = Uri.parse(
       '$baseUrl/api/ObjectVersions/GetObjectFileVersion'
-      '/$vaultGuidWithBraces/$displayObjectId/$versionId/$fileId/$classId/$mfilesUserId',
+      '/$vaultGuidWithBraces/$displayObjectId/$versionId/$fileId/$objectTypeId/$mfilesUserId',
     );
 
     debugPrint('📥 fetchObjectFileVersion URL: $url');
@@ -3862,6 +3946,7 @@ class MFilesService extends ChangeNotifier {
     required int objectId,
     required int classId,
     required int versionId,
+    required int objectTypeId,
   }) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       _setError('Session not ready');
@@ -3874,9 +3959,10 @@ class MFilesService extends ChangeNotifier {
       final body = {
         'vaultGuid': vaultGuidWithBraces,
         'objectId': objectId,
-        'classId': classId,
+        'objectTypeId': objectTypeId,
         'userID': mfilesUserId,
         'versionID': versionId,
+        'classId': classId,
       };
 
       debugPrint('🔄 rollbackToVersion URL: $url');
@@ -3905,6 +3991,7 @@ class MFilesService extends ChangeNotifier {
     required int versionId,
     required int fileId,
     required int classId,
+    required int objectTypeId,
     required String fileTitle,
     required String extension,
   }) async {
@@ -3913,6 +4000,7 @@ class MFilesService extends ChangeNotifier {
       versionId: versionId,
       fileId: fileId,
       classId: classId,
+      objectTypeId: objectTypeId,
     );
 
     final filename = _safeFilename(fileTitle, extension, fileId);

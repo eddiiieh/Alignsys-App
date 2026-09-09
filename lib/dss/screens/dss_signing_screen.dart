@@ -24,24 +24,56 @@ class _DssSigningScreenState extends State<DssSigningScreen> {
   bool _loading = true;
   bool _hasError = false;
 
+  // ── Confirm before leaving the signing page ──
+  Future<bool> _confirmExit() async {
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Leave without completing signing?'),
+        content: const Text(
+          'If you placed a signature but haven\'t pressed "Complete Signing", '
+          'it will not be saved. Are you sure you want to exit?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Stay'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade600,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              elevation: 0,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Exit'),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
   @override
-void initState() {
-  super.initState();
+  void initState() {
+    super.initState();
 
-  final mfiles = context.read<MFilesService>();
+    final mfiles = context.read<MFilesService>();
 
-  // Use DSS tokens if available, otherwise fall back to the normal EDMS tokens.
-  final accessToken =
-      (mfiles.dssAccessToken?.isNotEmpty == true)
-          ? mfiles.dssAccessToken!
-          : (mfiles.accessToken ?? '');
+    // Use DSS tokens if available, otherwise fall back to the normal EDMS tokens.
+    final accessToken =
+        (mfiles.dssAccessToken?.isNotEmpty == true)
+            ? mfiles.dssAccessToken!
+            : (mfiles.accessToken ?? '');
 
-  final refreshToken =
-      (mfiles.dssRefreshToken?.isNotEmpty == true)
-          ? mfiles.dssRefreshToken!
-          : (mfiles.refreshToken ?? '');
+    final refreshToken =
+        (mfiles.dssRefreshToken?.isNotEmpty == true)
+            ? mfiles.dssRefreshToken!
+            : (mfiles.refreshToken ?? '');
 
-  /*debugPrint('================ DSS WEBVIEW TOKENS ================');
+    /*debugPrint('================ DSS WEBVIEW TOKENS ================');
   debugPrint('Access token empty : ${accessToken.isEmpty}');
   debugPrint('Refresh token empty: ${refreshToken.isEmpty}');
   debugPrint(
@@ -50,15 +82,15 @@ void initState() {
       'Refresh preview: ${refreshToken.length > 30 ? refreshToken.substring(0, 30) : refreshToken}');
   debugPrint('====================================================');*/
 
-  final safeAccess = accessToken
-      .replaceAll(r'\', r'\\')
-      .replaceAll("'", r"\'");
+    final safeAccess = accessToken
+        .replaceAll(r'\', r'\\')
+        .replaceAll("'", r"\'");
 
-  final safeRefresh = refreshToken
-      .replaceAll(r'\', r'\\')
-      .replaceAll("'", r"\'");
+    final safeRefresh = refreshToken
+        .replaceAll(r'\', r'\\')
+        .replaceAll("'", r"\'");
 
-  final reInjectJs = """
+    final reInjectJs = """
     try {
       var t = JSON.stringify({
         access: '$safeAccess',
@@ -72,7 +104,7 @@ void initState() {
     }
   """;
 
-  final shimHtml = """
+    final shimHtml = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -99,37 +131,35 @@ window.location.replace("${widget.signingUrl}");
 </html>
 """;
 
-  _controller = WebViewController()
-    ..setJavaScriptMode(JavaScriptMode.unrestricted)
-    ..setNavigationDelegate(
-      NavigationDelegate(
-        onPageStarted: (_) {
-          if (mounted) setState(() => _loading = true);
-        },
-        onPageFinished: (_) async {
-          await _controller.runJavaScript(reInjectJs);
-          if (mounted) {
-            setState(() {
-              _loading = false;
-              _hasError = false;
-            });
-          }
-        },
-        onWebResourceError: (_) {
-          if (mounted) {
-            setState(() {
-              _loading = false;
-              _hasError = true;
-            });
-          }
-        },
-      ),
-    )
-    ..loadHtmlString(
-      shimHtml,
-      baseUrl: 'https://dss.alignsys.tech',
-    );
-}
+    _controller =
+        WebViewController()
+          ..setJavaScriptMode(JavaScriptMode.unrestricted)
+          ..setNavigationDelegate(
+            NavigationDelegate(
+              onPageStarted: (_) {
+                if (mounted) setState(() => _loading = true);
+              },
+              onPageFinished: (_) async {
+                await _controller.runJavaScript(reInjectJs);
+                if (mounted) {
+                  setState(() {
+                    _loading = false;
+                    _hasError = false;
+                  });
+                }
+              },
+              onWebResourceError: (_) {
+                if (mounted) {
+                  setState(() {
+                    _loading = false;
+                    _hasError = true;
+                  });
+                }
+              },
+            ),
+          )
+          ..loadHtmlString(shimHtml, baseUrl: 'https://dss.alignsys.tech');
+  }
 
   void _reload() {
     setState(() {
@@ -141,28 +171,36 @@ window.location.replace("${widget.signingUrl}");
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-        title: const Text('Sign Document'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.close),
-            onPressed: () => Navigator.pop(context, true), // true = signed
-          ),
-        ],
-      ),
-      body: _hasError
-          ? _buildError()
-          : Stack(
-              children: [
-                WebViewWidget(controller: _controller),
-                if (_loading)
-                  const Center(child: CircularProgressIndicator()),
-              ],
+    return WillPopScope(
+      onWillPop: _confirmExit,
+      child: Scaffold(
+        backgroundColor: AppColors.surfaceLight,
+        appBar: AppBar(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          title: const Text('Sign Document'),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () async {
+                final confirmed = await _confirmExit();
+                if (confirmed && mounted) {
+                  Navigator.pop(context, true); // true = signed
+                }
+              },
             ),
+          ],
+        ),
+        body: _hasError
+            ? _buildError()
+            : Stack(
+                children: [
+                  WebViewWidget(controller: _controller),
+                  if (_loading)
+                    const Center(child: CircularProgressIndicator()),
+                ],
+              ),
+      ),
     );
   }
 

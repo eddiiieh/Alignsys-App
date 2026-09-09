@@ -706,6 +706,13 @@ class _HomeScreenState extends State<HomeScreen>
       ),
 
       actions: [
+        if (_selectedObjects.length == 1)
+          IconButton(
+            tooltip: 'Create & Link',
+            icon: const Icon(Icons.add_link_rounded),
+            onPressed: () => _showLinkCreateSheet(context, _selectedObjects.values.first),
+          ),
+          
         if (allNotCheckedOut)
           IconButton(
             tooltip: 'Checkout',
@@ -719,6 +726,7 @@ class _HomeScreenState extends State<HomeScreen>
             icon: const Icon(Icons.lock),
             onPressed: _batchUndoCheckout,
           ),
+
         IconButton(
           tooltip: 'Delete',
           icon: const Icon(Icons.delete_outline),
@@ -1933,6 +1941,7 @@ Widget build(BuildContext context) {
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
         classId: obj.classId,
+        versionId: obj.versionId,
         notify: false,
       );
     }
@@ -2370,18 +2379,14 @@ Widget build(BuildContext context) {
   }
 
   // ── Scan document ──────────────────────────────────────────
-  Future<void> _startDocumentScan() async {
+  Future<void> _startDocumentScan({ViewObject? linkTarget}) async {
     try {
       final service = context.read<MFilesService>();
-
-      debugPrint("HOME A");
 
       final docType = service.objectTypes.firstWhere(
         (t) => t.isDocument,
         orElse: () => service.objectTypes.first,
       );
-
-      debugPrint("HOME B");
 
       final pdfFile = await ScanDocumentFlow.captureAndConvert(
         context,
@@ -2394,31 +2399,23 @@ Widget build(BuildContext context) {
         },
       );
 
-      debugPrint("HOME C");
+      if (pdfFile == null) return;
 
-      if (pdfFile == null) {
-        debugPrint("HOME D");
-        return;
-      }
-
-      debugPrint("HOME E");
-
-      //if (!context.mounted) {
-      //debugPrint("HOME F");
-      //return;
-      //}
-
-      debugPrint("HOME G");
-
-      await Navigator.of(context).push(
+      final linked = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder:
-              (_) =>
-                  DynamicFormScreen(objectType: docType, scannedFile: pdfFile),
+              (_) => DynamicFormScreen(
+                objectType: docType,
+                scannedFile: pdfFile,
+                linkTarget: linkTarget,
+              ),
         ),
       );
 
-      debugPrint("HOME I");
+      if (linkTarget != null && linked == true) {
+        _clearSelection();
+        await _refreshActiveTab();
+      }
     } catch (e, st) {
       debugPrint("HOME ERROR");
       debugPrint(e.toString());
@@ -2431,7 +2428,7 @@ Widget build(BuildContext context) {
         });
       }
     }
-}
+  }
 
   // ── Create bottom sheet ───────────────────────────────────────────────────
   void _showCreateBottomSheet(BuildContext context) {
@@ -2867,6 +2864,151 @@ Widget build(BuildContext context) {
                   ),
                 ),
           ),
+    );
+  }
+
+    // ── Create & Link bottom sheet ────────────────────────────────────────────
+  void _showLinkCreateSheet(BuildContext context, ViewObject target) {
+    final service = context.read<MFilesService>();
+    final svc = context.read<MFilesService>();
+    if (service.objectTypes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No object types available. Please wait for data to load.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    final sortedTypes = [
+      ...service.objectTypes.where((t) => t.isDocument),
+      ...([...service.objectTypes.where((t) => !t.isDocument)]..sort(
+        (a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
+      )),
+    ];
+
+    final List<_CreateEntry> allEntries = [
+      const _CreateEntry.scan(),
+      ...sortedTypes.map((t) => _CreateEntry.objectType(t)),
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 14,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.add_link_rounded, color: AppColors.primary, size: 24),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Create & Link', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(
+                        'Linking to "${target.title}"',
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close, color: Colors.grey),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: allEntries.length,
+                separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
+                itemBuilder: (context, index) {
+                  final entry = allEntries[index];
+
+                  if (entry.isScan) {
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+                        child: const Icon(Icons.document_scanner_rounded, size: 20, color: AppColors.primary),
+                      ),
+                      title: const Text('Scan Document', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      subtitle: Text('Take a photo, upload as PDF, and link it', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                      trailing: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+                      onTap: () async {
+                        Navigator.pop(context);
+                        await Future.delayed(const Duration(milliseconds: 300));
+                        if (!mounted) return;
+                        await _startDocumentScan(linkTarget: target);
+                      },
+                    );
+                  }
+
+                  final ot = entry.objectType!;
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+                      child: Icon(
+                        ot.isDocument ? Icons.description_rounded : svc.iconForObjectTypeId(ot.id),
+                        size: 20,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                    title: Text(ot.displayName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                    trailing: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      final linked = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DynamicFormScreen(objectType: ot, linkTarget: target),
+                        ),
+                      );
+                      if (linked == true) {
+                        _clearSelection();
+                        await _refreshActiveTab();
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
