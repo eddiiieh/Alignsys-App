@@ -2696,6 +2696,11 @@ void initState() {
   }
 
   Widget _headerCard(ViewObject obj, {ObjectFile? firstFile}) {
+    final svc = context.read<MFilesService>();
+    final isMultiFileObj = svc.isMultiFile(
+      objectTypeId: obj.objectTypeId,
+      isSingleFile: obj.isSingleFile,
+    );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
@@ -2706,14 +2711,16 @@ void initState() {
       child: Column(
         children: [
           Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              firstFile != null
-                ? _CheckoutBadge(
+              (firstFile != null && !isMultiFileObj)
+                  ? _CheckoutBadge(
                     objectId: obj.id,
-                    child: FileTypeBadge(extension: firstFile.extension, size: 36),
+                    child: FileTypeBadge(
+                      extension: firstFile.extension,
+                      size: 36,
+                    ),
                   )
-                : _CheckoutBadge(
+                  : _CheckoutBadge(
                     objectId: obj.id,
                     child: Container(
                       width: 36,
@@ -2724,7 +2731,9 @@ void initState() {
                       ),
                       child: Center(
                         child: Icon(
-                          context.read<MFilesService>().iconForViewObject(obj),
+                          isMultiFileObj
+                              ? Icons.folder_copy_rounded
+                              : svc.iconForViewObject(obj),
                           size: 20,
                           color: AppColors.primary,
                         ),
@@ -2789,7 +2798,7 @@ void initState() {
                         size: 13, color: AppColors.primary),
                     const SizedBox(width: 5),
                     const Text(
-                      'Automatic Permissions',
+                      'Permissions',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,

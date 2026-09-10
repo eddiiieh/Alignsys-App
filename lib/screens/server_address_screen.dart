@@ -18,51 +18,27 @@ class _ServerAddressScreenState extends State<ServerAddressScreen> {
   bool _loading = false;
   bool _showRecent = false;
 
-  List<String> _recentAddresses = [];
+  bool _helpPressed = false;
 
-  bool _useHttps = true; // secure by default; user can opt into HTTP for on-prem
-  String get _scheme => _useHttps ? 'https://' : 'http://';
+  List<String> _recentAddresses = [];
 
   @override
   void initState() {
     super.initState();
     _loadRecentAddresses();
+    // Only react to focus being GAINED here. Hiding the recent-addresses
+    // list is handled explicitly (on selection, on submit, on tapping the
+    // background) rather than tied to blur — tapping the remove ("x")
+    // button on a recent item also shifts focus away from the field, and
+    // if that blur hid the list immediately, the button's own tap would
+    // never complete because its parent had already been removed from
+    // the tree mid-gesture.
     _addressFocusNode.addListener(() {
-      setState(() => _showRecent = _addressFocusNode.hasFocus);
-    });
-
-    // Pre-fill the scheme so the user only has to type the host, and
-    // place the cursor right after it.
-    _addressController.text = _scheme;
-    _addressController.selection = TextSelection.collapsed(
-      offset: _addressController.text.length,
-    );
-  }
-
-  // Updates the scheme in the field when the user toggles the HTTPS switch.
-  void _setUseHttps(bool value) {
-    if (_useHttps == value) return;
-
-    final current = _addressController.text;
-    const http = 'http://';
-    const https = 'https://';
-
-    String updated;
-    if (value && current.startsWith(http)) {
-      updated = https + current.substring(http.length);
-    } else if (!value && current.startsWith(https)) {
-      updated = http + current.substring(https.length);
-    } else if (current.startsWith(http) || current.startsWith(https)) {
-      updated = current; // already matches
-    } else {
-      updated = (value ? https : http) + current;
-    }
-
-    setState(() {
-      _useHttps = value;
-      _addressController.text = updated;
-      _addressController.selection =
-          TextSelection.collapsed(offset: updated.length);
+      if (_addressFocusNode.hasFocus) {
+        setState(() => _showRecent = true);
+      } else {
+        setState(() {}); // repaint border color for the now-unfocused field
+      }
     });
   }
 
@@ -96,7 +72,7 @@ class _ServerAddressScreenState extends State<ServerAddressScreen> {
     );
     setState(() {
       _error = null;
-      _useHttps = address.startsWith('https://');
+      _showRecent = false;
     });
     _addressFocusNode.unfocus();
   }
@@ -104,7 +80,7 @@ class _ServerAddressScreenState extends State<ServerAddressScreen> {
   Future<void> _continue([String? overrideAddress]) async {
     final input = overrideAddress ?? _addressController.text.trim();
 
-    if (input.isEmpty || input == 'http://' || input == 'https://') {
+    if (input.isEmpty) {
       setState(() => _error = 'Please enter a server address');
       return;
     }
@@ -119,6 +95,7 @@ class _ServerAddressScreenState extends State<ServerAddressScreen> {
     setState(() {
       _error = null;
       _loading = true;
+      _showRecent = false;
     });
 
     await context.read<MFilesService>().setServerAddress(input);
@@ -138,224 +115,236 @@ class _ServerAddressScreenState extends State<ServerAddressScreen> {
     return Scaffold(
       backgroundColor: AppColors.primary,
       body: GestureDetector(
-        onTap: () => FocusScope.of(context).unfocus(),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
-            child: Container(
-              constraints: const BoxConstraints(maxWidth: 440),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(4),
-                      child: Image.asset('assets/alignsysnew.png', height: 85),
+        onTap: () {
+          FocusScope.of(context).unfocus();
+          setState(() => _showRecent = false);
+        },
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 440),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child:
+                            Image.asset('assets/alignsysnew.png', height: 85),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 22),
-                  const Text(
-                    'Connect to your server',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                    const SizedBox(height: 22),
+                    const Text(
+                      'Connect to your server',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 12),
-                  Container(
-                    padding: const EdgeInsets.all(24),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
-                          blurRadius: 20,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // ── Scheme toggle ──
-                        Container(
-                          padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(
-                            color: AppColors.surfaceLight,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: _buildSchemeOption(
-                                  label: 'HTTPS',
-                                  icon: Icons.lock_rounded,
-                                  selected: _useHttps,
-                                  onTap: () => _setUseHttps(true),
-                                ),
-                              ),
-                              Expanded(
-                                child: _buildSchemeOption(
-                                  label: 'HTTP',
-                                  icon: Icons.lock_open_rounded,
-                                  selected: !_useHttps,
-                                  onTap: () => _setUseHttps(false),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (!_useHttps) ...[
-                          const SizedBox(height: 8),
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Icon(Icons.info_outline_rounded,
-                                  size: 14, color: Colors.orange.shade700),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  'HTTP is unencrypted — only use this on a trusted local or on-prem network.',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    color: Colors.orange.shade800,
-                                  ),
-                                ),
-                              ),
-                            ],
+                    const SizedBox(height: 12),
+                    Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 20,
+                            offset: const Offset(0, 4),
                           ),
                         ],
-                        const SizedBox(height: 12),
-
-                        TextField(
-                          controller: _addressController,
-                          focusNode: _addressFocusNode,
-                          keyboardType: TextInputType.url,
-                          textInputAction: TextInputAction.done,
-                          onSubmitted: (_) => _continue(),
-                          decoration: InputDecoration(
-                            labelText: 'Server address',
-                            hintText: '192.168.2.100 or alignsys.tech',
-                            prefixIcon: const Icon(Icons.dns_outlined,
-                                color: AppColors.primary),
-                            border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            errorText: _error,
-                            filled: true,
-                            fillColor: AppColors.surfaceLight,
-                          ),
-                        ),
-
-                        // ── RECENT ADDRESSES DROPDOWN ──
-                        // Lives inside the same card, directly under the
-                        // field, and only appears while the field has
-                        // focus — collapses the moment focus is lost or
-                        // an entry is picked.
-                        AnimatedSize(
-                          duration: const Duration(milliseconds: 150),
-                          curve: Curves.easeOut,
-                          alignment: Alignment.topCenter,
-                          child: (_showRecent && _recentAddresses.isNotEmpty)
-                              ? ExcludeFocus(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      const SizedBox(height: 8),
-                                      Container(
-                                        constraints: const BoxConstraints(
-                                            maxHeight: 168),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.surfaceLight,
-                                          borderRadius:
-                                              BorderRadius.circular(10),
-                                          border: Border.all(
-                                              color: Colors.grey.shade200),
-                                        ),
-                                        child: ListView.separated(
-                                          shrinkWrap: true,
-                                          padding: EdgeInsets.zero,
-                                          itemCount: _recentAddresses.length,
-                                          separatorBuilder: (_, __) =>
-                                              Divider(
-                                            height: 1,
-                                            color: Colors.grey.shade200,
-                                          ),
-                                          itemBuilder: (context, i) =>
-                                              ListTile(
-                                            dense: true,
-                                            contentPadding: const EdgeInsets
-                                                .only(left: 12, right: 4),
-                                            minLeadingWidth: 8,
-                                            leading: const Icon(
-                                              Icons.history,
-                                              color: AppColors.primary,
-                                              size: 18,
-                                            ),
-                                            title: Text(
-                                              _recentAddresses[i],
-                                              style: const TextStyle(
-                                                  fontSize: 13.5),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            trailing: IconButton(
-                                              icon: Icon(
-                                                Icons.close,
-                                                size: 15,
-                                                color: Colors.grey.shade400,
-                                              ),
-                                              padding: EdgeInsets.zero,
-                                              constraints:
-                                                  const BoxConstraints(
-                                                minWidth: 28,
-                                                minHeight: 28,
-                                              ),
-                                              splashRadius: 16,
-                                              onPressed: () => _removeRecent(
-                                                  _recentAddresses[i]),
-                                            ),
-                                            onTap: _loading
-                                                ? null
-                                                : () => _selectRecentAddress(
-                                                    _recentAddresses[i]),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-
-                        const SizedBox(height: 16),
-                        _loading
-                            ? const Center(child: CircularProgressIndicator())
-                            : ElevatedButton(
-                                onPressed: _continue,
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                child: const Text(
-                                  'Continue',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextField(
+                            controller: _addressController,
+                            focusNode: _addressFocusNode,
+                            keyboardType: TextInputType.url,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _continue(),
+                            onChanged: (_) {
+                              if (_error != null) {
+                                setState(() => _error = null);
+                              }
+                            },
+                            decoration: InputDecoration(
+                              labelText: 'Server address',
+                              hintText:
+                                  'https://alignsys.tech or http://192.168.2.100:8003',
+                              hintStyle: TextStyle(
+                                fontSize: 12.5,
+                                color: Colors.grey.shade400,
+                              ),
+                              prefixIcon: Icon(
+                                Icons.dns_outlined,
+                                color: _addressFocusNode.hasFocus
+                                    ? AppColors.primary
+                                    : Colors.grey.shade500,
+                              ),
+                              errorText: _error,
+                              errorMaxLines: 2,
+                              filled: true,
+                              fillColor: AppColors.surfaceLight,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade300),
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.grey.shade300),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: AppColors.primary,
+                                  width: 2,
                                 ),
                               ),
-                      ],
+                              errorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide:
+                                    BorderSide(color: Colors.red.shade400),
+                              ),
+                              focusedErrorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color: Colors.red.shade400,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // ── RECENT ADDRESSES DROPDOWN ──
+                          // Lives inside the same card, directly under the
+                          // field, and only appears while the field has
+                          // focus, collapsing the moment focus is lost or
+                          // an entry is picked.
+                          AnimatedSize(
+                            duration: const Duration(milliseconds: 150),
+                            curve: Curves.easeOut,
+                            alignment: Alignment.topCenter,
+                            child:
+                                (_showRecent && _recentAddresses.isNotEmpty)
+                                    ? ExcludeFocus(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            const SizedBox(height: 8),
+                                            Container(
+                                              constraints:
+                                                  const BoxConstraints(
+                                                      maxHeight: 168),
+                                              decoration: BoxDecoration(
+                                                color: AppColors.surfaceLight,
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                border: Border.all(
+                                                    color:
+                                                        Colors.grey.shade200),
+                                              ),
+                                              child: ListView.separated(
+                                                shrinkWrap: true,
+                                                padding: EdgeInsets.zero,
+                                                itemCount:
+                                                    _recentAddresses.length,
+                                                separatorBuilder: (_, __) =>
+                                                    Divider(
+                                                  height: 1,
+                                                  color: Colors.grey.shade200,
+                                                ),
+                                                itemBuilder: (context, i) =>
+                                                    ListTile(
+                                                  dense: true,
+                                                  contentPadding:
+                                                      const EdgeInsets.only(
+                                                          left: 12, right: 4),
+                                                  minLeadingWidth: 8,
+                                                  leading: const Icon(
+                                                    Icons.history,
+                                                    color: AppColors.primary,
+                                                    size: 18,
+                                                  ),
+                                                  title: Text(
+                                                    _recentAddresses[i],
+                                                    style: const TextStyle(
+                                                        fontSize: 13.5),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                  trailing: IconButton(
+                                                    icon: Icon(
+                                                      Icons.close,
+                                                      size: 15,
+                                                      color:
+                                                          Colors.grey.shade400,
+                                                    ),
+                                                    padding: EdgeInsets.zero,
+                                                    constraints:
+                                                        const BoxConstraints(
+                                                      minWidth: 28,
+                                                      minHeight: 28,
+                                                    ),
+                                                    splashRadius: 16,
+                                                    onPressed: () =>
+                                                        _removeRecent(
+                                                            _recentAddresses[
+                                                                i]),
+                                                  ),
+                                                  onTap: _loading
+                                                      ? null
+                                                      : () =>
+                                                          _selectRecentAddress(
+                                                              _recentAddresses[
+                                                                  i]),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      )
+                                    : const SizedBox.shrink(),
+                          ),
+
+                          const SizedBox(height: 16),
+                          _loading
+                              ? const Center(
+                                  child: CircularProgressIndicator())
+                              : ElevatedButton(
+                                  onPressed: _continue,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 16),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                  ),
+                                  child: const Text(
+                                    'Continue',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 18),
+                    _buildHelpNote(),
+                  ],
+                ),
               ),
             ),
           ),
@@ -364,38 +353,63 @@ class _ServerAddressScreenState extends State<ServerAddressScreen> {
     );
   }
 
-  // Builds one of the two scheme toggle buttons (HTTPS or HTTP).
-  Widget _buildSchemeOption({
-    required String label,
-    required IconData icon,
-    required bool selected,
-    required VoidCallback onTap,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(vertical: 9),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon,
-                size: 15,
-                color: selected ? Colors.white : Colors.grey.shade600),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-                color: selected ? Colors.white : Colors.grey.shade600,
-              ),
+  // Bottom-center help note, rendered as a soft translucent pill so it
+  // reads as a single tappable affordance rather than loose text on the
+  // background. Tapping shows a tooltip with the full explanation.
+  Widget _buildHelpNote() {
+    return Tooltip(
+      message: 'Paste the full server address your organization gave you, '
+          'including http:// or https://. If you are not sure what to '
+          'enter, contact your administrator.',
+      triggerMode: TooltipTriggerMode.tap,
+      preferBelow: false,
+      textStyle: const TextStyle(fontSize: 12.5, color: Colors.white),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.85),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _helpPressed = true),
+        onTapCancel: () => setState(() => _helpPressed = false),
+        onTapUp: (_) => setState(() => _helpPressed = false),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          constraints: const BoxConstraints(maxWidth: 360),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(_helpPressed ? 0.20 : 0.12),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: Colors.white.withOpacity(0.18),
+              width: 1,
             ),
-          ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.help_outline_rounded,
+                size: 15,
+                color: Colors.white.withOpacity(0.9),
+              ),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Text(
+                  'Need help? Contact your administrator',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white.withOpacity(0.92),
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
