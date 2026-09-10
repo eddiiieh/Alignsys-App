@@ -28,6 +28,7 @@ import '../screens/search_results_screen.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/widgets/loading_overlay.dart';
+import 'package:mfiles_app/widgets/link_create_sheet.dart';
 
 enum _SortField {
   name,
@@ -1103,6 +1104,28 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             });
           },
         ),
+
+                if (_selectedObjects.length == 1)
+          IconButton(
+            tooltip: 'Create & Link',
+            icon: const Icon(Icons.add_link_rounded),
+            onPressed: () => showLinkCreateSheet(
+              context,
+              target: _selectedObjects.values.first,
+              onLinked: () {
+                _clearSelection();
+                _refreshThisView();
+              },
+              onScanStatusChange: (message) {
+                if (!mounted) return;
+                setState(() {
+                  _navLoading = message != null;
+                  _navMessage = message;
+                });
+              },
+            ),
+          ),
+
         if (allNotCheckedOut)
           IconButton(
             tooltip: 'Checkout',

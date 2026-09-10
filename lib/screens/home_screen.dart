@@ -32,7 +32,8 @@ import 'dart:async';
 import 'package:launcher_shortcuts/launcher_shortcuts.dart';
 import 'package:mfiles_app/services/shortcut_router.dart';
 import 'package:mfiles_app/widgets/loading_overlay.dart';
-
+import 'package:mfiles_app/utils/app_dialogs.dart';
+import 'package:mfiles_app/widgets/link_create_sheet.dart';
 
 enum _MoreSubTab { trash, reports }
 
@@ -485,11 +486,12 @@ class _HomeScreenState extends State<HomeScreen>
       if (mounted) _handlePendingAction(pending);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(humanizeError(e.toString())),
-            backgroundColor: Colors.red,
-          ),
+        await showAppInfoDialog(
+          context,
+          title: 'Couldn\'t Load Your Data',
+          message: humanizeError(e.toString()),
+          icon: Icons.cloud_off_rounded,
+          iconColor: Colors.red.shade600,
         );
       }
     }
@@ -571,11 +573,11 @@ class _HomeScreenState extends State<HomeScreen>
       if (!mounted) return;
 
       if (files.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No files attached to this document.'),
-            behavior: SnackBarBehavior.floating,
-          ),
+        await showAppInfoDialog(
+          context,
+          title: 'No File Attached',
+          message: 'This object doesn\'t have any files attached to preview.',
+          icon: Icons.insert_drive_file_outlined,
         );
         return;
       }
@@ -603,12 +605,12 @@ class _HomeScreenState extends State<HomeScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load preview: $e'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
+      await showAppInfoDialog(
+        context,
+        title: 'Preview Failed',
+        message: 'Something went wrong loading this document. Please try again.',
+        icon: Icons.error_outline_rounded,
+        iconColor: Colors.red.shade600,
       );
     } finally {
       if (mounted) setState(() => _previewLoading.remove(obj.id));
@@ -836,12 +838,9 @@ class _HomeScreenState extends State<HomeScreen>
 
                   if (!mounted) return;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
-                      ),
-                    ),
+                  SnackbarHelper.showSuccess(
+                    context,
+                    'Converted $converted ${converted == 1 ? "document" : "documents"} to PDF',
                   );
 
                   _clearSelection();
@@ -2379,7 +2378,7 @@ Widget build(BuildContext context) {
   }
 
   // ── Scan document ──────────────────────────────────────────
-  Future<void> _startDocumentScan({ViewObject? linkTarget}) async {
+  Future<void> _startDocumentScan() async {
     try {
       final service = context.read<MFilesService>();
 
@@ -2401,21 +2400,14 @@ Widget build(BuildContext context) {
 
       if (pdfFile == null) return;
 
-      final linked = await Navigator.of(context).push<bool>(
+      await Navigator.of(context).push(
         MaterialPageRoute(
-          builder:
-              (_) => DynamicFormScreen(
-                objectType: docType,
-                scannedFile: pdfFile,
-                linkTarget: linkTarget,
-              ),
+          builder: (_) => DynamicFormScreen(
+            objectType: docType,
+            scannedFile: pdfFile,
+          ),
         ),
       );
-
-      if (linkTarget != null && linked == true) {
-        _clearSelection();
-        await _refreshActiveTab();
-      }
     } catch (e, st) {
       debugPrint("HOME ERROR");
       debugPrint(e.toString());
@@ -2435,13 +2427,12 @@ Widget build(BuildContext context) {
     final service = context.read<MFilesService>();
     final svc = context.read<MFilesService>();
     if (service.objectTypes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'No object types available. Please wait for data to load.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+      showAppInfoDialog(
+        context,
+        title: 'Still Loading, check your internet connection',
+        message: 'Object types haven\'t finished loading yet. Please wait a moment and try again.',
+        icon: Icons.hourglass_empty_rounded,
+        iconColor: Colors.orange.shade700,
       );
       return;
     }
@@ -2867,148 +2858,22 @@ Widget build(BuildContext context) {
     );
   }
 
-    // ── Create & Link bottom sheet ────────────────────────────────────────────
-  void _showLinkCreateSheet(BuildContext context, ViewObject target) {
-    final service = context.read<MFilesService>();
-    final svc = context.read<MFilesService>();
-    if (service.objectTypes.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No object types available. Please wait for data to load.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    final sortedTypes = [
-      ...service.objectTypes.where((t) => t.isDocument),
-      ...([...service.objectTypes.where((t) => !t.isDocument)]..sort(
-        (a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
-      )),
-    ];
-
-    final List<_CreateEntry> allEntries = [
-      const _CreateEntry.scan(),
-      ...sortedTypes.map((t) => _CreateEntry.objectType(t)),
-    ];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        padding: EdgeInsets.only(
-          left: 20,
-          right: 20,
-          top: 14,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-        ),
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
-            ),
-            const SizedBox(height: 20),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.add_link_rounded, color: AppColors.primary, size: 24),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('Create & Link', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      Text(
-                        'Linking to "${target.title}"',
-                        maxLines: 4,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.close, color: Colors.grey),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: allEntries.length,
-                separatorBuilder: (_, __) => Divider(height: 1, color: Colors.grey.shade100),
-                itemBuilder: (context, index) {
-                  final entry = allEntries[index];
-
-                  if (entry.isScan) {
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
-                        child: const Icon(Icons.document_scanner_rounded, size: 20, color: AppColors.primary),
-                      ),
-                      title: const Text('Scan Document', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                      subtitle: Text('Take a photo, upload as PDF, and link it', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
-                      trailing: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
-                      onTap: () async {
-                        Navigator.pop(context);
-                        await Future.delayed(const Duration(milliseconds: 300));
-                        if (!mounted) return;
-                        await _startDocumentScan(linkTarget: target);
-                      },
-                    );
-                  }
-
-                  final ot = entry.objectType!;
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    leading: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
-                      child: Icon(
-                        ot.isDocument ? Icons.description_rounded : svc.iconForObjectTypeId(ot.id),
-                        size: 20,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    title: Text(ot.displayName, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-                    trailing: Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400),
-                    onTap: () async {
-                      Navigator.pop(context);
-                      final linked = await Navigator.push<bool>(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => DynamicFormScreen(objectType: ot, linkTarget: target),
-                        ),
-                      );
-                      if (linked == true) {
-                        _clearSelection();
-                        await _refreshActiveTab();
-                      }
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
+  // ── Create & Link bottom sheet ────────────────────────────────────────────
+    void _showLinkCreateSheet(BuildContext context, ViewObject target) {
+    showLinkCreateSheet(
+      context,
+      target: target,
+      onLinked: () async {
+        _clearSelection();
+        await _refreshActiveTab();
+      },
+      onScanStatusChange: (message) {
+        if (!mounted) return;
+        setState(() {
+          _scanLoading = message != null;
+          _scanMessage = message;
+        });
+      },
     );
   }
 
@@ -3064,10 +2929,13 @@ Widget build(BuildContext context) {
       Navigator.of(context, rootNavigator: true).pop();
 
       if (allTemplates.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No templates found in this repository.'),
-          ),
+        await showAppInfoDialog(
+          context,
+          title: 'No Templates Found',
+          message: "This repository doesn't have any templates set up yet. "
+              "You can still create the document from scratch, or ask your "
+              "vault admin to add one.",
+          icon: Icons.dashboard_customize_rounded,
         );
         return;
       }
@@ -3088,10 +2956,13 @@ Widget build(BuildContext context) {
               .toList();
 
       if (classesWithTemplates.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No templates found in this repository.'),
-          ),
+        await showAppInfoDialog(
+          context,
+          title: 'No Templates Found',
+          message: "This repository doesn't have any templates set up yet. "
+              "You can still create the document from scratch, or ask your "
+              "vault admin to add one.",
+          icon: Icons.dashboard_customize_rounded,
         );
         return;
       }
@@ -3103,11 +2974,12 @@ Widget build(BuildContext context) {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load templates: $e'),
-          backgroundColor: Colors.red,
-        ),
+      await showAppInfoDialog(
+        context,
+        title: 'Couldn\'t Load Templates',
+        message: 'Something went wrong fetching templates for this repository. Please try again.',
+        icon: Icons.error_outline_rounded,
+        iconColor: Colors.red.shade600,
       );
     }
   }
@@ -3402,18 +3274,19 @@ Widget build(BuildContext context) {
     );
   }
 
-  void _openTemplateDocumentSheetDirect(
+  Future<void> _openTemplateDocumentSheetDirect(
     ObjectClass cls,
     List<Map<String, dynamic>> templates,
-  ) {
+  ) async {
     if (!mounted) return;
 
     if (templates.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No templates available for ${cls.displayName}.'),
-          backgroundColor: Colors.orange,
-        ),
+      await showAppInfoDialog(
+        context,
+        title: 'No Templates for This Class',
+        message: '${cls.displayName} doesn\'t have any templates yet. '
+            'Try a different class or create the document from scratch.',
+        icon: Icons.dashboard_customize_rounded,
       );
       return;
     }

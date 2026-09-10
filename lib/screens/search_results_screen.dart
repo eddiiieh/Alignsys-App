@@ -18,6 +18,7 @@ import '../theme/app_colors.dart';
 
 import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
+import 'package:mfiles_app/widgets/link_create_sheet.dart';
 
 class SearchResultsScreen extends StatefulWidget {
   final String initialQuery;
@@ -119,7 +120,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         _focusNode.requestFocus();
       });
     } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _focusNode.requestFocus(),
+      );
     }
   }
 
@@ -174,13 +177,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     });
 
     try {
-      final List<ViewObject> results = _hasActiveFilters
-          ? await svc.advancedSearchVault(
-              query: query,
-              objectTypeIds: _selectedObjectTypeIds.toList(),
-              classId: _selectedClassId,
-            )
-          : await svc.searchVault(query);
+      final List<ViewObject> results =
+          _hasActiveFilters
+              ? await svc.advancedSearchVault(
+                query: query,
+                objectTypeIds: _selectedObjectTypeIds.toList(),
+                classId: _selectedClassId,
+              )
+              : await svc.searchVault(query);
 
       if (!mounted || requestId != _searchRequestId) return;
 
@@ -190,8 +194,18 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       sorted.sort((a, b) {
         final aTitle = a.title.toLowerCase();
         final bTitle = b.title.toLowerCase();
-        final aScore = aTitle.startsWith(q) ? 0 : aTitle.contains(q) ? 1 : 2;
-        final bScore = bTitle.startsWith(q) ? 0 : bTitle.contains(q) ? 1 : 2;
+        final aScore =
+            aTitle.startsWith(q)
+                ? 0
+                : aTitle.contains(q)
+                ? 1
+                : 2;
+        final bScore =
+            bTitle.startsWith(q)
+                ? 0
+                : bTitle.contains(q)
+                ? 1
+                : 2;
         return aScore.compareTo(bScore);
       });
 
@@ -211,7 +225,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
       if (!mounted || requestId != _searchRequestId) return;
       setState(() => _isWarming = false);
-
     } catch (e) {
       if (!mounted || requestId != _searchRequestId) return;
       setState(() {
@@ -250,16 +263,17 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => DocumentPreviewScreen(
-            displayObjectId: obj.id,
-            classId: obj.classId,
-            fileId: f.fileId,
-            fileTitle: f.fileTitle,
-            extension: f.extension,
-            reportGuid: f.reportGuid,
-            objectTypeId: obj.objectTypeId,
-            canDownload: true,
-          ),
+          builder:
+              (_) => DocumentPreviewScreen(
+                displayObjectId: obj.id,
+                classId: obj.classId,
+                fileId: f.fileId,
+                fileTitle: f.fileTitle,
+                extension: f.extension,
+                reportGuid: f.reportGuid,
+                objectTypeId: obj.objectTypeId,
+                canDownload: true,
+              ),
         ),
       );
     } catch (e) {
@@ -281,34 +295,32 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     _setProcessing(true, "Checking out documents...");
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    int success = 0;
+      int success = 0;
 
-    for (final obj in _selectedObjects.values) {
-      final checkedOut = await service.checkoutObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-      );
+      for (final obj in _selectedObjects.values) {
+        final checkedOut = await service.checkoutObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+        );
 
-      if (checkedOut) {
-        success++;
+        if (checkedOut) {
+          success++;
+        }
       }
+
+      _clearSelection();
+
+      if (!mounted) return;
+
+      SnackbarHelper.showSuccess(
+        context,
+        success == 1 ? '1 object checked out' : '$success objects checked out',
+      );
+    } finally {
+      _setProcessing(false);
     }
-
-    _clearSelection();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object checked out'
-          : '$success objects checked out',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   Future<void> _batchUndoCheckout() async {
@@ -316,34 +328,32 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     _setProcessing(true, "Checking in documents...");
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    int success = 0;
+      int success = 0;
 
-    for (final obj in _selectedObjects.values) {
-      final checkedIn = await service.undoCheckoutObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-      );
+      for (final obj in _selectedObjects.values) {
+        final checkedIn = await service.undoCheckoutObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+        );
 
-      if (checkedIn) {
-        success++;
+        if (checkedIn) {
+          success++;
+        }
       }
+
+      _clearSelection();
+
+      if (!mounted) return;
+
+      SnackbarHelper.showSuccess(
+        context,
+        success == 1 ? '1 object checked in' : '$success objects checked in',
+      );
+    } finally {
+      _setProcessing(false);
     }
-
-    _clearSelection();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object checked in'
-          : '$success objects checked in',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   Future<void> _batchDelete() async {
@@ -358,54 +368,52 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     _setProcessing(true, "Deleting objects...");
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    final allObjects = <ViewObject>[
-      ...service.recentObjects,
-      ...service.assignedObjects,
-      ...service.reportObjects,
-      ...service.searchResults,
-    ];
+      final allObjects = <ViewObject>[
+        ...service.recentObjects,
+        ...service.assignedObjects,
+        ...service.reportObjects,
+        ...service.searchResults,
+      ];
 
-    final selectedObjects =
-        allObjects.where((o) => _selectedIds.contains(o.id)).toList();
+      final selectedObjects =
+          allObjects.where((o) => _selectedIds.contains(o.id)).toList();
 
-        debugPrint('Selected IDs: $_selectedIds');
-        debugPrint('Matched objects: ${selectedObjects.length}');
+      debugPrint('Selected IDs: $_selectedIds');
+      debugPrint('Matched objects: ${selectedObjects.length}');
 
-    int success = 0;
+      int success = 0;
 
-    for (final obj in selectedObjects) {
-      debugPrint(
-        'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+      for (final obj in selectedObjects) {
+        debugPrint(
+          'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+        );
+
+        final deleted = await service.deleteObject(
+          objectId: obj.id,
+          classId: obj.classId,
+        );
+
+        debugPrint('Delete result: $deleted');
+        debugPrint('Service error: ${service.error}');
+
+        if (deleted) success++;
+      }
+
+      _results.removeWhere((o) => _selectedIds.contains(o.id));
+
+      _clearSelection();
+
+      if (!mounted) return;
+
+      SnackbarHelper.showSuccess(
+        context,
+        success == 1 ? '1 object deleted' : '$success objects deleted',
       );
-
-      final deleted = await service.deleteObject(
-        objectId: obj.id,
-        classId: obj.classId,
-      );
-
-      debugPrint('Delete result: $deleted');
-      debugPrint('Service error: ${service.error}');
-
-      if (deleted) success++;
+    } finally {
+      _setProcessing(false);
     }
-
-    _results.removeWhere((o) => _selectedIds.contains(o.id));
-
-    _clearSelection();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object deleted'
-          : '$success objects deleted',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   @override
@@ -420,12 +428,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               children: [
                 _buildStatusBar(),
 
-                if (_selectionMode)
-                  _buildSelectionSummary(),
+                if (_selectionMode) _buildSelectionSummary(),
 
-                Expanded(
-                  child: _buildBody(),
-                ),
+                Expanded(child: _buildBody()),
               ],
             ),
           ),
@@ -435,9 +440,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             child: ColoredBox(
               color: Colors.black45,
               child: Center(
-                child: ProcessingDialog(
-                  operation: _processingText,
-                ),
+                child: ProcessingDialog(operation: _processingText),
               ),
             ),
           ),
@@ -446,14 +449,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   PreferredSizeWidget _buildAppBar() {
-  if (!_selectionMode) {
-    return _buildSearchAppBar();
-  }
+    if (!_selectionMode) {
+      return _buildSearchAppBar();
+    }
 
-  return _searchWhileSelecting
-      ? _buildSearchAppBar()
-      : _buildSelectionAppBar();
-}
+    return _searchWhileSelecting
+        ? _buildSearchAppBar()
+        : _buildSelectionAppBar();
+  }
 
   PreferredSizeWidget _buildSearchAppBar() {
     return AppBar(
@@ -483,7 +486,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         cursorColor: Colors.white70,
         decoration: InputDecoration(
           hintText: 'Search repository…',
-          hintStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 16),
+          hintStyle: TextStyle(
+            color: Colors.white.withOpacity(0.5),
+            fontSize: 16,
+          ),
           border: InputBorder.none,
           isDense: true,
           contentPadding: EdgeInsets.zero,
@@ -979,7 +985,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               if (count > 0) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
@@ -1031,7 +1040,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? AppColors.primary : const Color(0xFF1E293B),
+                    color:
+                        selected ? AppColors.primary : const Color(0xFF1E293B),
                   ),
                 ),
               ),
@@ -1045,17 +1055,27 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     color: selected ? AppColors.primary : Colors.transparent,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: selected ? AppColors.primary : Colors.grey.shade400,
+                      color:
+                          selected ? AppColors.primary : Colors.grey.shade400,
                       width: 1.5,
                     ),
                   ),
-                  child: selected
-                      ? const Icon(Icons.check, size: 14, color: Colors.white)
-                      : null,
+                  child:
+                      selected
+                          ? const Icon(
+                            Icons.check,
+                            size: 14,
+                            color: Colors.white,
+                          )
+                          : null,
                 )
               else
                 selected
-                    ? const Icon(Icons.check_rounded, size: 20, color: AppColors.primary)
+                    ? const Icon(
+                      Icons.check_rounded,
+                      size: 20,
+                      color: AppColors.primary,
+                    )
                     : const SizedBox(width: 20),
             ],
           ),
@@ -1065,11 +1085,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   PreferredSizeWidget _buildSelectionAppBar() {
-    final allCheckedOut =
-    _selectedObjects.values.every((o) => o.isCheckedOut);
+    final allCheckedOut = _selectedObjects.values.every((o) => o.isCheckedOut);
 
-    final allNotCheckedOut =
-        _selectedObjects.values.every((o) => !o.isCheckedOut);
+    final allNotCheckedOut = _selectedObjects.values.every(
+      (o) => !o.isCheckedOut,
+    );
     return AppBar(
       backgroundColor: AppColors.primary,
       foregroundColor: Colors.white,
@@ -1083,24 +1103,38 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
       title: Text(
         '${_selectedIds.length} selected',
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w600),
       ),
 
       actions: [
         IconButton(
-        tooltip: 'Search',
-        icon: const Icon(Icons.search),
-        onPressed: () {
-          setState(() {
-            _showSelectedOnly = false;
-            _searchWhileSelecting = true;
-          });
+          tooltip: 'Search',
+          icon: const Icon(Icons.search),
+          onPressed: () {
+            setState(() {
+              _showSelectedOnly = false;
+              _searchWhileSelecting = true;
+            });
 
-          _focusNode.requestFocus();
-        },
-      ),
+            _focusNode.requestFocus();
+          },
+        ),
+
+        if (_selectedObjects.length == 1)
+          IconButton(
+            tooltip: 'Create & Link',
+            icon: const Icon(Icons.add_link_rounded),
+            onPressed:
+                () => showLinkCreateSheet(
+                  context,
+                  target: _selectedObjects.values.first,
+                  onLinked: _clearSelection,
+                  onScanStatusChange: (message) {
+                    _setProcessing(message != null, message ?? '');
+                  },
+                ),
+          ),
+
         if (allNotCheckedOut)
           IconButton(
             tooltip: 'Checkout',
@@ -1129,8 +1163,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   showVersionHistorySheet(
                     context,
                     obj: obj,
-                    onRolledBack: () {
-                    },
+                    onRolledBack: () {},
                   );
                 }
                 break;
@@ -1172,15 +1205,24 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   if (!mounted) return;
 
                   if (success == 1 && lastPath != null) {
-                    SnackbarHelper.showSuccess(context, 'Downloaded to: $lastPath');
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded to: $lastPath',
+                    );
                   } else if (success > 1 && lastPath != null) {
-                    final folder = lastPath.substring(0, lastPath.lastIndexOf('/'));
+                    final folder = lastPath.substring(
+                      0,
+                      lastPath.lastIndexOf('/'),
+                    );
                     SnackbarHelper.showSuccess(
                       context,
                       'Downloaded $success files to: $folder',
                     );
                   } else {
-                    SnackbarHelper.showSuccess(context, 'Downloaded $success files');
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded $success files',
+                    );
                   }
 
                   _clearSelection();
@@ -1241,7 +1283,6 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       ],
     );
   }
-
 
   Widget _buildStatusBar() {
     final query = _controller.text.trim();
@@ -1327,9 +1368,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   : '${_results.length} result${_results.length == 1 ? '' : 's'}',
               style: TextStyle(
                 fontSize: 12,
-                color: _errorMessage != null
-                    ? Colors.red.shade600
-                    : Colors.grey.shade600,
+                color:
+                    _errorMessage != null
+                        ? Colors.red.shade600
+                        : Colors.grey.shade600,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -1341,50 +1383,36 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget _buildSelectionSummary() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 10,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: _showSelectedOnly
-        ? Colors.green.shade50
-        : AppColors.primary.withOpacity(0.05),
-        border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade300,
-          ),
-        ),
+        color:
+            _showSelectedOnly
+                ? Colors.green.shade50
+                : AppColors.primary.withOpacity(0.05),
+        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
       ),
       child: Row(
         children: [
-          const Icon(
-            Icons.check_circle,
-            color: AppColors.primary,
-            size: 18,
-          ),
+          const Icon(Icons.check_circle, color: AppColors.primary, size: 18),
 
           const SizedBox(width: 8),
 
           Expanded(
             child: Text(
               _showSelectedOnly
-              ? 'Reviewing ${_selectedIds.length} selected items'
-              : '${_selectedIds.length} items selected across searches',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-              ),
+                  ? 'Reviewing ${_selectedIds.length} selected items'
+                  : '${_selectedIds.length} items selected across searches',
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
 
           TextButton(
             onPressed: () {
               setState(() {
-              _showSelectedOnly = !_showSelectedOnly;
-            });
+                _showSelectedOnly = !_showSelectedOnly;
+              });
             },
-            child: Text(
-              _showSelectedOnly ? 'Show All' : 'Review',
-            ),
+            child: Text(_showSelectedOnly ? 'Show All' : 'Review'),
           ),
         ],
       ),
@@ -1449,7 +1477,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Text(
               'Start typing to search across all objects,\ndocuments and folders.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: AppColors.surfaceLight, height: 1.5),
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.surfaceLight,
+                height: 1.5,
+              ),
             ),
           ],
         ),
@@ -1484,7 +1516,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 color: Colors.grey.shade100,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.search_off_rounded, size: 48, color: Colors.grey.shade400),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 48,
+                color: Colors.grey.shade400,
+              ),
             ),
             const SizedBox(height: 20),
             const Text(
@@ -1499,7 +1535,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Text(
               'No items matched "$query".\nTry a different search term.',
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: AppColors.surfaceLight, height: 1.5),
+              style: TextStyle(
+                fontSize: 14,
+                color: AppColors.surfaceLight,
+                height: 1.5,
+              ),
             ),
           ],
         ),
@@ -1520,13 +1560,20 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 color: Colors.red.shade50,
                 shape: BoxShape.circle,
               ),
-              child: Icon(Icons.error_outline_rounded, size: 48, color: Colors.red.shade400),
+              child: Icon(
+                Icons.error_outline_rounded,
+                size: 48,
+                color: Colors.red.shade400,
+              ),
             ),
             const SizedBox(height: 20),
             const Text(
               'Search failed',
               style: TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)),
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1A1A1A),
+              ),
             ),
             const SizedBox(height: 8),
             Text(
@@ -1542,8 +1589,13 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
                 side: BorderSide(color: AppColors.primary.withOpacity(0.4)),
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],
@@ -1553,9 +1605,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildResultsList() {
-    final displayedResults = _showSelectedOnly
-        ? _selectedObjects.values.toList()
-        : _results;
+    final displayedResults =
+        _showSelectedOnly ? _selectedObjects.values.toList() : _results;
 
     return Scrollbar(
       controller: _scrollController,
@@ -1567,8 +1618,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(10),
         itemCount: displayedResults.length,
-        itemBuilder: (context, index) =>
-            _buildObjectRow(displayedResults[index]),
+        itemBuilder:
+            (context, index) => _buildObjectRow(displayedResults[index]),
       ),
     );
   }
@@ -1576,7 +1627,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   Widget _buildObjectRow(ViewObject obj) {
     final svc = context.watch<MFilesService>();
     final type = obj.objectTypeName.trim();
-    final idPart = obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
+    final idPart =
+        obj.displayId.trim().isNotEmpty ? obj.displayId.trim() : '${obj.id}';
     // Display type if available, otherwise just show ID
     final subtitle = type.isEmpty ? 'ID $idPart' : '$type • ID $idPart';
 
@@ -1606,30 +1658,32 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: _isSelected(obj.id)
-          ? AppColors.primary.withOpacity(0.08)
-          : Colors.white,
+          color:
+              _isSelected(obj.id)
+                  ? AppColors.primary.withOpacity(0.08)
+                  : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border:
               infoExpanded
                   ? Border.all(color: AppColors.primary, width: 1.5)
                   : null,
-          boxShadow: infoExpanded
-              ? [
-                  BoxShadow(
-                    color: AppColors.primary.withOpacity(0.25),
-                    blurRadius: 14,
-                    spreadRadius: 1,
-                    offset: const Offset(0, 2),
-                  ),
-                ]
-              : [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+          boxShadow:
+              infoExpanded
+                  ? [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.25),
+                      blurRadius: 14,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                  : [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
         ),
         child: Column(
           children: [
@@ -1638,31 +1692,34 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () async {
-                if (_selectionMode) {
-                  _toggleSelection(obj);
-                  return;
-                }
+                  if (_selectionMode) {
+                    _toggleSelection(obj);
+                    return;
+                  }
 
-                if (isDimmed) {
-                  setState(() => _expandedInfoItemId = null);
-                  return;
-                }
+                  if (isDimmed) {
+                    setState(() => _expandedInfoItemId = null);
+                    return;
+                  }
 
-                await Navigator.push<bool>(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => ObjectDetailsScreen(obj: obj),
-                  ),
-                );
-              },
+                  await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ObjectDetailsScreen(obj: obj),
+                    ),
+                  );
+                },
 
-              onLongPress: () {
-                if (!_selectionMode) {
-                  _toggleSelection(obj);
-                }
-              },
+                onLongPress: () {
+                  if (!_selectionMode) {
+                    _toggleSelection(obj);
+                  }
+                },
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
                   child: Row(
                     children: [
                       // Relationships chevron
@@ -1699,56 +1756,60 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 180),
-                        child: (_selectionMode && _isSelected(obj.id))
-                            ? Container(
-                                key: const ValueKey('selected'),
-                                width: 42,
-                                height: 42,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.check,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                              )
-                            : Container(
-                              key: const ValueKey('normal'),
-                              child: isDoc
-                                  ? FileTypeBadge(
-                                      extension: ext ?? '',
-                                      size: 28,
-                                    )
-                                  : svc.isMultiFile(
-                                      objectTypeId: obj.objectTypeId,
-                                      isSingleFile: obj.isSingleFile,
-                                    )
-                                      ? Container(
-                                          width: 28,
-                                          height: 28,
-                                          decoration: BoxDecoration(
-                                            color: AppColors.primary.withOpacity(0.10),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: const Icon(
-                                            Icons.folder_copy_rounded,
-                                            size: 22,
-                                            color: AppColors.primary,
-                                          ),
-                                        )
-                                      : Container(
-                                          width: 28,
-                                          height: 28,
-                                          
-                                          child: Icon(
-                                            svc.iconForViewObject(obj),
+                        child:
+                            (_selectionMode && _isSelected(obj.id))
+                                ? Container(
+                                  key: const ValueKey('selected'),
+                                  width: 42,
+                                  height: 42,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                )
+                                : Container(
+                                  key: const ValueKey('normal'),
+                                  child:
+                                      isDoc
+                                          ? FileTypeBadge(
+                                            extension: ext ?? '',
                                             size: 28,
-                                            color: AppColors.primary,
+                                          )
+                                          : svc.isMultiFile(
+                                            objectTypeId: obj.objectTypeId,
+                                            isSingleFile: obj.isSingleFile,
+                                          )
+                                          ? Container(
+                                            width: 28,
+                                            height: 28,
+                                            decoration: BoxDecoration(
+                                              color: AppColors.primary
+                                                  .withOpacity(0.10),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: const Icon(
+                                              Icons.folder_copy_rounded,
+                                              size: 22,
+                                              color: AppColors.primary,
+                                            ),
+                                          )
+                                          : Container(
+                                            width: 28,
+                                            height: 28,
+
+                                            child: Icon(
+                                              svc.iconForViewObject(obj),
+                                              size: 28,
+                                              color: AppColors.primary,
+                                            ),
                                           ),
-                                        ),
-                            ),
+                                ),
                       ),
 
                       const SizedBox(width: 12),
@@ -1768,7 +1829,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
-                                  fontSize: 12, color: Colors.grey.shade600),
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
                             ),
                           ],
                         ),
@@ -1786,21 +1849,24 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                               color: Colors.blueGrey.withOpacity(0.08),
                               shape: BoxShape.circle,
                             ),
-                            child: _previewLoading.contains(obj.id)
-                                ? SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                          Colors.blueGrey.shade400),
+                            child:
+                                _previewLoading.contains(obj.id)
+                                    ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.blueGrey.shade400,
+                                            ),
+                                      ),
+                                    )
+                                    : Icon(
+                                      Icons.remove_red_eye_outlined,
+                                      size: 18,
+                                      color: Colors.blueGrey.shade400,
                                     ),
-                                  )
-                                : Icon(
-                                    Icons.remove_red_eye_outlined,
-                                    size: 18,
-                                    color: Colors.blueGrey.shade400,
-                                  ),
                           ),
                         ),
                       ],
@@ -1825,9 +1891,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: infoExpanded
-                                    ? AppColors.primary.withOpacity(0.15)
-                                    : AppColors.primary.withOpacity(0.08),
+                                color:
+                                    infoExpanded
+                                        ? AppColors.primary.withOpacity(0.15)
+                                        : AppColors.primary.withOpacity(0.08),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -1841,8 +1908,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                           ),
                         ),
                       ] else
-                        Icon(Icons.chevron_right_rounded,
-                            size: 20, color: Colors.grey.shade400),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 20,
+                          color: Colors.grey.shade400,
+                        ),
                     ],
                   ),
                 ),
@@ -1888,7 +1958,11 @@ class _HighlightedText extends StatelessWidget {
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-            fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), height: 1.2,),
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1A1A1A),
+          height: 1.2,
+        ),
       );
     }
 
@@ -1906,21 +1980,27 @@ class _HighlightedText extends StatelessWidget {
       if (index > start) {
         spans.add(TextSpan(text: text.substring(start, index)));
       }
-      spans.add(TextSpan(
-        text: text.substring(index, index + query.length),
-        style: const TextStyle(
-          color: AppColors.primary,
-          fontWeight: FontWeight.w800,
-          backgroundColor: Color(0xFFDCEAFF),
+      spans.add(
+        TextSpan(
+          text: text.substring(index, index + query.length),
+          style: const TextStyle(
+            color: AppColors.primary,
+            fontWeight: FontWeight.w800,
+            backgroundColor: Color(0xFFDCEAFF),
+          ),
         ),
-      ));
+      );
       start = index + query.length;
     }
 
     return Text.rich(
       TextSpan(
         style: const TextStyle(
-            fontSize: 14, fontWeight: FontWeight.w600, color: Color(0xFF1A1A1A), height: 1.2),
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF1A1A1A),
+          height: 1.2,
+        ),
         children: spans,
       ),
       maxLines: 3,
@@ -1954,9 +2034,10 @@ class _ShimmerRowState extends State<_ShimmerRow>
     Future.delayed(Duration(milliseconds: widget.delay), () {
       if (mounted) _ctrl.repeat(reverse: true);
     });
-    _anim = Tween<double>(begin: 0.3, end: 0.7).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
-    );
+    _anim = Tween<double>(
+      begin: 0.3,
+      end: 0.7,
+    ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
   }
 
   @override
@@ -1969,71 +2050,72 @@ class _ShimmerRowState extends State<_ShimmerRow>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _anim,
-      builder: (_, __) => Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+      builder:
+          (_, __) => Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.04),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
             ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(_anim.value),
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  FractionallySizedBox(
-                    widthFactor: 0.55 + (_anim.value * 0.1),
-                    child: Container(
-                      height: 13,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withOpacity(_anim.value),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                    ),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(_anim.value),
+                    borderRadius: BorderRadius.circular(6),
                   ),
-                  const SizedBox(height: 7),
-                  FractionallySizedBox(
-                    widthFactor: 0.35,
-                    child: Container(
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withOpacity(_anim.value * 0.6),
-                        borderRadius: BorderRadius.circular(4),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FractionallySizedBox(
+                        widthFactor: 0.55 + (_anim.value * 0.1),
+                        child: Container(
+                          height: 13,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(_anim.value),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
                       ),
-                    ),
+                      const SizedBox(height: 7),
+                      FractionallySizedBox(
+                        widthFactor: 0.35,
+                        child: Container(
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withOpacity(_anim.value * 0.6),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.withOpacity(_anim.value * 0.4),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 8),
-            Container(
-              width: 34,
-              height: 34,
-              decoration: BoxDecoration(
-                color: Colors.grey.withOpacity(_anim.value * 0.4),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ],
-        ),
-      ),
+          ),
     );
   }
 }

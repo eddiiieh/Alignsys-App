@@ -6,7 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:permission_handler/permission_handler.dart';
-
+import 'package:mfiles_app/utils/app_dialogs.dart';
 class ScanDocumentFlow {
   ScanDocumentFlow._();
 
@@ -93,11 +93,13 @@ class ScanDocumentFlow {
       debugPrintStack(stackTrace: stackTrace);
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Document scan failed:\n$e"),
-            backgroundColor: Colors.red,
-          ),
+        await showAppInfoDialog(
+          context,
+          title: 'Scan Failed',
+          message: "Something went wrong while processing your document. "
+              "Please try scanning again, and let us know if it keeps happening.",
+          icon: Icons.error_outline_rounded,
+          iconColor: Colors.red.shade600,
         );
       }
 
@@ -151,21 +153,20 @@ class ScanDocumentFlow {
 
     if (status.isPermanentlyDenied || status.isDenied) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Text(
-              'Camera access is needed to scan documents. '
-              'Please enable it in Settings.',
-            ),
-            backgroundColor: Colors.orange.shade700,
-            action: SnackBarAction(
-              label: 'Open Settings',
-              textColor: Colors.white,
-              onPressed: openAppSettings,
-            ),
-            duration: const Duration(seconds: 6),
-          ),
+        final openedSettings = await showAppActionDialog(
+          context,
+          title: 'Camera Access Needed',
+          message: status.isPermanentlyDenied
+              ? "Alignsys needs camera access to scan documents. "
+                  "Since access was previously denied, you'll need to turn it "
+                  "on from Settings."
+              : "Alignsys needs camera access to scan documents. "
+                  "You can enable it in Settings.",
+          icon: Icons.camera_alt_outlined,
+          iconColor: Colors.orange.shade700,
+          actionText: 'Open Settings',
         );
+        if (openedSettings) await openAppSettings();
       }
       return false;
     }
