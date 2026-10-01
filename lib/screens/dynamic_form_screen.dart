@@ -3,8 +3,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
+import 'package:mfiles_app/widgets/grouped_picker_sheet.dart';
+import 'package:mfiles_app/widgets/scroll_jump_fab.dart';
 import '../widgets/auto_suggest_dialog.dart';
 import '../widgets/lookup_field.dart';
 import 'package:provider/provider.dart';
@@ -20,6 +24,7 @@ import '../theme/app_colors.dart';
 import '../models/lookup_item.dart';
 import '../models/quick_create_result.dart';
 import '../models/view_object.dart';
+import '../utils/conditional_properties.dart';
 
 class DynamicFormScreen extends StatefulWidget {
   const DynamicFormScreen({
@@ -29,10 +34,15 @@ class DynamicFormScreen extends StatefulWidget {
     this.isQuickCreate = false,
     this.scannedFile,
     this.linkTarget,
+    this.copyFrom, 
+    this.copyFromPrefetchedProps, 
+    this.templateId,
   });
 
   final VaultObjectType objectType;
   final ObjectClass? objectClass;
+  final String? templateId;
+
   /// When set, pre-populates the file attachment section with a scanned PDF
   /// so the user only needs to pick a class and fill metadata.
   final File? scannedFile;
@@ -46,8 +56,30 @@ class DynamicFormScreen extends StatefulWidget {
   /// on success, pops a [QuickCreateResult] instead of popping empty.
   final bool isQuickCreate;
 
+  /// When set, the form pre-fills from this object's current property values
+  /// ("Make a Copy" flow). Title is auto-suffixed with "Copy of …" unless the
+  /// user edits it. Files are not copied — only properties.
+  final ViewObject? copyFrom;
+
+  /// When set, the form pre-fills from this list of property values, which
+  /// were fetched from the source object in advance. This is used to avoid
+  /// redundant API calls.
+  final List<Map<String, dynamic>>? copyFromPrefetchedProps;
+
   @override
   State<DynamicFormScreen> createState() => _DynamicFormScreenState();
+}
+
+class LinkedCreationResult {
+  final int? objectId;
+  final int objectTypeId;
+  final int classId;
+
+  const LinkedCreationResult({
+    required this.objectId,
+    required this.objectTypeId,
+    required this.classId,
+  });
 }
 
 class _DynamicFormScreenState extends State<DynamicFormScreen> {
@@ -95,11 +127,36 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     color: Color(0xFF111827),
   );
 
+  /// Returns true if the property is visible based on conditional rules.
+  bool _isPropVisible(ClassProperty p) =>
+      isConditionallyVisible(p.id, (id) => _formValues[id]);
+
+  /// ── NEW: Incremented each time the form is rebuilt
+  int _formRebuildToken = 0;
+
+  /// True when we're in the middle of the very first prefill for a
+  /// Make-a-Copy flow. The body renders a spinner instead of the form
+  /// until this flips to false.
+  bool _copyPrefillPending = false;
+
+  //
+  final ScrollController _scroll = ScrollController();
+
+
   @override
   void initState() {
     super.initState();
     _currentObjectType = widget.objectType;
     _selectedClass = widget.objectClass;
+
+    // ── NEW: Make a Copy — pre-select the source's class.
+    if (widget.copyFrom != null && widget.objectClass == null) {
+      // We don't have ObjectClass here yet; the fetch below will find it by id.
+      // Defer assignment until after fetchObjectClasses() returns.
+    }
+
+     // ── Make-a-copy: block the form until the first prefill finishes.
+      _copyPrefillPending = widget.copyFrom != null;
 
     // Pre-populate file section when launched from the scan flow.
     if (widget.scannedFile != null) {
@@ -115,18 +172,41 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
       setState(() => _isLoadingClasses = true);
       await service.fetchObjectClasses(widget.objectType.id);
+
+      // ── Make a Copy: pre-select the source's class, but only if that class
+      //    actually exists under the target object type (defensive against
+      //    mismatched data).
+      if (_selectedClass == null && widget.copyFrom != null) {
+        final match = service.objectClasses
+            .where((c) =>
+                c.id == widget.copyFrom!.classId &&
+                c.objectTypeId == widget.objectType.id)
+            .firstOrNull;
+        if (match != null) _selectedClass = match;
+      }
+
+      // Check if a class wasn't already passed, and if there is only one class available
+      if (_selectedClass == null) {
+        final all = _classesForType(service, widget.objectType.id);
+        if (all.length == 1) _selectedClass = all.first;
+      }
+
       setState(() => _isLoadingClasses = false);
 
-      // ── FIX: if a class was pre-selected (passed via widget.objectClass),
-      //         snapshot its properties into _localProperties after fetching.
       if (_selectedClass != null) {
         final targetClassId = _selectedClass!.id;
         await service.fetchClassProperties(
-            widget.objectType.id, _selectedClass!.id);
+          widget.objectType.id,
+          _selectedClass!.id,
+        );
         if (mounted && _selectedClass?.id == targetClassId) {
           setState(() {
             _localProperties = List.from(service.classProperties);
           });
+          // ── NEW: prefill once we know the target class's property set.
+          if (widget.copyFrom != null) {
+            unawaited(_applyCopyPrefill());
+          }
         }
       }
     });
@@ -135,6 +215,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   @override
   void dispose() {
     super.dispose();
+    _scroll.dispose();
   }
 
   // ---------- UI helpers ----------
@@ -192,22 +273,28 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         text: TextSpan(
           text: label,
           style: _labelStyle,
-          children: required
-              ? const [
-                  TextSpan(
-                    text: ' *',
-                    style: TextStyle(
-                        color: Colors.red, fontWeight: FontWeight.w800),
-                  ),
-                ]
-              : const [],
+          children:
+              required
+                  ? const [
+                    TextSpan(
+                      text: ' *',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ]
+                  : const [],
         ),
       ),
     );
   }
 
-  InputDecoration _decoBox(
-      {String? hint, String? helper, bool filled = false}) {
+  InputDecoration _decoBox({
+    String? hint,
+    String? helper,
+    bool filled = false,
+  }) {
     return InputDecoration(
       hintText: hint,
       helperText: helper,
@@ -215,13 +302,13 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       isDense: true,
       filled: true,
       fillColor: filled ? _filledFill : AppColors.surfaceLight,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: filled
-            ? const BorderSide(color: _filledBorder, width: 1.5)
-            : BorderSide(color: Colors.grey.shade200),
+        borderSide:
+            filled
+                ? const BorderSide(color: _filledBorder, width: 1.5)
+                : BorderSide(color: Colors.grey.shade200),
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -239,10 +326,14 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         borderRadius: BorderRadius.circular(10),
         borderSide: const BorderSide(color: Colors.red, width: 2),
       ),
-      suffixIcon: filled
-          ? const Icon(Icons.check_circle_rounded,
-              color: _filledBorder, size: 18)
-          : null,
+      suffixIcon:
+          filled
+              ? const Icon(
+                Icons.check_circle_rounded,
+                color: _filledBorder,
+                size: 18,
+              )
+              : null,
     );
   }
 
@@ -323,8 +414,11 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     if (isFilled)
                       const Padding(
                         padding: EdgeInsets.only(right: 12),
-                        child: Icon(Icons.check_circle_rounded,
-                            color: _filledBorder, size: 18),
+                        child: Icon(
+                          Icons.check_circle_rounded,
+                          color: _filledBorder,
+                          size: 18,
+                        ),
                       ),
                   ],
                 ),
@@ -346,8 +440,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFFEFF6FF),
                     borderRadius: BorderRadius.circular(999),
@@ -374,9 +470,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           if (propertyId == null || selectedItems == null)
                             return;
                           setState(() {
-                            final newItems =
-                                List<dynamic>.from(selectedItems)
-                                  ..removeAt(index);
+                            final newItems = List<dynamic>.from(selectedItems)
+                              ..removeAt(index);
                             _selectedLookupItems[propertyId] = newItems;
                             _formValues[propertyId] =
                                 newItems.map((i) => i.id).toList();
@@ -389,8 +484,11 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                             color: const Color(0xFF3B82F6).withOpacity(0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.close,
-                              size: 10, color: Color(0xFF1E40AF)),
+                          child: const Icon(
+                            Icons.close,
+                            size: 10,
+                            color: Color(0xFF1E40AF),
+                          ),
                         ),
                       ),
                     ],
@@ -424,12 +522,93 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
   }
 
+  //
+  Widget _buildSubmitBar() => Consumer<MFilesService>(
+    builder: (context, service, _) => Container(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05),
+            blurRadius: 12, offset: const Offset(0, -2))],
+      ),
+      child: SizedBox(
+        width: double.infinity, height: 52,
+        child: ElevatedButton.icon(
+          onPressed: service.isLoading ? null : _submitForm,
+          icon: service.isLoading
+              ? const SizedBox(width: 20, height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
+              : const Icon(Icons.check_circle_rounded, size: 20),
+          label: Text(
+            service.isLoading ? 'Creating...'
+                : widget.copyFrom != null ? 'Make a Copy' : 'Create Object',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.3),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _primaryBlue, foregroundColor: Colors.white, elevation: 0,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            disabledBackgroundColor: Colors.grey.shade300,
+            disabledForegroundColor: Colors.grey.shade600,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  //
+  Future<ObjectClass?> _pickClass(MFilesService service) {
+    final typeId = _currentObjectType.id;
+    final ungrouped = service.getUngroupedClassesForType(typeId);
+    final grouped = service.getClassGroupsForType(typeId);
+    final flat = service.objectClasses.where((c) => c.objectTypeId == typeId).toList();
+
+    return showGroupedPickerSheet<ObjectClass>(
+      context,
+      title: 'Select Class',
+      headerIcon: Icons.category_outlined,
+      selected: _selectedClass,
+      isSame: (a, b) => a.id == b.id,
+      labelOf: (c) => c.displayName,
+      groups: (ungrouped.isEmpty && grouped.isEmpty)
+          ? [PickerGroup(items: flat)] // defensive fallback
+          : [
+              if (ungrouped.isNotEmpty)
+                PickerGroup(
+                  title: grouped.isEmpty ? null : 'General',
+                  icon: Icons.folder_open_rounded,
+                  items: ungrouped,
+                  initiallyOpen: true,
+                ),
+              for (final g in grouped) PickerGroup(title: g.classGroupName, items: g.members),
+            ],
+    );
+  }
+
+  /// All classes for [typeId], de-duplicated, across flat + grouped sources
+/// (same sources _pickClass uses).
+List<ObjectClass> _classesForType(MFilesService s, int typeId) {
+  final seen = <int>{};
+  final out = <ObjectClass>[];
+  void add(ObjectClass c) {
+    if (c.objectTypeId == typeId && seen.add(c.id)) out.add(c);
+  }
+
+  s.objectClasses.forEach(add);
+  s.getUngroupedClassesForType(typeId).forEach(add);
+  for (final g in s.getClassGroupsForType(typeId)) {
+    g.members.forEach(add);
+  }
+  return out;
+}
+
   // ---------- Object type switcher ----------
   Future<void> _onObjectTypeChanged(VaultObjectType newType) async {
     setState(() {
       _currentObjectType = newType;
       _selectedClass = null;
-      _localProperties = []; // ── FIX: clear local snapshot
+      _localProperties = [];
       _formValues.clear();
       _selectedLookupItems.clear();
       _fieldFilled.clear();
@@ -438,9 +617,25 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       _isLoadingClasses = true;
     });
 
+    // ── NEW: reset the "Make a Copy" prefill flag when switching types.
+    _copyPrefillApplied = false;
+
     final service = context.read<MFilesService>();
-    await service.fetchObjectClasses(newType.id);
-    setState(() => _isLoadingClasses = false);
+    final typeId = newType.id;
+    await service.fetchObjectClasses(typeId);
+    if (!mounted || _currentObjectType.id != typeId) return;
+
+    final all = _classesForType(service, typeId);
+    if (all.length == 1) {
+      final only = all.first;
+      setState(() => _selectedClass = only);
+      await service.fetchClassProperties(typeId, only.id);
+      if (!mounted || _selectedClass?.id != only.id) return;
+      setState(() => _localProperties = List.from(service.classProperties));
+      if (widget.copyFrom != null) unawaited(_applyCopyPrefill());
+    }
+
+    if (mounted) setState(() => _isLoadingClasses = false);
   }
 
   // ---------- Actions ----------
@@ -483,12 +678,14 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     setState(() {
       _localProperties = List.from(service.classProperties);
     });
+    // ── NEW: prefill once we know the target class's property set.
+    if (widget.copyFrom != null) {
+      unawaited(_applyCopyPrefill());
+    }
   }
 
   Future<void> _pickFile() async {
-    final result = await FilePicker.pickFiles(
-      type: FileType.any,
-    );
+    final result = await FilePicker.pickFiles(type: FileType.any);
 
     if (result != null && result.files.isNotEmpty) {
       final file = result.files.first;
@@ -505,23 +702,25 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
   Future<void> _pickDate(ClassProperty property) async {
     final existing = _formValues[property.id];
-    final initialDate = (existing is String && existing.isNotEmpty)
-        ? _safeParseDateOnly(existing)
-        : DateTime.now();
+    final initialDate =
+        (existing is String && existing.isNotEmpty)
+            ? _safeParseDateOnly(existing)
+            : DateTime.now();
 
     final date = await showDatePicker(
       context: context,
       initialDate: initialDate,
       firstDate: DateTime(1800),
       lastDate: DateTime(2200),
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: Theme.of(context)
-              .colorScheme
-              .copyWith(primary: _primaryBlue),
-        ),
-        child: child!,
-      ),
+      builder:
+          (context, child) => Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: Theme.of(
+                context,
+              ).colorScheme.copyWith(primary: _primaryBlue),
+            ),
+            child: child!,
+          ),
     );
 
     if (date != null) {
@@ -531,30 +730,37 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
   Future<void> _pickTime(ClassProperty property) async {
     final existing = _formValues[property.id];
-    final initialTime = (existing is String && existing.isNotEmpty)
-        ? TimeOfDay.fromDateTime(
-            DateTime.tryParse(existing) ?? DateTime.now())
-        : TimeOfDay.now();
+    final initialTime =
+        (existing is String && existing.isNotEmpty)
+            ? TimeOfDay.fromDateTime(
+              DateTime.tryParse(existing) ?? DateTime.now(),
+            )
+            : TimeOfDay.now();
 
     final time = await showTimePicker(
       context: context,
       initialTime: initialTime,
-      builder: (context, child) => Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: Theme.of(context)
-              .colorScheme
-              .copyWith(primary: _primaryBlue),
-        ),
-        child: child!,
-      ),
+      builder:
+          (context, child) => Theme(
+            data: Theme.of(context).copyWith(
+              colorScheme: Theme.of(
+                context,
+              ).colorScheme.copyWith(primary: _primaryBlue),
+            ),
+            child: child!,
+          ),
     );
 
     if (time != null) {
       final now = DateTime.now();
       final combined = DateTime(
-          now.year, now.month, now.day, time.hour, time.minute);
-      setState(
-          () => _formValues[property.id] = combined.toIso8601String());
+        now.year,
+        now.month,
+        now.day,
+        time.hour,
+        time.minute,
+      );
+      setState(() => _formValues[property.id] = combined.toIso8601String());
     }
   }
 
@@ -589,35 +795,34 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     final result = await showDialog<T>(
       context: context,
       builder: (ctx) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          focusNode.requestFocus();
-        });
 
         return StatefulBuilder(
           builder: (ctx, setInner) {
             return Dialog(
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
+                borderRadius: BorderRadius.circular(20),
+              ),
               insetPadding: const EdgeInsets.symmetric(
-                  horizontal: 20, vertical: 40),
+                horizontal: 20,
+                vertical: 40,
+              ),
               backgroundColor: Colors.white,
               surfaceTintColor: Colors.transparent,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  maxHeight:
-                      MediaQuery.of(context).size.height * 0.75,
+                  maxHeight: MediaQuery.of(context).size.height * 0.75,
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Header
                     Container(
-                      padding:
-                          const EdgeInsets.fromLTRB(20, 20, 12, 16),
+                      padding: const EdgeInsets.fromLTRB(20, 20, 12, 16),
                       decoration: const BoxDecoration(
                         color: _primaryBlue,
                         borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(20)),
+                          top: Radius.circular(20),
+                        ),
                       ),
                       child: Row(
                         children: [
@@ -632,8 +837,11 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                             ),
                           ),
                           IconButton(
-                            icon: const Icon(Icons.close,
-                                color: Colors.white, size: 20),
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                             onPressed: () => Navigator.pop(ctx),
                           ),
                         ],
@@ -641,60 +849,70 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     ),
                     // Search field
                     Padding(
-                      padding:
-                          const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                       child: TextField(
                         controller: controller,
                         focusNode: focusNode,
-                        autofocus: true,
                         decoration: InputDecoration(
                           hintText: 'Search...',
                           hintStyle: TextStyle(
-                              color: Colors.grey.shade400,
-                              fontSize: 14),
-                          prefixIcon: Icon(Icons.search,
-                              color: Colors.grey.shade400, size: 20),
+                            color: Colors.grey.shade400,
+                            fontSize: 14,
+                          ),
+                          prefixIcon: Icon(
+                            Icons.search,
+                            color: Colors.grey.shade400,
+                            size: 20,
+                          ),
                           filled: true,
                           fillColor: AppColors.surfaceLight,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                                color: Colors.grey.shade200),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(
-                                color: Colors.grey.shade200),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
                             borderSide: const BorderSide(
-                                color: _primaryBlue, width: 2),
+                              color: _primaryBlue,
+                              width: 2,
+                            ),
                           ),
-                          contentPadding:
-                              const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 12),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                           isDense: true,
-                          suffixIcon: controller.text.isNotEmpty
-                              ? IconButton(
-                                  icon: Icon(Icons.close,
+                          suffixIcon:
+                              controller.text.isNotEmpty
+                                  ? IconButton(
+                                    icon: Icon(
+                                      Icons.close,
                                       size: 16,
-                                      color: Colors.grey.shade400),
-                                  onPressed: () {
-                                    controller.clear();
-                                    setInner(() =>
-                                        filtered = List.from(items));
-                                  },
-                                )
-                              : null,
+                                      color: Colors.grey.shade400,
+                                    ),
+                                    onPressed: () {
+                                      controller.clear();
+                                      setInner(
+                                        () => filtered = List.from(items),
+                                      );
+                                    },
+                                  )
+                                  : null,
                         ),
                         onChanged: (q) {
                           setInner(() {
-                            filtered = items
-                                .where((i) => labelOf(i)
-                                    .toLowerCase()
-                                    .contains(q.toLowerCase()))
-                                .toList();
+                            filtered =
+                                items
+                                    .where(
+                                      (i) => labelOf(
+                                        i,
+                                      ).toLowerCase().contains(q.toLowerCase()),
+                                    )
+                                    .toList();
                           });
                         },
                       ),
@@ -702,96 +920,110 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     // Count
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 4),
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
                       child: Row(
                         children: [
                           Text(
                             '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
                             style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500),
+                              fontSize: 12,
+                              color: Colors.grey.shade500,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     // List
                     Flexible(
-                      child: filtered.isEmpty
-                          ? Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.search_off,
+                      child:
+                          filtered.isEmpty
+                              ? Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.search_off,
                                       size: 36,
-                                      color: Colors.grey.shade300),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'No matches found',
-                                    style: TextStyle(
-                                        color:
-                                            AppColors.surfaceLight,
-                                        fontSize: 13),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : ListView.separated(
-                              shrinkWrap: true,
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: 8),
-                              itemCount: filtered.length,
-                              separatorBuilder: (_, __) => Divider(
-                                  height: 1,
-                                  color: Colors.grey.shade100),
-                              itemBuilder: (_, index) {
-                                final item = filtered[index];
-                                final label = labelOf(item);
-                                final isSelected = selected != null &&
-                                    labelOf(selected) == label;
-                                return Material(
-                                  color: isSelected
-                                      ? const Color(0xFFEFF6FF)
-                                      : Colors.transparent,
-                                  child: InkWell(
-                                    onTap: () =>
-                                        Navigator.pop(ctx, item),
-                                    child: Padding(
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 20,
-                                              vertical: 14),
-                                      child: Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              label,
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                fontWeight: isSelected
-                                                    ? FontWeight.w600
-                                                    : FontWeight.w500,
-                                                color: isSelected
-                                                    ? const Color(
-                                                        0xFF1E40AF)
-                                                    : const Color(
-                                                        0xFF1A1A1A),
-                                              ),
-                                            ),
-                                          ),
-                                          if (isSelected)
-                                            const Icon(
-                                                Icons.check_rounded,
-                                                size: 18,
-                                                color: Color(
-                                                    0xFF2563EB)),
-                                        ],
+                                      color: Colors.grey.shade300,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'No matches found',
+                                      style: TextStyle(
+                                        color: AppColors.surfaceLight,
+                                        fontSize: 13,
                                       ),
                                     ),
-                                  ),
-                                );
-                              },
-                            ),
+                                  ],
+                                ),
+                              )
+                              : ListView.separated(
+                                shrinkWrap: true,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                ),
+                                itemCount: filtered.length,
+                                separatorBuilder:
+                                    (_, __) => Divider(
+                                      height: 1,
+                                      color: Colors.grey.shade100,
+                                    ),
+                                itemBuilder: (_, index) {
+                                  final item = filtered[index];
+                                  final label = labelOf(item);
+                                  final isSelected =
+                                      selected != null &&
+                                      labelOf(selected) == label;
+                                  return Material(
+                                    color:
+                                        isSelected
+                                            ? const Color(0xFFEFF6FF)
+                                            : Colors.transparent,
+                                    child: InkWell(
+                                      onTap: () => Navigator.pop(ctx, item),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 20,
+                                          vertical: 14,
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                label,
+                                                style: TextStyle(
+                                                  fontSize: 14,
+                                                  fontWeight:
+                                                      isSelected
+                                                          ? FontWeight.w600
+                                                          : FontWeight.w500,
+                                                  color:
+                                                      isSelected
+                                                          ? const Color(
+                                                            0xFF1E40AF,
+                                                          )
+                                                          : const Color(
+                                                            0xFF1A1A1A,
+                                                          ),
+                                                ),
+                                              ),
+                                            ),
+                                            if (isSelected)
+                                              const Icon(
+                                                Icons.check_rounded,
+                                                size: 18,
+                                                color: Color(0xFF2563EB),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                     ),
                     const SizedBox(height: 8),
                   ],
@@ -820,8 +1052,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           borderRadius: BorderRadius.circular(12),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
               color: has ? _filledFill : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(12),
@@ -835,16 +1066,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: has
-                        ? _primaryBlue.withOpacity(0.1)
-                        : Colors.grey.shade100,
+                    color:
+                        has
+                            ? _primaryBlue.withOpacity(0.1)
+                            : Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
                     Icons.calendar_today_rounded,
                     size: 18,
-                    color:
-                        has ? _primaryBlue : Colors.grey.shade600,
+                    color: has ? _primaryBlue : Colors.grey.shade600,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -852,21 +1083,26 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: Text(
                     has ? _formatDateForUi(v) : 'Tap to select date',
                     style: _inputStyle.copyWith(
-                      color: has
-                          ? const Color(0xFF111827)
-                          : AppColors.surfaceLight,
-                      fontWeight: has
-                          ? FontWeight.w500
-                          : FontWeight.w400,
+                      color:
+                          has
+                              ? const Color(0xFF111827)
+                              : AppColors.surfaceLight,
+                      fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
                 if (has)
-                  const Icon(Icons.check_circle_rounded,
-                      color: _filledBorder, size: 18)
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: _filledBorder,
+                    size: 18,
+                  )
                 else
-                  Icon(Icons.keyboard_arrow_down,
-                      color: Colors.grey.shade600, size: 20),
+                  Icon(
+                    Icons.keyboard_arrow_down,
+                    color: Colors.grey.shade600,
+                    size: 20,
+                  ),
               ],
             ),
           ),
@@ -889,8 +1125,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           borderRadius: BorderRadius.circular(10),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
               color: has ? _filledFill : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(10),
@@ -904,16 +1139,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: has
-                        ? _primaryBlue.withOpacity(0.1)
-                        : Colors.grey.shade100,
+                    color:
+                        has
+                            ? _primaryBlue.withOpacity(0.1)
+                            : Colors.grey.shade100,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
                     Icons.access_time_rounded,
                     size: 18,
-                    color:
-                        has ? _primaryBlue : Colors.grey.shade600,
+                    color: has ? _primaryBlue : Colors.grey.shade600,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -921,21 +1156,26 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   child: Text(
                     has ? _formatTimeForUi(v) : 'Tap to select time',
                     style: _inputStyle.copyWith(
-                      color: has
-                          ? const Color(0xFF111827)
-                          : AppColors.surfaceLight,
-                      fontWeight: has
-                          ? FontWeight.w500
-                          : FontWeight.w400,
+                      color:
+                          has
+                              ? const Color(0xFF111827)
+                              : AppColors.surfaceLight,
+                      fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
                 if (has)
-                  const Icon(Icons.check_circle_rounded,
-                      color: _filledBorder, size: 18)
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: _filledBorder,
+                    size: 18,
+                  )
                 else
-                  Icon(Icons.keyboard_arrow_down,
-                      color: Colors.grey.shade600, size: 20),
+                  Icon(
+                    Icons.keyboard_arrow_down,
+                    color: Colors.grey.shade600,
+                    size: 20,
+                  ),
               ],
             ),
           ),
@@ -951,57 +1191,55 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     }
     switch (property.propertyType) {
       case 'MFDatatypeLookup':
-        {
-          final hasValue = _formValues[property.id] != null;
+      final hasValue = _formValues[property.id] != null;
+      final selectedId = _formValues[property.id] is int
+          ? _formValues[property.id] as int
+          : null;
 
-          return _lookupShell(
-            label: property.title,
-            required: property.isRequired,
-            hasValue: hasValue,
-            isSingleSelect: true,
-            onCreateNew: _resolveLookupCreateCallback(property),
-            field: LookupField(
-              title: property.title,
-              propertyId: property.id,
-              isMultiSelect: false,
-              preSelectedIds: _formValues[property.id] == null
-                  ? const []
-                  : [(_formValues[property.id] as int)],
-              injectedItems:
-                  (_selectedLookupItems[property.id])?.cast<LookupItem>(),
-              onSelected: (items) {
-                setState(() {
-                  if (items.isNotEmpty) {
-                    _formValues[property.id] = items.first.id;
-                    _selectedLookupItems[property.id] = items;
-                  } else {
-                    _formValues[property.id] = null;
-                    _selectedLookupItems.remove(property.id);
-                  }
-                });
-                if (items.isNotEmpty) {
-                  _triggerAutoSuggest(
-                    selectedObjectId: items.first.id,
-                    selectedObjectTypeId: property.typeId,
-                    displayLabel: items.first.displayValue,
-                  );
-                }
-              },
-            ),
-          );
-        }
+      return _lookupShell(
+        label: property.title,
+        required: property.isRequired,
+        hasValue: hasValue,
+        isSingleSelect: true,
+        onCreateNew: _resolveLookupCreateCallback(property),
+        field: LookupField(
+          title: property.title,
+          propertyId: property.id,
+          isMultiSelect: false,
+          preSelectedIds: selectedId == null ? const [] : [selectedId],
+          injectedItems:
+              (_selectedLookupItems[property.id])?.cast<LookupItem>(),
+          onSelected: (items) {
+            setState(() {
+              if (items.isNotEmpty) {
+                _formValues[property.id] = items.first.id;
+                _selectedLookupItems[property.id] = items;
+              } else {
+                _formValues[property.id] = null;
+                _selectedLookupItems.remove(property.id);
+              }
+            });
+            if (items.isNotEmpty) {
+              _triggerAutoSuggest(
+                selectedObjectId: items.first.id,
+                selectedObjectTypeId: property.typeId,
+                displayLabel: items.first.displayValue,
+              );
+            }
+          },
+        ),
+      );
 
       case 'MFDatatypeMultiSelectLookup':
         {
-          final selectedItems =
-              _selectedLookupItems[property.id] ?? [];
-          final selectedIds = (_formValues[property.id] is List)
-              ? (_formValues[property.id] as List).cast<int>()
-              : <int>[];
+          final selectedItems = _selectedLookupItems[property.id] ?? [];
+          final selectedIds =
+              (_formValues[property.id] is List)
+                  ? (_formValues[property.id] as List).cast<int>()
+                  : <int>[];
 
-          final selectedTexts = selectedItems
-              .map((e) => e.displayValue.toString())
-              .toList();
+          final selectedTexts =
+              selectedItems.map((e) => e.displayValue.toString()).toList();
 
           return _lookupShell(
             label: property.title,
@@ -1012,24 +1250,17 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             propertyId: property.id,
             onCreateNew: _resolveLookupCreateCallback(property),
             field: LookupField(
-              key: ValueKey(
-                ((_formValues[property.id] is List)
-                        ? (_formValues[property.id] as List)
-                            .cast<int>()
-                        : <int>[])
-                    .join(','),
-              ),
               title: property.title,
               propertyId: property.id,
               isMultiSelect: true,
-              preSelectedIds: (_formValues[property.id] is List)
-                  ? (_formValues[property.id] as List).cast<int>()
-                  : const [],
+              preSelectedIds:
+                  (_formValues[property.id] is List)
+                      ? (_formValues[property.id] as List).cast<int>()
+                      : const [],
               injectedItems: selectedItems.cast<LookupItem>(),
               onSelected: (items) {
                 setState(() {
-                  _formValues[property.id] =
-                      items.map((i) => i.id).toList();
+                  _formValues[property.id] = items.map((i) => i.id).toList();
                   _selectedLookupItems[property.id] = items;
                 });
                 if (items.isNotEmpty) {
@@ -1045,101 +1276,94 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         }
 
       case 'MFDatatypeText':
-        {
-          final isFilled = _fieldFilled[property.id] == true;
-          return _fieldShell(
-            label: property.title,
-            required: property.isRequired,
-            field: TextFormField(
-              decoration: _decoBox(
-                hint: 'Enter ${property.title.toLowerCase()}',
-                filled: isFilled,
-              ),
-              style: _inputStyle,
-              validator: (value) {
-                if (property.isRequired &&
-                    (value == null || value.trim().isEmpty)) {
-                  return 'This field is required';
-                }
-                return null;
-              },
-              onChanged: (value) {
-                setState(() {
-                  _formValues[property.id] = value;
-                  _fieldFilled[property.id] =
-                      value.trim().isNotEmpty;
-                });
-              },
+        final initial = _formValues[property.id]?.toString() ?? '';
+        final isFilled = _fieldFilled[property.id] == true;
+        return _fieldShell(
+          label: property.title,
+          required: property.isRequired,
+          field: TextFormField(
+            key: ValueKey('text_${property.id}_$_formRebuildToken'),
+            initialValue: initial,
+            decoration: _decoBox(
+              hint: 'Enter ${property.title.toLowerCase()}',
+              filled: isFilled,
             ),
-          );
-        }
+            style: _inputStyle,
+            validator: (value) {
+              if (property.isRequired &&
+                  (value == null || value.trim().isEmpty)) {
+                return 'This field is required';
+              }
+              return null;
+            },
+            onChanged: (value) {
+              setState(() {
+                _formValues[property.id] = value;
+                _fieldFilled[property.id] = value.trim().isNotEmpty;
+              });
+            },
+          ),
+        );
 
       case 'MFDatatypeMultiLineText':
-        {
-          final isFilled = _fieldFilled[property.id] == true;
-          return _fieldShell(
-            label: property.title,
-            required: property.isRequired,
-            field: TextFormField(
-              decoration: _decoBox(
-                hint: 'Enter ${property.title.toLowerCase()}',
-                filled: isFilled,
-              ),
-              style: _inputStyle,
-              maxLines: 4,
-              validator: (value) {
-                if (property.isRequired &&
-                    (value == null || value.trim().isEmpty)) {
-                  return 'This field is required';
-                }
-                return null;
-              },
-              onChanged: (value) {
-                setState(() {
-                  _formValues[property.id] = value;
-                  _fieldFilled[property.id] =
-                      value.trim().isNotEmpty;
-                });
-              },
+        final initial = _formValues[property.id]?.toString() ?? '';
+        final isFilled = _fieldFilled[property.id] == true;
+        return _fieldShell(
+          label: property.title,
+          required: property.isRequired,
+          field: TextFormField(
+            key: ValueKey('text_${property.id}_$_formRebuildToken'),
+            initialValue: initial,
+            decoration: _decoBox(
+              hint: 'Enter ${property.title.toLowerCase()}',
+              filled: isFilled,
             ),
-          );
-        }
+            style: _inputStyle,
+            validator: (value) {
+              if (property.isRequired &&
+                  (value == null || value.trim().isEmpty)) {
+                return 'This field is required';
+              }
+              return null;
+            },
+            onChanged: (value) {
+              setState(() {
+                _formValues[property.id] = value;
+                _fieldFilled[property.id] = value.trim().isNotEmpty;
+              });
+            },
+          ),
+        );
 
       case 'MFDatatypeInteger':
-        {
-          final isFilled = _fieldFilled[property.id] == true;
-          return _fieldShell(
-            label: property.title,
-            required: property.isRequired,
-            field: TextFormField(
-              decoration: _decoBox(
-                hint: 'Enter ${property.title.toLowerCase()}',
-                filled: isFilled,
-              ),
-              style: _inputStyle,
-              keyboardType: TextInputType.number,
-              validator: (value) {
-                if (property.isRequired &&
-                    (value == null || value.trim().isEmpty)) {
-                  return 'This field is required';
-                }
-                if (value != null &&
-                    value.trim().isNotEmpty &&
-                    int.tryParse(value) == null) {
-                  return 'Enter a valid number';
-                }
-                return null;
-              },
-              onChanged: (value) {
-                setState(() {
-                  _formValues[property.id] = int.tryParse(value);
-                  _fieldFilled[property.id] =
-                      value.trim().isNotEmpty;
-                });
-              },
+        final initial = _formValues[property.id]?.toString() ?? '';
+        final isFilled = _fieldFilled[property.id] == true;
+        return _fieldShell(
+          label: property.title,
+          required: property.isRequired,
+          field: TextFormField(
+            key: ValueKey('text_${property.id}_$_formRebuildToken'),
+            initialValue: initial,
+            decoration: _decoBox(
+              hint: 'Enter ${property.title.toLowerCase()}',
+              filled: isFilled,
             ),
-          );
-        }
+            style: _inputStyle,
+            validator: (value) {
+              if (property.isRequired &&
+                  (value == null || value.trim().isEmpty)) {
+                return 'This field is required';
+              }
+              return null;
+            },
+            onChanged: (value) {
+              setState(() {
+                _formValues[property.id] = value;
+                _fieldFilled[property.id] = value.trim().isNotEmpty;
+              });
+            },
+          ),
+        );
 
       case 'MFDatatypeDate':
         return _dateField(property);
@@ -1150,8 +1374,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       case 'MFDatatypeBoolean':
         {
           final current = _formValues[property.id];
-          final bool? currentBool =
-              current is bool ? current : null;
+          final bool? currentBool = current is bool ? current : null;
           final isFilled = currentBool != null;
 
           return _fieldShell(
@@ -1159,30 +1382,27 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
             required: property.isRequired,
             field: GestureDetector(
               onTap: () async {
-                final result =
-                    await _showSearchableDropdown<bool>(
+                final result = await _showSearchableDropdown<bool>(
                   title: property.title,
                   items: const [true, false],
                   labelOf: (v) => v ? 'Yes' : 'No',
                   selected: currentBool,
                 );
                 if (result != null) {
-                  setState(
-                      () => _formValues[property.id] = result);
+                  setState(() => _formValues[property.id] = result);
                 }
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 14),
+                  horizontal: 14,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
-                  color:
-                      isFilled ? _filledFill : AppColors.surfaceLight,
+                  color: isFilled ? _filledFill : AppColors.surfaceLight,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isFilled
-                        ? _filledBorder
-                        : Colors.grey.shade200,
+                    color: isFilled ? _filledBorder : Colors.grey.shade200,
                     width: isFilled ? 1.5 : 1,
                   ),
                 ),
@@ -1194,21 +1414,29 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                             ? 'Select ${property.title.toLowerCase()}'
                             : (currentBool ? 'Yes' : 'No'),
                         style: _inputStyle.copyWith(
-                          color: currentBool == null
-                              ? AppColors.surfaceLight
-                              : const Color(0xFF111827),
-                          fontWeight: currentBool == null
-                              ? FontWeight.w400
-                              : FontWeight.w500,
+                          color:
+                              currentBool == null
+                                  ? AppColors.surfaceLight
+                                  : const Color(0xFF111827),
+                          fontWeight:
+                              currentBool == null
+                                  ? FontWeight.w400
+                                  : FontWeight.w500,
                         ),
                       ),
                     ),
                     if (isFilled)
-                      const Icon(Icons.check_circle_rounded,
-                          color: _filledBorder, size: 18)
+                      const Icon(
+                        Icons.check_circle_rounded,
+                        color: _filledBorder,
+                        size: 18,
+                      )
                     else
-                      Icon(Icons.keyboard_arrow_down,
-                          color: Colors.grey.shade600, size: 20),
+                      Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Colors.grey.shade600,
+                        size: 20,
+                      ),
                   ],
                 ),
               ),
@@ -1217,34 +1445,34 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
         }
 
       default:
-        {
-          final isFilled = _fieldFilled[property.id] == true;
-          return _fieldShell(
-            label: property.title,
-            required: property.isRequired,
-            field: TextFormField(
-              decoration: _decoBox(
-                hint: 'Enter ${property.title.toLowerCase()}',
-                filled: isFilled,
-              ),
-              style: _inputStyle,
-              validator: (value) {
-                if (property.isRequired &&
-                    (value == null || value.trim().isEmpty)) {
-                  return 'This field is required';
-                }
-                return null;
-              },
-              onChanged: (value) {
-                setState(() {
-                  _formValues[property.id] = value;
-                  _fieldFilled[property.id] =
-                      value.trim().isNotEmpty;
-                });
-              },
+        final initial = _formValues[property.id]?.toString() ?? '';
+        final isFilled = _fieldFilled[property.id] == true;
+        return _fieldShell(
+          label: property.title,
+          required: property.isRequired,
+          field: TextFormField(
+            key: ValueKey('text_${property.id}_$_formRebuildToken'),
+            initialValue: initial,
+            decoration: _decoBox(
+              hint: 'Enter ${property.title.toLowerCase()}',
+              filled: isFilled,
             ),
-          );
-        }
+            style: _inputStyle,
+            validator: (value) {
+              if (property.isRequired &&
+                  (value == null || value.trim().isEmpty)) {
+                return 'This field is required';
+              }
+              return null;
+            },
+            onChanged: (value) {
+              setState(() {
+                _formValues[property.id] = value;
+                _fieldFilled[property.id] = value.trim().isNotEmpty;
+              });
+            },
+          ),
+        );
     }
   }
 
@@ -1264,7 +1492,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                 if (property.isRequired)
                   const TextSpan(
                     text: ' *',
-                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 const TextSpan(text: ' :'),
               ],
@@ -1290,35 +1521,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError
-                  ? Icons.error_outline
-                  : Icons.check_circle_outline,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 10),
-            Expanded(child: Text(message)),
-          ],
-        ),
-        backgroundColor:
-            isError ? Colors.red.shade600 : Colors.green.shade600,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10)),
-        margin: const EdgeInsets.all(16),
-        duration: Duration(seconds: isError ? 4 : 2),
-      ),
-    );
+    if (isError) {
+      SnackbarHelper.showError(context, message);
+    } else {
+      SnackbarHelper.showSuccess(context, message);
+    }
   }
 
-   // ── QUICK CREATE (inline "+" button on lookup fields) ──────────────────────
+  // ── QUICK CREATE (inline "+" button on lookup fields) ──────────────────────
 
-   /// Decides which inline "+" action (if any) applies to [property]:
+  /// Decides which inline "+" action (if any) applies to [property]:
   /// - null: user lacks permission to add (allowAdding == false)
   /// - full quick-create screen: the lookup targets an M-Files object type
   /// - lightweight add-value dialog: the lookup targets a plain value list
@@ -1347,21 +1559,22 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
     final targetType = service.objectTypes.firstWhere(
       (t) => t.id == property.typeId,
-      orElse: () => VaultObjectType(
-        id: property.typeId,
-        displayName: property.title,
-        isDocument: false,
-        name: property.title,
-      ),
+      orElse:
+          () => VaultObjectType(
+            id: property.typeId,
+            displayName: property.title,
+            isDocument: false,
+            name: property.title, 
+            alias: '',
+          ),
     );
 
     final result = await Navigator.push<QuickCreateResult>(
       context,
       MaterialPageRoute(
-        builder: (_) => DynamicFormScreen(
-          objectType: targetType,
-          isQuickCreate: true,
-        ),
+        builder:
+            (_) =>
+                DynamicFormScreen(objectType: targetType, isQuickCreate: true),
       ),
     );
 
@@ -1374,14 +1587,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       return;
     }
 
-    final newItem =
-        LookupItem(id: result.objectId!, displayValue: result.displayValue);
+    final newItem = LookupItem(
+      id: result.objectId!,
+      displayValue: result.displayValue,
+    );
 
     setState(() {
       if (property.propertyType == 'MFDatatypeMultiSelectLookup') {
         final existing = List<LookupItem>.from(
-            (_selectedLookupItems[property.id] ?? const [])
-                .cast<LookupItem>());
+          (_selectedLookupItems[property.id] ?? const []).cast<LookupItem>(),
+        );
         if (!existing.any((i) => i.id == newItem.id)) {
           existing.add(newItem);
         }
@@ -1418,79 +1633,95 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
     final name = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        insetPadding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Add new ${property.title}',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Enter ${property.title.toLowerCase()}',
-                  filled: true,
-                  fillColor: AppColors.surfaceLight,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: _primaryBlue, width: 2),
-                  ),
-                ),
-                onSubmitted: (v) =>
-                    Navigator.pop(dialogContext, v.trim()),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+      builder:
+          (dialogContext) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 40,
+            ),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: Text('Cancel',
-                        style: TextStyle(color: Colors.grey.shade700)),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(
-                        dialogContext, controller.text.trim()),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _primaryBlue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
+                  Text(
+                    'Add new ${property.title}',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
                     ),
-                    child: const Text('Add'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Enter ${property.title.toLowerCase()}',
+                      filled: true,
+                      fillColor: AppColors.surfaceLight,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: _primaryBlue,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    onSubmitted: (v) => Navigator.pop(dialogContext, v.trim()),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed:
+                            () => Navigator.pop(
+                              dialogContext,
+                              controller.text.trim(),
+                            ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryBlue,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
 
     if (name == null || name.isEmpty || !mounted) return;
@@ -1505,16 +1736,17 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
     if (newItem == null) {
       _showSnackBar(
-          'Failed to add value: ${service.error ?? "unknown error"}',
-          isError: true);
+        'Failed to add value: ${service.error ?? "unknown error"}',
+        isError: true,
+      );
       return;
     }
 
     setState(() {
       if (property.propertyType == 'MFDatatypeMultiSelectLookup') {
         final existing = List<LookupItem>.from(
-            (_selectedLookupItems[property.id] ?? const [])
-                .cast<LookupItem>());
+          (_selectedLookupItems[property.id] ?? const []).cast<LookupItem>(),
+        );
         if (!existing.any((i) => i.id == newItem.id)) {
           existing.add(newItem);
         }
@@ -1537,7 +1769,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     required String displayLabel,
   }) async {
     debugPrint(
-        '🔍 AutoSuggest: objectId=$selectedObjectId typeId=$selectedObjectTypeId');
+      '🔍 AutoSuggest: objectId=$selectedObjectId typeId=$selectedObjectTypeId',
+    );
     final service = context.read<MFilesService>();
 
     await Future.delayed(const Duration(milliseconds: 350));
@@ -1561,18 +1794,21 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     // ── FIX: use _localProperties (the snapshot for the current class)
     //         instead of service.classProperties, which may have been
     //         overwritten by a different class fetch by this point.
-    final formPropIds = _localProperties
-        .where((p) => !p.isHidden && !p.isAutomatic)
-        .map((p) => p.id)
-        .toSet();
+    final formPropIds =
+        _localProperties
+            .where((p) => !p.isHidden && !p.isAutomatic)
+            .map((p) => p.id)
+            .toSet();
 
     final suggestions = extractSuggestions(
       fetchedProps: fetched,
       formPropertyIds: formPropIds,
     );
 
-    debugPrint('🔍 AutoSuggest: fetched ${fetched.length} props, '
-        'formPropIds=$formPropIds, suggestions=${suggestions.length}');
+    debugPrint(
+      '🔍 AutoSuggest: fetched ${fetched.length} props, '
+      'formPropIds=$formPropIds, suggestions=${suggestions.length}',
+    );
 
     if (suggestions.isEmpty || !mounted) return;
 
@@ -1621,14 +1857,302 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           _formValues[f.propertyId] = f.rawValue;
         }
       }
+      _formRebuildToken++;
     });
+  }
+
+  // ── MAKE A COPY — PREFILL ────────────────────────────────────────────────
+
+  /// Loads the source object's current property values and translates them
+  /// into this form's internal state so every field renders pre-filled.
+  /// Runs once, after `_localProperties` is populated for the target class.
+  bool _copyPrefillApplied = false;
+
+  Future<void> _applyCopyPrefill() async {
+    if (_copyPrefillApplied) return;
+    final src = widget.copyFrom;
+    if (src == null) return;
+    _copyPrefillApplied = true;
+
+    try {
+      final service = context.read<MFilesService>();
+
+      List<Map<String, dynamic>> raw;
+      if (widget.copyFromPrefetchedProps != null) {
+        raw = widget.copyFromPrefetchedProps!;
+      } else {
+        final objectIdInt = int.tryParse(src.displayId) ?? src.id;
+        try {
+          raw = await service.fetchObjectViewProps(
+            objectId: objectIdInt,
+            objectTypeId: src.objectTypeId,
+          );
+        } catch (e) {
+          debugPrint('⚠️ Make-a-copy: could not fetch source props: $e');
+          return; // ← finally still runs
+        }
+      }
+      if (!mounted) return;
+
+      // Build propId → { value, displayValue, itemId? } — because the backend
+      // may return either raw ids (as `value`) or display strings (as
+      // `displayValue`) depending on the property type, we keep both.
+      final Map<int, Map<String, dynamic>> srcProps = {};
+      for (final m in raw) {
+        final id =
+            (m['id'] as num?)?.toInt() ??
+            (m['propId'] as num?)?.toInt() ??
+            (m['propertyId'] as num?)?.toInt();
+        if (id == null) continue;
+        debugPrint('📋 copy src prop $id: $m');
+
+        // Try to recover the raw lookup item id from several plausible keys —
+        // GetObjectViewProps returns it inconsistently across properties.
+        dynamic lookupId =
+            m['valueId'] ??
+            m['lookupId'] ??
+            m['itemId'] ??
+            m['valueID'] ??
+            m['ValueId'];
+
+        if (lookupId == null && m['value'] is Map) {
+          final map = m['value'] as Map;
+          lookupId = map['id'] ?? map['itemId'];
+        }
+
+        if (lookupId == null && m['value'] is List) {
+          final list = m['value'] as List;
+          if (list.isNotEmpty && list.first is Map) {
+            // Pull ids out of each {id, title} entry, tolerating strings, doubles,
+            // and missing keys. Deliberately NOT using .whereType<num>() here,
+            // because the backend sometimes sends ids as strings.
+            final ids = <int>[];
+            for (final raw in list) {
+              if (raw is! Map) continue;
+              final candidate = raw['id'] ?? raw['itemId'] ?? raw['value'];
+              final parsed = _coerceInt(candidate);
+              if (parsed != null) ids.add(parsed);
+            }
+            if (ids.isNotEmpty) lookupId = ids;
+          }
+        }
+
+        srcProps[id] = {
+          'value': m.containsKey('value') ? m['value'] : null,
+          'displayValue':
+              (m['displayValue'] ?? m['title'] ?? m['name'] ?? '').toString(),
+          'lookupId': lookupId,
+        };
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        for (final prop in _localProperties) {
+          if (prop.id == 100) continue; // Class — skip, user picks
+          if (prop.isAutomatic) continue; // Automatic — server fills
+
+          final entry = srcProps[prop.id];
+          if (entry == null) continue;
+
+          _prefillOneProperty(prop, entry);
+        }
+
+        // Fresh Title: "Copy of <original>"
+        final titleProp = _localProperties.where((p) => p.id == 0).firstOrNull;
+        if (titleProp != null && !titleProp.isAutomatic) {
+          final originalTitle =
+              (srcProps[0]?['value'] ??
+                      srcProps[0]?['displayValue'] ??
+                      widget.copyFrom!.title)
+                  .toString()
+                  .trim();
+          final newTitle =
+              originalTitle.isEmpty ? 'Copy' : 'Copy of $originalTitle';
+          _formValues[0] = newTitle;
+          _fieldFilled[0] = true;
+        }
+        _formRebuildToken++;
+      });
+
+      debugPrint('🧾 srcProps keys: ${srcProps.keys.toList()}');
+      debugPrint('🧾 srcProps[1319] = ${srcProps[1319]}');
+
+      if (kDebugMode) {
+        debugPrint(
+          '🧾 COPY prefill applied. _formValues=${_formValues.length} entries:',
+        );
+        for (final prop in _localProperties) {
+          if (prop.id == 100) continue;
+          final inForm = _formValues[prop.id];
+          final lookups = _selectedLookupItems[prop.id];
+          debugPrint(
+            '   prop ${prop.id} (${prop.title}) '
+            '[${prop.propertyType}] '
+            '=> formValue: ${inForm ?? "‹none›"} '
+            '| lookupItems: ${lookups?.length ?? 0}'
+            '${lookups != null && lookups.isNotEmpty ? " → ${lookups.first.displayValue}" : ""}',
+          );
+        }
+      }
+    } finally {
+      // Flip the pending flag regardless of how we exited — success, early
+      // return, or thrown error. Never trap the user on the spinner.
+      if (mounted && _copyPrefillPending) {
+        setState(() => _copyPrefillPending = false);
+      }
+    }
+  }
+
+  /// Translates one source entry into the form's internal state for [prop].
+  /// Handles every datatype the form renders; unknown types are stored raw.
+  void _prefillOneProperty(ClassProperty prop, Map<String, dynamic> entry) {
+    debugPrint('    🔍 _prefillOneProperty: ${prop.id} (${prop.title}) '
+      'type=${prop.propertyType} '
+      'entryKeys=${entry.keys.toList()} '
+      'lookupId=${entry['lookupId']} (${entry['lookupId'].runtimeType}) '
+      'value=${entry['value']} (${entry['value'].runtimeType})');
+
+    final rawValue = entry['value'];
+    final display = (entry['displayValue'] as String).trim();
+    final lookupId = entry['lookupId'];
+
+    switch (prop.propertyType) {
+      case 'MFDatatypeText':
+      case 'MFDatatypeMultiLineText':
+        {
+          final v = (rawValue ?? display).toString();
+          if (v.isEmpty) return;
+          _formValues[prop.id] = v;
+          _fieldFilled[prop.id] = true;
+        }
+        break;
+
+      case 'MFDatatypeInteger':
+      case 'MFDatatypeFloat':
+      case 'MFDatatypeNumber':
+        {
+          final n = num.tryParse((rawValue ?? '').toString());
+          if (n == null) return;
+          _formValues[prop.id] =
+              prop.propertyType == 'MFDatatypeInteger' ? n.toInt() : n;
+          _fieldFilled[prop.id] = true;
+        }
+        break;
+
+      case 'MFDatatypeBoolean':
+        {
+          final b =
+              rawValue is bool
+                  ? rawValue
+                  : rawValue == 1 ||
+                      rawValue == '1' ||
+                      rawValue.toString().toLowerCase() == 'true';
+          _formValues[prop.id] = b;
+        }
+        break;
+
+      case 'MFDatatypeDate':
+        {
+          // Backend gives yyyy-MM-dd; the form stores it the same way.
+          final s = (rawValue ?? '').toString().trim();
+          if (s.isEmpty) return;
+          _formValues[prop.id] = s.length >= 10 ? s.substring(0, 10) : s;
+        }
+        break;
+
+      case 'MFDatatypeTime':
+        {
+          final s = (rawValue ?? '').toString().trim();
+          if (s.isEmpty) return;
+          _formValues[prop.id] = s;
+        }
+        break;
+
+      case 'MFDatatypeTimestamp':
+        {
+          final s = (rawValue ?? '').toString().trim();
+          if (s.isEmpty) return;
+          // Form treats timestamps as ISO strings.
+          _formValues[prop.id] = s;
+        }
+        break;
+
+      case 'MFDatatypeLookup':
+        {
+          // Only pre-fill if we recovered a numeric item id. Otherwise leave
+          // the field empty so the user re-picks — safer than guessing by
+          // title (breaks on rename/duplicate names).
+          final int? id = _coerceInt(lookupId);
+          if (id == null) return;
+
+          _formValues[prop.id] = id;
+          _selectedLookupItems[prop.id] = [
+            LookupItem(id: id, displayValue: display),
+          ];
+        }
+        break;
+
+      case 'MFDatatypeMultiSelectLookup':
+        {
+          final ids = <int>[];
+          if (lookupId is List) {
+            for (final x in lookupId) {
+              final i = _coerceInt(x);
+              if (i != null) ids.add(i);
+            }
+          } else if (lookupId is int) {
+            ids.add(lookupId);
+          }
+          if (ids.isEmpty) return;
+
+          // Split display string on commas to pair with ids. Fragile if a
+          // display value contains a comma — acceptable for now, and the user
+          // can remove a chip if it looks wrong.
+          final names =
+              display.isEmpty
+                  ? <String>[]
+                  : display.split(',').map((s) => s.trim()).toList();
+
+          _formValues[prop.id] = ids;
+          _selectedLookupItems[prop.id] = List.generate(
+            ids.length,
+            (i) => LookupItem(
+              id: ids[i],
+              displayValue: i < names.length ? names[i] : ids[i].toString(),
+            ),
+          );
+        }
+        break;
+
+      default:
+        {
+          if (rawValue == null) return;
+          _formValues[prop.id] = rawValue;
+        }
+    }
+  }
+
+  int? _coerceInt(dynamic x) {
+    if (x == null) return null;
+    if (x is int) return x;
+    if (x is num) return x.toInt();
+    if (x is String) return int.tryParse(x.trim());
+    if (x is List) {
+    if (x.isEmpty) return null;
+      return _coerceInt(x.first);   // ← unwrap single-element list
+    }
+    if (x is Map) {
+      return _coerceInt(x['id'] ?? x['itemId'] ?? x['value']);
+    }
+    return null;
   }
 
   // ── SUBMIT ────────────────────────────────────────────────────────────────
 
   Future<void> _submitForm() async {
     setState(() => _submitAttempted = true);
-    
+
     if (_selectedClass == null) {
       _showSnackBar('Please select a class first', isError: true);
       return;
@@ -1639,36 +2163,41 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     final service = context.read<MFilesService>();
 
     // ── FIX: validate against _localProperties, not service.classProperties
-    for (final prop in _localProperties
-        .where((p) => !p.isHidden && !p.isAutomatic)) {
+    for (final prop in _localProperties.where(
+      (p) => !p.isHidden && !p.isAutomatic && _isPropVisible(p),
+    )) {
       if (!prop.isRequired) continue;
       final v = _formValues[prop.id];
 
       if (prop.propertyType == 'MFDatatypeLookup' && v == null) {
         _showSnackBar(
-            'Required field "${prop.title}" is missing',
-            isError: true);
+          'Required field "${prop.title}" is missing',
+          isError: true,
+        );
         return;
       }
       if (prop.propertyType == 'MFDatatypeMultiSelectLookup' &&
           (v == null || (v is List && v.isEmpty))) {
         _showSnackBar(
-            'Required field "${prop.title}" is missing',
-            isError: true);
+          'Required field "${prop.title}" is missing',
+          isError: true,
+        );
         return;
       }
       if (prop.propertyType == 'MFDatatypeDate' &&
           !(v is String && v.isNotEmpty)) {
         _showSnackBar(
-            'Required field "${prop.title}" is missing',
-            isError: true);
+          'Required field "${prop.title}" is missing',
+          isError: true,
+        );
         return;
       }
       if (prop.propertyType == 'MFDatatypeTime' &&
           !(v is String && v.isNotEmpty)) {
         _showSnackBar(
-            'Required field "${prop.title}" is missing',
-            isError: true);
+          'Required field "${prop.title}" is missing',
+          isError: true,
+        );
         return;
       }
     }
@@ -1676,8 +2205,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     String? uploadId;
     if (_currentObjectType.isDocument) {
       if (_selectedFile == null) {
-        _showSnackBar('Please select a file for document objects',
-            isError: true);
+        _showSnackBar(
+          'Please select a file for document objects',
+          isError: true,
+        );
         return;
       }
 
@@ -1693,8 +2224,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     final properties = <PropertyValueRequest>[];
 
     // ── FIX: use _localProperties for class-property checks
-    final hasClassProperty =
-        _localProperties.any((p) => p.id == 100);
+    final hasClassProperty = _localProperties.any((p) => p.id == 100);
     if (hasClassProperty) {
       properties.add(
         PropertyValueRequest(
@@ -1708,14 +2238,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     for (final prop in _localProperties) {
       if (prop.isAutomatic) continue;
       if (prop.id == 100 && hasClassProperty) continue;
+      if (!_isPropVisible(prop)) continue;
 
       final value = _formValues[prop.id];
       if (value == null && !prop.isRequired) continue;
 
       if (value == null && prop.isRequired) {
         _showSnackBar(
-            'Required field "${prop.title}" is missing',
-            isError: true);
+          'Required field "${prop.title}" is missing',
+          isError: true,
+        );
         return;
       }
 
@@ -1730,77 +2262,94 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
     // ── FIX: ensure Title property (id 0) is included if required
     final titleProp = _localProperties.where((p) => p.id == 0).toList();
-      final titlePropIsAutomatic = titleProp.isNotEmpty && titleProp.first.isAutomatic;
-      final classHasTitleProp = titleProp.isNotEmpty;
-      final hasTitleInPayload = properties.any((p) => p.propId == 0);
+    final titlePropIsAutomatic =
+        titleProp.isNotEmpty && titleProp.first.isAutomatic;
+    final classHasTitleProp = titleProp.isNotEmpty;
+    final hasTitleInPayload = properties.any((p) => p.propId == 0);
 
-      if (classHasTitleProp && !hasTitleInPayload && !titlePropIsAutomatic) {
-        final title = (_formValues[0] ?? '').toString().trim();
-        if (title.isEmpty) {
-          _showSnackBar('Name or title is required', isError: true);
-          return;
-        }
-        properties.add(PropertyValueRequest(
-            propId: 0, value: title, propertyType: 'MFDatatypeText'));
+    if (classHasTitleProp && !hasTitleInPayload && !titlePropIsAutomatic) {
+      final title = (_formValues[0] ?? '').toString().trim();
+      if (title.isEmpty) {
+        _showSnackBar('Name or title is required', isError: true);
+        return;
+      }
+      properties.add(
+        PropertyValueRequest(
+          propId: 0,
+          value: title,
+          propertyType: 'MFDatatypeText',
+        ),
+      );
+    }
+
+    final ObjectCreationResult result;
+
+    if (widget.linkTarget != null) {
+      final target = widget.linkTarget!;
+      final linkRequest = LinkObjectRequest(
+        objectID: _currentObjectType.id,
+        classID: _selectedClass!.id,
+        properties: properties,
+        vaultGuid: service.vaultGuidWithBraces,
+        userID: service.currentUserId,
+        uploadId: uploadId,
+        oldObjectType: target.objectTypeId,
+        oldObjectInternalID: target.id,
+        version: target.versionId,
+      );
+      result = await service.linkNewObject(linkRequest);
+    } else {
+      final request = ObjectCreationRequest(
+        objectID: _currentObjectType.id,
+        objectTypeID: _currentObjectType.id,
+        classID: _selectedClass!.id,
+        properties: properties,
+        vaultGuid: service.vaultGuidWithBraces,
+        userID: service.currentUserId,
+        uploadId: uploadId,
+      );
+      result = await service.createObject(request);
+    }
+
+    if (!mounted) return;
+
+    if (result.success) {
+      unawaited(service.fetchRecentObjects());
+
+      if (widget.linkTarget != null) {
+        _showSnackBar('Created and linked to "${widget.linkTarget!.title}"');
+        Navigator.pop(
+          context,
+          LinkedCreationResult(
+            objectId: result.objectId,
+            objectTypeId: _currentObjectType.id,
+            classId: _selectedClass!.id,
+          ),
+        );
+        return;
       }
 
-      final ObjectCreationResult result;
+      _showSnackBar(
+        widget.copyFrom != null
+            ? 'Copy created successfully!'
+            : 'Object created successfully!',
+      );
 
-        if (widget.linkTarget != null) {
-          final target = widget.linkTarget!;
-          final linkRequest = LinkObjectRequest(
-            objectID: _currentObjectType.id,
-            classID: _selectedClass!.id,
-            properties: properties,
-            vaultGuid: service.vaultGuidWithBraces,
-            userID: service.currentUserId,
-            uploadId: uploadId,
-            oldObjectType: target.objectTypeId,
-            oldObjectInternalID: target.id,
-            version: target.versionId,
-          );
-          result = await service.linkNewObject(linkRequest);
-        } else {
-          final request = ObjectCreationRequest(
-            objectID: _currentObjectType.id,
-            objectTypeID: _currentObjectType.id,
-            classID: _selectedClass!.id,
-            properties: properties,
-            vaultGuid: service.vaultGuidWithBraces,
-            userID: service.currentUserId,
-            uploadId: uploadId,
-          );
-          result = await service.createObject(request);
-        }
-
-        if (!mounted) return;
-
-        if (result.success) {
-          unawaited(service.fetchRecentObjects());
-
-          if (widget.linkTarget != null) {
-            _showSnackBar('Created and linked to "${widget.linkTarget!.title}"');
-            Navigator.pop(context, true);
-            return;
-          }
-
-          _showSnackBar('Object created successfully!');
-
-          if (widget.isQuickCreate) {
-            Navigator.pop(
-              context,
-              QuickCreateResult(
-                objectId: result.objectId,
-                displayValue: _resolveQuickCreateDisplayValue(),
-              ),
-            );
-          } else {
-            Navigator.pop(context);
-          }
-        } else {
-          _showSnackBar('Failed to create object: ${service.error}', isError: true);
-        }
-      } // end _submitForm
+      if (widget.isQuickCreate) {
+        Navigator.pop(
+          context,
+          QuickCreateResult(
+            objectId: result.objectId,
+            displayValue: _resolveQuickCreateDisplayValue(),
+          ),
+        );
+      } else {
+        Navigator.pop(context);
+      }
+    } else {
+      _showSnackBar('Failed to create object: ${service.error}', isError: true);
+    }
+  } // end _submitForm
 
   /// Best label for the object just created, used to populate the lookup
   /// field that launched this quick-create screen. Prefers the Title
@@ -1821,6 +2370,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     return SafeArea(
       top: false,
       child: Scaffold(
+        floatingActionButton: ScrollJumpFab(controller: _scroll),
+        bottomNavigationBar: _selectedClass == null ? null : _buildSubmitBar(),
         backgroundColor: AppColors.surfaceLight,
         appBar: AppBar(
           backgroundColor: AppColors.primary,
@@ -1828,8 +2379,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           toolbarHeight: 64,
           titleSpacing: 0,
           leading: IconButton(
-            icon: const Icon(Icons.arrow_back_rounded,
-                color: Colors.white),
+            icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
           title: Column(
@@ -1838,10 +2388,23 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
               Text(
                 widget.linkTarget != null
                     ? 'Create & Link ${_currentObjectType.displayName}'
+                    : widget.copyFrom != null
+                    ? 'Copy ${_currentObjectType.displayName}'
                     : 'Create ${_currentObjectType.displayName}',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.white),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
               ),
-              if (widget.linkTarget != null)
+              if (widget.copyFrom != null)
+                Text(
+                  'From "${widget.copyFrom!.title}"',
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                )
+              else if (widget.linkTarget != null)
                 Text(
                   'Linking to "${widget.linkTarget!.title}"',
                   maxLines: 4,
@@ -1849,32 +2412,41 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                   style: const TextStyle(fontSize: 12, color: Colors.white70),
                 )
               else if (_selectedClass != null)
-                Text(_selectedClass!.displayName, style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                Text(
+                  _selectedClass!.displayName,
+                  style: const TextStyle(fontSize: 12, color: Colors.white70),
+                ),
             ],
           ),
         ),
         body: NetworkBanner(
-          child: GestureDetector(
-            onTap: () => FocusScope.of(context).unfocus(),
-            child: Consumer<MFilesService>(
+          child: _copyPrefillPending
+              ? const _CopyPrefillLoader()
+              : GestureDetector(
+                  onTap: () => FocusScope.of(context).unfocus(),
+                  child: Consumer<MFilesService>(
               builder: (context, service, _) {
-                final objectClasses = service.objectClasses
-                    .where((cls) =>
-                        cls.objectTypeId == _currentObjectType.id)
-                    .toList();
+                service.objectClasses
+                        .where(
+                          (cls) => cls.objectTypeId == _currentObjectType.id,
+                        )
+                        .toList();
 
-
-                final visibleProperties = _localProperties
-                  .where((p) => !p.isHidden)   // keep hidden filter, drop automatic filter
-                  .toList()
-                  ..sort((a, b) {
-                    if (a.id == 0) return -1;
-                    if (b.id == 0) return 1;
-                    return 0;
-                  });
+                final visibleProperties =
+                    _localProperties
+                        .where(
+                          (p) => !p.isHidden && _isPropVisible(p),
+                        ) // ← added _isPropVisible check
+                        .toList()
+                      ..sort((a, b) {
+                        if (a.id == 0) return -1;
+                        if (b.id == 0) return 1;
+                        return 0;
+                      });
 
                 return ListView(
-                  padding: const EdgeInsets.all(16),
+                  controller: _scroll,
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
                   children: [
@@ -1887,8 +2459,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                             children: [
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const Text(
                                       'Object Type',
@@ -1901,39 +2472,40 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                     ),
                                     const SizedBox(height: 4),
                                     GestureDetector(
-                                      onTap: widget.isQuickCreate
-                                          ? null
-                                          : () async {
-                                              final result =
-                                                  await _showSearchableDropdown
-                                                      <VaultObjectType>(
-                                                title:
-                                                    'Select Object Type',
-                                                items: service.objectTypes,
-                                                labelOf: (t) =>
-                                                    t.displayName,
-                                                selected: _currentObjectType,
-                                              );
-                                              if (result != null &&
-                                                  result.id !=
-                                                      _currentObjectType
-                                                          .id) {
-                                                await _onObjectTypeChanged(
-                                                    result);
-                                              }
-                                            },
+                                      onTap:
+                                          widget.isQuickCreate
+                                              ? null
+                                              : () async {
+                                                final result =
+                                                    await _showSearchableDropdown<
+                                                      VaultObjectType
+                                                    >(
+                                                      title:
+                                                          'Select Object Type',
+                                                      items:
+                                                          service.objectTypes,
+                                                      labelOf:
+                                                          (t) => t.displayName,
+                                                      selected:
+                                                          _currentObjectType,
+                                                    );
+                                                if (result != null &&
+                                                    result.id !=
+                                                        _currentObjectType.id) {
+                                                  await _onObjectTypeChanged(
+                                                    result,
+                                                  );
+                                                }
+                                              },
                                       child: Row(
-                                        mainAxisSize:
-                                            MainAxisSize.min,
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(
                                             'Create ${_currentObjectType.displayName}',
                                             style: const TextStyle(
                                               fontSize: 16,
-                                              fontWeight:
-                                                  FontWeight.w800,
-                                              color:
-                                                  Color(0xFF0F172A),
+                                              fontWeight: FontWeight.w800,
+                                              color: Color(0xFF0F172A),
                                               letterSpacing: 0.2,
                                             ),
                                           ),
@@ -1942,37 +2514,34 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                             Container(
                                               padding:
                                                   const EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 3),
+                                                    horizontal: 6,
+                                                    vertical: 3,
+                                                  ),
                                               decoration: BoxDecoration(
-                                                color: _primaryBlue
-                                                    .withOpacity(0.1),
+                                                color: _primaryBlue.withOpacity(
+                                                  0.1,
+                                                ),
                                                 borderRadius:
-                                                    BorderRadius.circular(
-                                                        6),
+                                                    BorderRadius.circular(6),
                                               ),
                                               child: const Row(
-                                                mainAxisSize:
-                                                    MainAxisSize.min,
+                                                mainAxisSize: MainAxisSize.min,
                                                 children: [
                                                   Text(
                                                     'Change',
                                                     style: TextStyle(
                                                       fontSize: 10,
                                                       fontWeight:
-                                                          FontWeight
-                                                              .w700,
-                                                      color:
-                                                          _primaryBlue,
+                                                          FontWeight.w700,
+                                                      color: _primaryBlue,
                                                     ),
                                                   ),
                                                   SizedBox(width: 2),
                                                   Icon(
-                                                      Icons
-                                                          .swap_horiz_rounded,
-                                                      size: 12,
-                                                      color:
-                                                          _primaryBlue),
+                                                    Icons.swap_horiz_rounded,
+                                                    size: 12,
+                                                    color: _primaryBlue,
+                                                  ),
                                                 ],
                                               ),
                                             ),
@@ -2005,24 +2574,24 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     _card(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [                          
+                        children: [
                           if (_isLoadingClasses)
                             Column(
                               children: [
                                 const LinearProgressIndicator(
                                   minHeight: 3,
-                                  backgroundColor:
-                                      Color(0xFFE8EEF5),
-                                  valueColor:
-                                      AlwaysStoppedAnimation<Color>(
-                                          _primaryBlue),
+                                  backgroundColor: Color(0xFFE8EEF5),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    _primaryBlue,
+                                  ),
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
                                   'Loading classes...',
                                   style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600),
+                                    fontSize: 12,
+                                    color: Colors.grey.shade600,
+                                  ),
                                 ),
                               ],
                             )
@@ -2032,53 +2601,40 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                               required: false,
                               field: GestureDetector(
                                 onTap: () async {
-                                  final result =
-                                      await _showSearchableDropdown<
-                                          ObjectClass>(
-                                    title: 'Select Class',
-                                    items: objectClasses,
-                                    labelOf: (c) => c.displayName,
-                                    selected: _selectedClass,
-                                  );
-                                  if (result != null) {
-                                    _onClassSelected(result);
-                                  }
+                                  final result = await _pickClass(service);
+                                  if (result != null) _onClassSelected(result);
                                 },
                                 child: AnimatedContainer(
-                                  duration:
-                                      const Duration(milliseconds: 200),
+                                  duration: const Duration(milliseconds: 200),
                                   padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 14),
+                                    horizontal: 14,
+                                    vertical: 14,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: _selectedClass != null
-                                        ? _filledFill
-                                        : AppColors.surfaceLight,
-                                    borderRadius:
-                                        BorderRadius.circular(12),
+                                    color:
+                                        _selectedClass != null
+                                            ? _filledFill
+                                            : AppColors.surfaceLight,
+                                    borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: _selectedClass != null
-                                          ? _filledBorder
-                                          : Colors.grey.shade200,
-                                      width:
+                                      color:
                                           _selectedClass != null
-                                              ? 1.5
-                                              : 1,
+                                              ? _filledBorder
+                                              : Colors.grey.shade200,
+                                      width: _selectedClass != null ? 1.5 : 1,
                                     ),
                                   ),
                                   child: Row(
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          _selectedClass
-                                                  ?.displayName ??
+                                          _selectedClass?.displayName ??
                                               'Tap to select class',
                                           style: _inputStyle.copyWith(
                                             color:
                                                 _selectedClass != null
-                                                    ? const Color(
-                                                        0xFF111827)
-                                                    : AppColors
-                                                        .surfaceLight,
+                                                    ? const Color(0xFF111827)
+                                                    : AppColors.surfaceLight,
                                             fontWeight:
                                                 _selectedClass != null
                                                     ? FontWeight.w500
@@ -2088,15 +2644,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                       ),
                                       if (_selectedClass != null)
                                         const Icon(
-                                            Icons.check_circle_rounded,
-                                            color: _filledBorder,
-                                            size: 18)
+                                          Icons.check_circle_rounded,
+                                          color: _filledBorder,
+                                          size: 18,
+                                        )
                                       else
                                         Icon(
-                                            Icons.keyboard_arrow_down,
-                                            color:
-                                                Colors.grey.shade600,
-                                            size: 20),
+                                          Icons.keyboard_arrow_down,
+                                          color: Colors.grey.shade600,
+                                          size: 20,
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -2117,41 +2674,40 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           children: [
                             _sectionHeader(
                               'File Upload',
-                              subtitle: isScannedDocument
-                                  ? 'Scanned document attached.'
-                                  : 'Attach the document file.',
+                              subtitle:
+                                  isScannedDocument
+                                      ? 'Scanned document attached.'
+                                      : 'Attach the document file.',
                             ),
                             const SizedBox(height: 14),
                             _topLabel('File', required: true),
                             AnimatedContainer(
-                              duration:
-                                  const Duration(milliseconds: 200),
+                              duration: const Duration(milliseconds: 200),
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
-                                color: _selectedFile != null
-                                    ? _filledFill
-                                    : AppColors.surfaceLight,
-                                borderRadius:
-                                    BorderRadius.circular(12),
+                                color:
+                                    _selectedFile != null
+                                        ? _filledFill
+                                        : AppColors.surfaceLight,
+                                borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: _selectedFile != null
-                                      ? _filledBorder
-                                      : Colors.grey.shade200,
-                                  width:
-                                      _selectedFile != null ? 1.5 : 1,
+                                  color:
+                                      _selectedFile != null
+                                          ? _filledBorder
+                                          : Colors.grey.shade200,
+                                  width: _selectedFile != null ? 1.5 : 1,
                                 ),
                               ),
                               child: Row(
                                 children: [
                                   Icon(
                                     _selectedFile != null
-                                        ? Icons
-                                            .insert_drive_file_rounded
-                                        : Icons
-                                            .cloud_upload_outlined,
-                                    color: _selectedFile != null
-                                        ? _primaryBlue
-                                        : Colors.grey.shade400,
+                                        ? Icons.insert_drive_file_rounded
+                                        : Icons.cloud_upload_outlined,
+                                    color:
+                                        _selectedFile != null
+                                            ? _primaryBlue
+                                            : Colors.grey.shade400,
                                     size: 22,
                                   ),
                                   const SizedBox(width: 12),
@@ -2164,29 +2720,25 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                           _selectedFileName ??
                                               'No file selected',
                                           maxLines: 1,
-                                          overflow:
-                                              TextOverflow.ellipsis,
+                                          overflow: TextOverflow.ellipsis,
                                           style: _inputStyle.copyWith(
-                                            color: _selectedFile !=
-                                                    null
-                                                ? const Color(
-                                                    0xFF111827)
-                                                : AppColors
-                                                    .surfaceLight,
+                                            color:
+                                                _selectedFile != null
+                                                    ? const Color(0xFF111827)
+                                                    : AppColors.surfaceLight,
                                             fontWeight:
                                                 _selectedFile != null
                                                     ? FontWeight.w500
                                                     : FontWeight.w400,
                                           ),
                                         ),
-                                        if (_selectedFile !=
-                                            null) ...[
+                                        if (_selectedFile != null) ...[
                                           const SizedBox(height: 2),
                                           Text(
                                             isScannedDocument
                                                 ? "Scanned document ready"
                                                 : "Ready to upload",
-                                          )
+                                          ),
                                         ],
                                       ],
                                     ),
@@ -2195,27 +2747,29 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                   ElevatedButton.icon(
                                     onPressed: _pickFile,
                                     icon: const Icon(
-                                        Icons.folder_open_rounded,
-                                        size: 16),
+                                      Icons.folder_open_rounded,
+                                      size: 16,
+                                    ),
                                     label: const Text('Browse'),
                                     style: ElevatedButton.styleFrom(
                                       backgroundColor: _primaryBlue,
                                       foregroundColor: Colors.white,
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 16,
-                                              vertical: 12),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                        vertical: 12,
+                                      ),
                                       shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(
-                                                  10)),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
                                       elevation: 0,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            _requiredHint(_submitAttempted && _selectedFile == null),
+                            _requiredHint(
+                              _submitAttempted && _selectedFile == null,
+                            ),
                           ],
                         ),
                       ),
@@ -2228,22 +2782,22 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                         child: Form(
                           key: _formKey,
                           child: Column(
-                            crossAxisAlignment:
-                                CrossAxisAlignment.start,
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              _sectionHeader('Properties',
-                                  subtitle:
-                                      'Fill in the required details below.'),
+                              _sectionHeader(
+                                'Properties',
+                                subtitle: 'Fill in the required details below.',
+                              ),
                               const SizedBox(height: 14),
 
                               // Show spinner while the fetch for this class
                               // is still in flight (_localProperties is empty
                               // but a class IS selected).
-                              if (service.isLoading &&
-                                  _localProperties.isEmpty)
+                              if (service.isLoading && _localProperties.isEmpty)
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
-                                      vertical: 24),
+                                    vertical: 24,
+                                  ),
                                   child: Center(
                                     child: Column(
                                       children: [
@@ -2252,9 +2806,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                         Text(
                                           'Loading properties...',
                                           style: TextStyle(
-                                              fontSize: 13,
-                                              color: Colors
-                                                  .grey.shade600),
+                                            fontSize: 13,
+                                            color: Colors.grey.shade600,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -2263,30 +2817,30 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                               else if (visibleProperties.isEmpty)
                                 Padding(
                                   padding: const EdgeInsets.symmetric(
-                                      vertical: 24),
+                                    vertical: 24,
+                                  ),
                                   child: Center(
                                     child: Column(
                                       children: [
                                         Container(
-                                          padding:
-                                              const EdgeInsets.all(16),
+                                          padding: const EdgeInsets.all(16),
                                           decoration: BoxDecoration(
                                             color: Colors.grey.shade100,
                                             shape: BoxShape.circle,
                                           ),
                                           child: Icon(
-                                              Icons.info_outline,
-                                              size: 32,
-                                              color: Colors
-                                                  .grey.shade400),
+                                            Icons.info_outline,
+                                            size: 32,
+                                            color: Colors.grey.shade400,
+                                          ),
                                         ),
                                         const SizedBox(height: 12),
                                         Text(
                                           'No properties to configure',
                                           style: TextStyle(
-                                              fontSize: 13,
-                                              color: Colors
-                                                  .grey.shade600),
+                                            fontSize: 13,
+                                            color: Colors.grey.shade600,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -2300,7 +2854,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                       if (index.isOdd) {
                                         return const Padding(
                                           padding: EdgeInsets.symmetric(
-                                              vertical: 12),
+                                            vertical: 12,
+                                          ),
                                           child: Divider(
                                             height: 1,
                                             thickness: 1,
@@ -2308,8 +2863,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                                           ),
                                         );
                                       }
-                                      final p = visibleProperties[
-                                          index ~/ 2];
+                                      final p = visibleProperties[index ~/ 2];
                                       return _buildField(p);
                                     },
                                   ),
@@ -2318,59 +2872,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(height: 20),
-
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton.icon(
-                          onPressed: service.isLoading
-                              ? null
-                              : _submitForm,
-                          icon: service.isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                    valueColor:
-                                        AlwaysStoppedAnimation<Color>(
-                                            Colors.white),
-                                  ),
-                                )
-                              : const Icon(
-                                  Icons.check_circle_rounded,
-                                  size: 20),
-                          label: Text(
-                            service.isLoading
-                                ? 'Creating...'
-                                : 'Create Object',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryBlue,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius:
-                                    BorderRadius.circular(12)),
-                            elevation:
-                                service.isLoading ? 0 : 2,
-                            shadowColor:
-                                _primaryBlue.withOpacity(0.3),
-                            disabledBackgroundColor:
-                                Colors.grey.shade300,
-                            disabledForegroundColor:
-                                Colors.grey.shade600,
-                          ),
-                        ),
-                      ),
                     ],
-
-                    const SizedBox(height: 20),
                   ],
                 );
               },
@@ -2380,4 +2882,33 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       ),
     );
   }
-} 
+}
+
+//
+class _CopyPrefillLoader extends StatelessWidget {
+  const _CopyPrefillLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Preparing your copy…',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

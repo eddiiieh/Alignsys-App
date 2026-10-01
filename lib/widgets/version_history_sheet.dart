@@ -35,6 +35,7 @@ class _VersionHistorySheet extends StatefulWidget {
 class _VersionHistorySheetState extends State<_VersionHistorySheet> {
   late Future<List<ObjectVersion>> _future;
   final Set<int> _openingVersionIds = {};
+  final Set<int> _expandedVersionIds = {};
   bool _rollingBack = false;
 
   int get _displayObjectId =>
@@ -56,32 +57,33 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
   }
 
   Future<void> _previewVersion(ObjectVersion v) async {
-  final file = v.firstFile;
-  if (file == null) return;
+    final file = v.firstFile;
+    if (file == null) return;
 
-  final ext = file.extension.trim().toLowerCase().replaceFirst('.', '');
+    final ext = file.extension.trim().toLowerCase().replaceFirst('.', '');
 
-  if (ext == 'pdf') {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => DocumentPreviewScreen(
-          displayObjectId: _displayObjectId,
-          classId: widget.obj.classId,
-          fileId: file.fileId,
-          objectTypeId: widget.obj.objectTypeId,
-          fileTitle: file.fileTitle,
-          extension: file.extension,
-          reportGuid: file.reportGuid ?? '',
-          versionId: v.versionId,
-          canDownload: false,
+    if (ext == 'pdf') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (_) => DocumentPreviewScreen(
+                displayObjectId: _displayObjectId,
+                classId: widget.obj.classId,
+                fileId: file.fileId,
+                objectTypeId: widget.obj.objectTypeId,
+                fileTitle: file.fileTitle,
+                extension: file.extension,
+                reportGuid: file.reportGuid ?? '',
+                versionId: v.versionId,
+                canDownload: false,
+              ),
         ),
-      ),
-    );
-  } else {
-    await _openVersion(v);   // non-PDF: existing external-open flow
+      );
+    } else {
+      await _openVersion(v); // non-PDF: existing external-open flow
+    }
   }
-}
 
   Future<void> _openVersion(ObjectVersion version) async {
     final file = version.firstFile;
@@ -128,8 +130,8 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (_) =>
-          const ProcessingDialog(operation: 'Rolling back document'),
+      builder:
+          (_) => const ProcessingDialog(operation: 'Rolling back document'),
     );
 
     try {
@@ -142,11 +144,16 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
       );
 
       if (!mounted) return;
-      Navigator.of(context, rootNavigator: true).pop(); // close processing dialog
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pop(); // close processing dialog
 
       if (ok) {
         SnackbarHelper.showSuccess(
-            context, 'Rolled back to version ${version.versionId}');
+          context,
+          'Rolled back to version ${version.versionId}',
+        );
         widget.onRolledBack?.call();
         Navigator.pop(context); // close the sheet
       } else {
@@ -169,6 +176,102 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
     return '$hour:$minute $period';
   }
 
+  // Widget to display the metadata of a version, including version ID, modified date, modified by, and file details if available.
+  Widget _versionMetadataPanel(ObjectVersion v) {
+    final file = v.firstFile;
+    final dt = v.lastModifiedUtcParsed;
+    final dateStr = dt != null
+        ? '${dt.day}/${dt.month}/${dt.year} • ${_formatTime(dt)}'
+        : v.lastModifiedUtc;
+
+    Widget row(String label, String value) => Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+          ),
+          Expanded(
+            child: Text(
+              value.isEmpty ? '-' : value,
+              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    Widget propertyTile(ObjectVersionProperty property) => Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            property.propName.isEmpty ? 'Unnamed property' : property.propName,
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            property.displayText.isEmpty ? '-' : property.displayText,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+
+    const panelMaxHeight = 340.0;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: panelMaxHeight),
+        child: Scrollbar(
+          thumbVisibility: true,
+          radius: const Radius.circular(8),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(12, 12, 8, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                row('Version ID', '${v.versionId}'),
+                row('Modified', dateStr),
+                row('Modified By', v.lastModifiedBy),
+                if (file != null) ...[
+                  row('File Name', file.fileTitle),
+                  row('Extension', file.extension),
+                  row('File Version', '${file.fileVersion}'),
+                ] else
+                  row('File', 'No file attached'),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(
+                    'Metadata Properties',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primary),
+                  ),
+                ),
+                if (v.properties.isEmpty)
+                  Text(
+                    'No metadata properties were returned for this version.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                  )
+                else
+                  ...v.properties.map(propertyTile),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
@@ -176,263 +279,319 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
       minChildSize: 0.35,
       maxChildSize: 0.9,
       expand: false,
-      builder:
-          (context, scrollController) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+      builder: (context, scrollController) {
+        // NEW
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Version History',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.primary,
-                                letterSpacing: 0.1,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Container(
-                                  width: 32,
-                                  height: 32,
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(9),
-                                  ),
-                                  child: Icon(
-                                    context.read<MFilesService>().iconForViewObject(widget.obj),
-                                    color: AppColors.primary,
-                                    size: 17,
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    widget.obj.title,
-                                    style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.grey.shade900,
-                                      height: 1.25,
-                                    ),
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(
-                        icon: Icon(Icons.close, color: Colors.grey.shade500),
-                        onPressed: () => Navigator.pop(context),
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                    ],
-                  ),
-                ),
-                Divider(height: 1, color: Colors.grey.shade100),
-                Expanded(
-                  child: FutureBuilder<List<ObjectVersion>>(
-                    future: _future,
-                    builder: (context, snap) {
-                      if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(child: CircularProgressIndicator());
-                      }
-                      if (snap.hasError) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              'Could not load version history: ${snap.error}',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 13,
-                              ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Version History',
+                            style: TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                              letterSpacing: 0.1,
                             ),
                           ),
-                        );
-                      }
-
-                      final versions = snap.data ?? [];
-                      if (versions.isEmpty) {
-                        return Center(
+                          const SizedBox(height: 12),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(9),
+                                ),
+                                child: Icon(
+                                  context
+                                      .read<MFilesService>()
+                                      .iconForViewObject(widget.obj),
+                                  color: AppColors.primary,
+                                  size: 17,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  widget.obj.title,
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade900,
+                                    height: 1.25,
+                                  ),
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.close, color: Colors.grey.shade500),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+              ),
+              Divider(height: 1, color: Colors.grey.shade100),
+              Expanded(
+                child: FutureBuilder<List<ObjectVersion>>(
+                  future: _future,
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snap.hasError) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
                           child: Text(
-                            'No version history available',
+                            'Could not load version history: ${snap.error}',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.grey.shade500,
+                              color: Colors.grey.shade600,
                               fontSize: 13,
                             ),
                           ),
-                        );
-                      }
-
-                      final currentVersionId = versions
-                          .map((v) => v.versionId)
-                          .reduce((a, b) => a > b ? a : b);
-
-                      return Material(
-                        type: MaterialType.transparency,
-                        child: ListView.separated(
-                          controller: scrollController,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 8,
-                          ),
-                          itemCount: versions.length,
-                          separatorBuilder:
-                              (_, __) => Divider(
-                                height: 1,
-                                color: Colors.grey.shade100,
-                              ),
-                          itemBuilder: (context, index) {
-                            final v = versions[index];
-                            final isCurrent = v.versionId == currentVersionId;
-                            final isOpening = _openingVersionIds.contains(
-                              v.versionId,
-                            );
-                            final dt = v.lastModifiedUtcParsed;
-                            final dateStr =
-                                dt != null
-                                    ? '${dt.day}/${dt.month}/${dt.year} • ${_formatTime(dt)}'
-                                    : v.lastModifiedUtc;
-
-                            return ListTile(
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 4,
-                              ),
-                              enabled: !_rollingBack,
-                              leading: Container(
-                                width: 36,
-                                height: 36,
-                                decoration: BoxDecoration(
-                                  color:
-                                      isCurrent
-                                          ? AppColors.primary.withOpacity(0.12)
-                                          : Colors.grey.shade100,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child:
-                                      isOpening
-                                          ? const SizedBox(
-                                            width: 16,
-                                            height: 16,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                            ),
-                                          )
-                                          : Text(
-                                            'v${v.versionId}',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700,
-                                              color:
-                                                  isCurrent
-                                                      ? AppColors.primary
-                                                      : Colors.grey.shade600,
-                                            ),
-                                          ),
-                                ),
-                              ),
-                              title: Row(
-                                children: [
-                                  Text(
-                                    'Version ${v.versionId}',
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  if (isCurrent) ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 1,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withOpacity(
-                                          0.1,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Text(
-                                        'Current',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.primary,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              subtitle: Text(
-                                '$dateStr • ${v.lastModifiedBy}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey.shade500,
-                                ),
-                              ),
-                              onTap: isOpening ? null : () => _previewVersion(v),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (v.firstFile != null)
-                                    IconButton(
-                                      icon: const Icon(Icons.visibility_outlined,
-                                          size: 20, color: AppColors.primary),
-                                      tooltip: 'Preview',
-                                      onPressed: isOpening ? null : () => _previewVersion(v),
-                                    ),
-                                  if (!isCurrent)
-                                    IconButton(
-                                      icon: Icon(Icons.settings_backup_restore_rounded,
-                                          size: 20, color: Colors.grey.shade500),
-                                      tooltip: 'Rollback to this version',
-                                      onPressed: _rollingBack ? null : () => _rollback(v),
-                                    ),
-                                ],
-                              ),
-                            );
-                          },
                         ),
                       );
-                },
+                    }
+
+                    final versions = snap.data ?? [];
+                    if (versions.isEmpty) {
+                      return Center(
+                        child: Text(
+                          'No version history available',
+                          style: TextStyle(
+                            color: Colors.grey.shade500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      );
+                    }
+
+                    final currentVersionId = versions
+                        .map((v) => v.versionId)
+                        .reduce((a, b) => a > b ? a : b);
+
+                    return Material(
+                      type: MaterialType.transparency,
+                      child: ListView.separated(
+                        controller: scrollController,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        itemCount: versions.length,
+                        separatorBuilder:
+                            (_, __) =>
+                                Divider(height: 1, color: Colors.grey.shade100),
+                        itemBuilder: (context, index) {
+                          final v = versions[index];
+                          final isCurrent = v.versionId == currentVersionId;
+                          final isOpening = _openingVersionIds.contains(
+                            v.versionId,
+                          );
+                          final isExpanded = _expandedVersionIds.contains(
+                            v.versionId,
+                          );
+                          final dt = v.lastModifiedUtcParsed;
+                          final dateStr =
+                              dt != null
+                                  ? '${dt.day}/${dt.month}/${dt.year} • ${_formatTime(dt)}'
+                                  : v.lastModifiedUtc;
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ListTile(
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 4,
+                                ),
+                                enabled: !_rollingBack,
+                                leading: Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color:
+                                        isCurrent
+                                            ? AppColors.primary.withOpacity(
+                                              0.12,
+                                            )
+                                            : Colors.grey.shade100,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child:
+                                        isOpening
+                                            ? const SizedBox(
+                                              width: 16,
+                                              height: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            )
+                                            : Text(
+                                              'v${v.versionId}',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700,
+                                                color:
+                                                    isCurrent
+                                                        ? AppColors.primary
+                                                        : Colors.grey.shade600,
+                                              ),
+                                            ),
+                                  ),
+                                ),
+                                title: Row(
+                                  children: [
+                                    Text(
+                                      'Version ${v.versionId}',
+                                      style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    if (isCurrent) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 1,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.primary.withOpacity(
+                                            0.1,
+                                          ),
+                                          borderRadius: BorderRadius.circular(
+                                            8,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Current',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: AppColors.primary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                subtitle: Text(
+                                  '$dateStr • ${v.lastModifiedBy}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.grey.shade500,
+                                  ),
+                                ),
+                                onTap:
+                                    isOpening ? null : () => _previewVersion(v),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (v.firstFile != null)
+                                      IconButton(
+                                        icon: const Icon(
+                                          Icons.visibility_outlined,
+                                          size: 20,
+                                          color: AppColors.primary,
+                                        ),
+                                        tooltip: 'Preview',
+                                        onPressed:
+                                            isOpening
+                                                ? null
+                                                : () => _previewVersion(v),
+                                      ),
+
+                                    IconButton(
+                                      icon: Icon(
+                                        isExpanded
+                                            ? Icons.expand_less_rounded
+                                            : Icons.info_outline_rounded,
+                                        size: 20,
+                                        color: AppColors.primary,
+                                      ),
+                                      tooltip: 'Details',
+                                      onPressed:
+                                          () => setState(() {
+                                            if (!_expandedVersionIds.remove(
+                                              v.versionId,
+                                            )) {
+                                              _expandedVersionIds.add(
+                                                v.versionId,
+                                              );
+                                            }
+                                          }),
+                                    ),
+
+                                    if (!isCurrent)
+                                      IconButton(
+                                        icon: Icon(
+                                          Icons.settings_backup_restore_rounded,
+                                          size: 20,
+                                          color: Colors.grey.shade500,
+                                        ),
+                                        tooltip: 'Rollback to this version',
+                                        onPressed:
+                                            _rollingBack
+                                                ? null
+                                                : () => _rollback(v),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              AnimatedSize(
+                                duration: const Duration(milliseconds: 180),
+                                child:
+                                    isExpanded
+                                        ? _versionMetadataPanel(v)
+                                        : const SizedBox.shrink(),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -461,8 +620,11 @@ class _RollbackConfirmDialog extends StatelessWidget {
               color: AppColors.primary.withOpacity(0.08),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.settings_backup_restore_rounded,
-                size: 28, color: AppColors.primary),
+            child: const Icon(
+              Icons.settings_backup_restore_rounded,
+              size: 28,
+              color: AppColors.primary,
+            ),
           ),
           const SizedBox(height: 12),
           const Text(
@@ -500,9 +662,14 @@ class _RollbackConfirmDialog extends StatelessWidget {
                   foregroundColor: Colors.grey.shade700,
                   side: BorderSide(color: Colors.grey.shade300),
                   padding: const EdgeInsets.symmetric(vertical: 11),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-                child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w600)),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -514,9 +681,14 @@ class _RollbackConfirmDialog extends StatelessWidget {
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 11),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-                child: const Text('Rollback', style: TextStyle(fontWeight: FontWeight.w600)),
+                child: const Text(
+                  'Rollback',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
           ],

@@ -136,8 +136,7 @@ class MFilesService extends ChangeNotifier {
 
   ({String authUrl, String apiUrl}) _resolveServerAddress(String input) {
     final trimmed = input.trim();
-    final withScheme =
-        trimmed.contains('://') ? trimmed : 'http://$trimmed';
+    final withScheme = trimmed.contains('://') ? trimmed : 'http://$trimmed';
     final uri = Uri.tryParse(withScheme);
     final host = uri?.host ?? trimmed;
 
@@ -164,13 +163,15 @@ class MFilesService extends ChangeNotifier {
     );
   }
 
-  String get baseUrl => hasServerAddress
-      ? _resolveServerAddress(_serverAddress!).apiUrl
-      : 'https://api.alignsys.tech';
+  String get baseUrl =>
+      hasServerAddress
+          ? _resolveServerAddress(_serverAddress!).apiUrl
+          : 'https://api.alignsys.tech';
 
-  String get authBaseUrl => hasServerAddress
-      ? _resolveServerAddress(_serverAddress!).authUrl
-      : 'https://auth.alignsys.tech';
+  String get authBaseUrl =>
+      hasServerAddress
+          ? _resolveServerAddress(_serverAddress!).authUrl
+          : 'https://auth.alignsys.tech';
 
   Future<void> setServerAddress(String address) async {
     final normalized = address.trim().replaceAll(RegExp(r'/+$'), '');
@@ -209,22 +210,31 @@ class MFilesService extends ChangeNotifier {
     );
     _recentServerAddresses.insert(0, address);
     if (_recentServerAddresses.length > _maxRecentServerAddresses) {
-      _recentServerAddresses =
-          _recentServerAddresses.sublist(0, _maxRecentServerAddresses);
+      _recentServerAddresses = _recentServerAddresses.sublist(
+        0,
+        _maxRecentServerAddresses,
+      );
     }
-    await prefs.setStringList(_recentServerAddressesKey, _recentServerAddresses);
+    await prefs.setStringList(
+      _recentServerAddressesKey,
+      _recentServerAddresses,
+    );
   }
 
   Future<void> loadRecentServerAddresses() async {
     final prefs = await SharedPreferences.getInstance();
-    _recentServerAddresses = prefs.getStringList(_recentServerAddressesKey) ?? [];
+    _recentServerAddresses =
+        prefs.getStringList(_recentServerAddressesKey) ?? [];
     notifyListeners();
   }
 
   Future<void> removeRecentServerAddress(String address) async {
     _recentServerAddresses.removeWhere((a) => a == address);
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_recentServerAddressesKey, _recentServerAddresses);
+    await prefs.setStringList(
+      _recentServerAddressesKey,
+      _recentServerAddresses,
+    );
     notifyListeners();
   }
 
@@ -561,6 +571,20 @@ class MFilesService extends ChangeNotifier {
       return true;
     }
     return false;
+  }
+
+  /// True if this response indicates the object is already checked out
+  bool _looksLikeCheckedOutConflict(http.Response response) {
+    final body = response.body.toLowerCase();
+    return response.statusCode == 400 &&
+        (body.contains('already checked out') || body.contains('0x800400b1'));
+  }
+
+  bool _looksLikeCheckoutVersionConflict(http.Response response) {
+    final body = response.body.toLowerCase();
+    return response.statusCode == 400 &&
+        (body.contains('invalid object version') ||
+            body.contains('0x800408a4'));
   }
 
   Future<http.Response> _authenticatedRequest(
@@ -1150,6 +1174,28 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
+  //
+  int? resolveObjectTypeAliasFromLoaded(String alias) {
+    for (final t in objectTypes) {
+      if (t.alias == alias) return t.id;
+    }
+    return null;
+  }
+
+  int? resolveClassAliasFromLoaded(String alias) {
+    for (final c in objectClasses) {
+      if (c.alias == alias) return c.id;
+    }
+    return null;
+  }
+
+  int? resolveWorkflowAliasFromLoaded(String alias) {
+    for (final c in objectClasses) {
+      if (c.defaultWorkflow.alias == alias) return c.defaultWorkflow.id;
+    }
+    return null;
+  }
+
   bool isClassInAnyGroup(int classId) {
     for (final resp in _classesByObjectType.values) {
       for (final group in resp.grouped) {
@@ -1208,14 +1254,18 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
+  List<ObjectClass> getUngroupedClassesForType(int objectTypeId) =>
+    _classesByObjectType[objectTypeId]?.unGrouped ?? [];
+
   List<ObjectClass> getAllClasses() {
     final seen = <int>{};
     final result = <ObjectClass>[];
-    for (final ot in objectTypes) {
-      for (final group in getClassGroupsForType(ot.id)) {
-        for (final cls in group.members) {
-          if (seen.add(cls.id)) result.add(cls);
-        }
+    for (final resp in _classesByObjectType.values) {
+      for (final cls in [
+        ...resp.unGrouped,
+        ...resp.grouped.expand((g) => g.members),
+      ]) {
+        if (seen.add(cls.id)) result.add(cls);
       }
     }
     return result;
@@ -1242,9 +1292,10 @@ class MFilesService extends ChangeNotifier {
         'searchPhrase': query,
         'vaultGuid': vaultGuidWithBraces,
         'userID': mfilesUserId,
-        'objectType': (objectTypeIds != null && objectTypeIds.isNotEmpty)
-            ? objectTypeIds.join(',')
-            : '',
+        'objectType':
+            (objectTypeIds != null && objectTypeIds.isNotEmpty)
+                ? objectTypeIds.join(',')
+                : '',
         'classID': classId != null ? '$classId' : '',
       };
 
@@ -1295,9 +1346,10 @@ class MFilesService extends ChangeNotifier {
 
       final request = http.MultipartRequest(
         'POST',
-        Uri.parse('$baseUrl/api/objectinstance/FilesUpload/$vaultGuidWithBraces'),
+        Uri.parse(
+          '$baseUrl/api/objectinstance/FilesUpload/$vaultGuidWithBraces',
+        ),
       );
-      
 
       request.files.add(
         await http.MultipartFile.fromPath('formFiles', file.path),
@@ -1308,20 +1360,28 @@ class MFilesService extends ChangeNotifier {
       final response = await request.send();
       final body = await response.stream.bytesToString();
 
-      debugPrint('📥 uploadFile response: status=${response.statusCode} body=$body');
+      debugPrint(
+        '📥 uploadFile response: status=${response.statusCode} body=$body',
+      );
 
       if (response.statusCode == 200) {
         final decoded = json.decode(body);
-        final uploadId = (decoded is Map)
-            ? (decoded['uploadID'] ?? decoded['uploadId'] ?? decoded['UploadID'] ?? decoded['UploadId'])
-            : null;
+        final uploadId =
+            (decoded is Map)
+                ? (decoded['uploadID'] ??
+                    decoded['uploadId'] ??
+                    decoded['UploadID'] ??
+                    decoded['UploadId'])
+                : null;
 
         if (uploadId == null) {
           debugPrint(
             '⚠️ uploadFile: got 200 but no upload id key matched. '
             'Keys=${decoded is Map ? decoded.keys.toList() : decoded.runtimeType}',
           );
-          _setError('Upload succeeded but response had no recognizable upload id: $body');
+          _setError(
+            'Upload succeeded but response had no recognizable upload id: $body',
+          );
           return null;
         }
 
@@ -1671,6 +1731,13 @@ class MFilesService extends ChangeNotifier {
                 .whereType<Map<String, dynamic>>()
                 .map((e) => ViewObject.fromJson(e))
                 .toList();
+        assignedObjects.sort((a, b) {
+          final ad =
+              a.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              b.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bd.compareTo(ad);
+        });
         assignedError = null;
         warmExtensionsForObjects(assignedObjects);
         warmRelationshipsForObjects(assignedObjects);
@@ -1716,7 +1783,8 @@ class MFilesService extends ChangeNotifier {
       // server failure — same empty-state class as the 404s we already
       // swallow in fetchObjectFiles / fetchViewPropItems.
       final body = resp.body.toLowerCase();
-      final looksLikeNotFound = resp.statusCode == 404 ||
+      final looksLikeNotFound =
+          resp.statusCode == 404 ||
           (resp.statusCode == 400 && body.contains('0x8004000b'));
 
       if (looksLikeNotFound) {
@@ -1762,7 +1830,6 @@ class MFilesService extends ChangeNotifier {
       final body = {
         "objectid": objectId,
         "objectypeid": objectTypeId,
-        "objecttypeid": objectTypeId,
         "classid": classId,
         "props":
             props.map((p) {
@@ -1784,16 +1851,24 @@ class MFilesService extends ChangeNotifier {
         body: jsonEncode(body),
       );
 
+      debugPrint('UpdateObjectProps status: ${resp.statusCode}');
+      debugPrint('UpdateObjectProps response: ${resp.body}');
+
       if (resp.statusCode == 200 ||
           resp.statusCode == 201 ||
           resp.statusCode == 204) {
         return true;
       }
 
-      _setError('Server returned ${resp.statusCode}: ${resp.body}');
+      _setError(
+        _looksLikeCheckedOutConflict(resp)
+            ? 'This item is checked out and can\'t be edited right now.'
+            : 'Update failed (${resp.statusCode}): ${resp.body}',
+      );
+
       return false;
     } catch (e) {
-      _setError('Error updating object: $e');
+      _setError('Error updating object props: $e');
       return false;
     } finally {
       _setLoading(false);
@@ -1914,7 +1989,11 @@ class MFilesService extends ChangeNotifier {
         isSingleFile: it.isSingleFile,
       ))
         continue;
-      ensureExtensionForObject(objectId: it.id, objectTypeId: it.objectTypeId, notify: false);
+      ensureExtensionForObject(
+        objectId: it.id,
+        objectTypeId: it.objectTypeId,
+        notify: false,
+      );
     }
   }
 
@@ -2122,6 +2201,32 @@ class MFilesService extends ChangeNotifier {
     }
   }
 
+  /// Call immediately after linking a newly created object (e.g. from the
+  /// Create & Link flow). M-Files can briefly lag before a just-created
+  /// relationship is queryable via LinkedObjects — if we warm-check too
+  /// soon we get an empty result and cache "no relationships" permanently.
+  /// This drops any such stale cache entry and re-checks after a short
+  /// delay to let the backend catch up.
+  Future<void> refreshRelationshipsAfterLink({
+    required int objectId,
+    required int objectTypeId,
+    required int classId,
+    required int versionId,
+  }) async {
+    _hasRelationshipsCache.remove(objectId);
+    _relInFlight.remove(objectId);
+
+    await Future.delayed(const Duration(milliseconds: 1000));
+
+    await ensureRelationshipsPresenceForObject(
+      objectId: objectId,
+      objectTypeId: objectTypeId,
+      classId: classId,
+      versionId: versionId,
+      notify: true,
+    );
+  }
+
   // ==================== CHECKOUT STATE (local, best-effort) ====================
   // The backend has no endpoint to query checkout status — Checkout/UndoCheckout
   // are the only two operations exposed. We track locally, per-session and
@@ -2131,9 +2236,20 @@ class MFilesService extends ChangeNotifier {
   // surface that error — we never claim to know the authoritative state.
 
   final Set<int> _checkedOutObjectIds = {};
+  final Map<int, int?> _checkoutOwnerIds = {};
 
   bool isCheckedOutLocally(int objectId) =>
       _checkedOutObjectIds.contains(objectId);
+
+  int? checkoutOwnerId(int objectId) => _checkoutOwnerIds[objectId];
+
+  bool isCheckedOutByMe(int objectId) {
+    if (!isCheckedOutLocally(objectId)) return false;
+    final owner = _checkoutOwnerIds[objectId];
+    // owner == null covers objects we checked out ourselves via
+    // checkoutObject(), where we know it's us without needing server echo.
+    return owner == null || owner == mfilesUserId;
+  }
 
   Future<void> _loadCheckoutCacheFromPrefs() async {
     try {
@@ -2183,6 +2299,7 @@ class MFilesService extends ChangeNotifier {
 
   void clearCheckoutCache() {
     _checkedOutObjectIds.clear();
+    _checkoutOwnerIds.clear();
     _clearCheckoutCacheFromPrefs(); // fire-and-forget
     if (kDebugMode) {
       debugPrint('🧹 Cleared local checkout cache');
@@ -2195,24 +2312,34 @@ class MFilesService extends ChangeNotifier {
   /// available rather than relying solely on what this app instance
   /// remembers locally. Fixes the badge/button not reflecting checkout
   /// state from a previous session, another device, or the web platform.
-  void syncCheckoutStateFromServer(int objectId, bool isCheckedOutOnServer) {
+  void syncCheckoutStateFromServer(
+    int objectId,
+    bool isCheckedOutOnServer, {
+    int? ownerId,
+  }) {
     final trackedLocally = _checkedOutObjectIds.contains(objectId);
-    if (isCheckedOutOnServer == trackedLocally) return;
+    final ownerChanged = _checkoutOwnerIds[objectId] != ownerId;
+    if (isCheckedOutOnServer == trackedLocally && !ownerChanged) return;
 
     if (isCheckedOutOnServer) {
       _checkedOutObjectIds.add(objectId);
+      _checkoutOwnerIds[objectId] = ownerId;
     } else {
       _checkedOutObjectIds.remove(objectId);
+      _checkoutOwnerIds.remove(objectId);
     }
     _saveCheckoutToPrefs(objectId, isCheckedOutOnServer);
     notifyListeners();
   }
 
-  /// Batch version, following the same pattern as warmExtensionsForObjects —
-  /// call whenever a list of ViewObjects loads, so list badges are correct.
+  /// Same, for raw ViewObject lists (View screens).
   void syncCheckoutStateForObjects(List<ViewObject> objects) {
     for (final o in objects) {
-      syncCheckoutStateFromServer(o.id, o.isCheckedOut);
+      syncCheckoutStateFromServer(
+        o.id,
+        o.isCheckedOut,
+        ownerId: o.checkoutUserId,
+      );
     }
   }
 
@@ -2220,7 +2347,7 @@ class MFilesService extends ChangeNotifier {
   void syncCheckoutStateForItems(List<ViewContentItem> items) {
     for (final it in items) {
       if (it.id <= 0) continue;
-      syncCheckoutStateFromServer(it.id, it.isCheckedOut);
+      syncCheckoutStateFromServer(it.id, it.isCheckedOut, ownerId: it.checkoutUserId);
     }
   }
 
@@ -2600,6 +2727,13 @@ class MFilesService extends ChangeNotifier {
                 .whereType<Map<String, dynamic>>()
                 .map((e) => ViewObject.fromJson(e))
                 .toList();
+        deletedObjects.sort((a, b) {
+          final ad =
+              a.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+          final bd =
+              b.lastModifiedUtc ?? DateTime.fromMillisecondsSinceEpoch(0);
+          return bd.compareTo(ad);
+        });
         deletedError = null;
         warmExtensionsForObjects(deletedObjects);
         warmRelationshipsForObjects(deletedObjects);
@@ -2628,7 +2762,6 @@ class MFilesService extends ChangeNotifier {
   }
 
   // -------------------- View details --------------------
-
   Future<List<ViewContentItem>> fetchObjectsInViewRaw(int viewId) async {
     if (selectedVault == null || mfilesUserId == null || accessToken == null) {
       throw Exception('Session not ready');
@@ -2804,7 +2937,10 @@ class MFilesService extends ChangeNotifier {
     );
 
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      error = 'HTTP ${res.statusCode}: ${res.body}';
+      error =
+          _looksLikeCheckedOutConflict(res)
+              ? 'This item is checked out and can\'t be edited right now.'
+              : 'HTTP ${res.statusCode}: ${res.body}';
       return false;
     }
 
@@ -2857,6 +2993,7 @@ class MFilesService extends ChangeNotifier {
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         _checkedOutObjectIds.add(objectId);
+        _checkoutOwnerIds[objectId] = mfilesUserId;
         _saveCheckoutToPrefs(objectId, true);
         notifyListeners();
         return true;
@@ -2911,12 +3048,18 @@ class MFilesService extends ChangeNotifier {
 
       if (resp.statusCode == 200 || resp.statusCode == 201) {
         _checkedOutObjectIds.remove(objectId);
+        _checkoutOwnerIds.remove(objectId);
         _saveCheckoutToPrefs(objectId, false);
         notifyListeners();
         return true;
       }
 
-      _setError('Undo checkout failed: ${resp.statusCode} ${resp.body}');
+      _setError(
+        _looksLikeCheckoutVersionConflict(resp)
+            ? 'Couldn\'t check in this item. Refresh and try again.'
+            : 'Undo checkout failed: ${resp.statusCode} ${resp.body}',
+      );
+
       return false;
     } catch (e) {
       _setError('Error undoing checkout: $e');
@@ -2929,6 +3072,7 @@ class MFilesService extends ChangeNotifier {
   Future<bool> deleteObject({
     required int objectId,
     required int classId,
+    bool? isCheckedOut,
   }) async {
     _setLoading(true);
     _setError(null);
@@ -2937,6 +3081,21 @@ class MFilesService extends ChangeNotifier {
       if (selectedVault == null) return false;
       if (accessToken == null) return false;
       if (mfilesUserId == null) return false;
+
+      // A checked-out object must never be deleted.
+      //
+      // Use the server-reported state supplied by the caller when available,
+      // while also checking our local checkout cache. The local cache is
+      // synchronized from object payloads whenever objects are loaded.
+      final checkedOut = isCheckedOut == true || isCheckedOutLocally(objectId);
+
+      if (checkedOut) {
+        _setError(
+          'Checked-out objects cannot be deleted. '
+          'Check in the object first.',
+        );
+        return false;
+      }
 
       final url = Uri.parse('$baseUrl/api/ObjectDeletion/DeleteObject');
 
@@ -2955,8 +3114,9 @@ class MFilesService extends ChangeNotifier {
 
       if (resp.statusCode == 200 ||
           resp.statusCode == 201 ||
-          resp.statusCode == 204)
+          resp.statusCode == 204) {
         return true;
+      }
 
       _setError('Server returned ${resp.statusCode}: ${resp.body}');
       return false;
@@ -3212,6 +3372,45 @@ class MFilesService extends ChangeNotifier {
         .toList();
   }
 
+  List<VaultWorkflowDefinition>? _vaultWorkflowsCache;
+
+Future<List<VaultWorkflowDefinition>> fetchVaultWorkflowDefinitions({
+  bool forceRefresh = false,
+}) async {
+  if (selectedVault == null || mfilesUserId == null || accessToken == null) {
+    throw Exception('Session not ready');
+  }
+
+  if (!forceRefresh && _vaultWorkflowsCache != null) {
+    return _vaultWorkflowsCache!;
+  }
+
+  final url = Uri.parse(
+    '$baseUrl/api/WorkflowsInstance/GetVaultsWorkflows/$vaultGuidWithBraces/$mfilesUserId',
+  );
+
+  final resp = await _authenticatedRequest(
+    () => http.get(url, headers: _authHeadersNoJson),
+  );
+
+  if (resp.statusCode != 200) {
+    throw Exception(
+      'GetVaultsWorkflows (definitions) failed: ${resp.statusCode} ${resp.body}',
+    );
+  }
+
+  final decoded = json.decode(resp.body);
+  if (decoded is! List) return <VaultWorkflowDefinition>[];
+
+  final list = decoded
+      .whereType<Map<String, dynamic>>()
+      .map(VaultWorkflowDefinition.fromJson)
+      .toList();
+
+  _vaultWorkflowsCache = list;
+  return list;
+}
+
   Future<WorkflowDefinition> fetchWorkflowDefinition(int workflowId) async {
     final url = Uri.parse(
       '$baseUrl/api/WorkflowsInstance/GetWorkflowDefinition/'
@@ -3282,6 +3481,7 @@ class MFilesService extends ChangeNotifier {
             displayName: '',
             isDocument: false,
             name: '',
+            alias: '',
           ),
     );
     return t.isDocument;
@@ -3321,7 +3521,8 @@ class MFilesService extends ChangeNotifier {
   }
 
   IconData iconForContentItem(ViewContentItem item) {
-    if (!item.isObject) return FileIconResolver.iconForObjectType(item.objectTypeId);
+    if (!item.isObject)
+      return FileIconResolver.iconForObjectType(item.objectTypeId);
     if (!isDocumentContentItem(item)) {
       return FileIconResolver.iconForObjectType(item.objectTypeId);
     }
@@ -3371,6 +3572,7 @@ class MFilesService extends ChangeNotifier {
     clearClassPropertiesCache();
     clearExtensionCache();
     clearRelationshipsCache();
+    _vaultWorkflowsCache = null;
 
     clearFileCache();
     clearViewCache();
@@ -3430,8 +3632,7 @@ class MFilesService extends ChangeNotifier {
       final body = {
         "vaultGuid": vaultGuidWithBraces,
         "objectId": objectId,
-        "objectTypeId": objectTypeId,
-        "classId": classId,
+        "objectType": objectTypeId,
         "userID": userId,
         "approve": approve,
       };
@@ -3445,9 +3646,16 @@ class MFilesService extends ChangeNotifier {
         () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
       );
 
-      if (kDebugMode) {
-        debugPrint('📨 ApproveAssignment status: ${resp.statusCode}');
-        debugPrint('📨 ApproveAssignment body: ${resp.body}');
+      String cleanServerError(int statusCode, String rawBody) {
+        final t = rawBody.trimLeft();
+        final looksLikeHtml =
+            t.startsWith('<!DOCTYPE') ||
+            t.startsWith('<html') ||
+            t.contains('<title>');
+        if (looksLikeHtml) {
+          return 'The server rejected this request (HTTP $statusCode). Please try again in a moment.';
+        }
+        return 'Server returned $statusCode: $rawBody';
       }
 
       if (resp.statusCode == 200 ||
@@ -3460,48 +3668,9 @@ class MFilesService extends ChangeNotifier {
         return true;
       }
 
-      _setError('ApproveAssignment failed: ${resp.statusCode} ${resp.body}');
       return false;
     } catch (e) {
       _setError('Error approving assignment: $e');
-      return false;
-    }
-  }
-
-  Future<bool> markAssignmentComplete({
-    required int objectId,
-    required int classId,
-  }) async {
-    if (selectedVault == null || accessToken == null || mfilesUserId == null) {
-      return false;
-    }
-
-    try {
-      final url = Uri.parse('$baseUrl/api/Assignment/CompleteAssignment');
-
-      final body = {
-        "vaultGuid": vaultGuidWithBraces,
-        "objectId": objectId,
-        "classId": classId,
-        "userID": mfilesUserId,
-      };
-
-      final resp = await _authenticatedRequest(
-        () => http.post(url, headers: _authHeaders, body: jsonEncode(body)),
-      );
-
-      if (resp.statusCode == 200 ||
-          resp.statusCode == 201 ||
-          resp.statusCode == 204) {
-        assignedObjects.removeWhere((o) => o.id == objectId);
-        notifyListeners();
-        return true;
-      }
-
-      _setError('Complete assignment failed: ${resp.statusCode} ${resp.body}');
-      return false;
-    } catch (e) {
-      _setError('Error completing assignment: $e');
       return false;
     }
   }
@@ -3546,7 +3715,7 @@ class MFilesService extends ChangeNotifier {
     );
   }
 
-  Future<void> createObjectFromTemplate(Map<String, dynamic> payload) async {
+  Future<int?> createObjectFromTemplate(Map<String, dynamic> payload) async {
     if (accessToken == null || mfilesUserId == null) {
       throw Exception('Session not ready');
     }
@@ -3591,7 +3760,6 @@ class MFilesService extends ChangeNotifier {
     // The creation endpoint copies the template file but doesn't apply the
     // submitted Properties array to the new object. We do a follow-up
     // UpdateObjectProps call with the same props to write them properly.
-    if (props == null || props.isEmpty) return;
 
     int? newObjectId;
     try {
@@ -3611,12 +3779,17 @@ class MFilesService extends ChangeNotifier {
 
     if (newObjectId == null || newObjectId <= 0) {
       debugPrint('⚠️ Could not parse new object ID — skipping property patch');
-      return;
+      return null;
     }
 
     debugPrint(
-      '✅ New object ID: $newObjectId — patching ${props.length} props',
+      '✅ New object ID: $newObjectId'
     );
+
+    // ── Patch the properties onto the new object ──────────────────────────
+    if (props == null || props.isEmpty) {
+      return newObjectId;                // nothing to patch, but we have an ID
+    }
 
     // Convert the template payload props into the format updateObjectProps expects
     final patchProps =
@@ -3647,6 +3820,8 @@ class MFilesService extends ChangeNotifier {
     } else {
       debugPrint('⚠️ Property patch failed: $error');
     }
+
+    return newObjectId;
   }
 
   /// Creates a new object and links it to [request.oldObjectInternalID] in
@@ -3658,9 +3833,12 @@ class MFilesService extends ChangeNotifier {
     _setError(null);
 
     try {
-      if (selectedVault == null) return const ObjectCreationResult(success: false);
-      if (accessToken == null) return const ObjectCreationResult(success: false);
-      if (mfilesUserId == null) return const ObjectCreationResult(success: false);
+      if (selectedVault == null)
+        return const ObjectCreationResult(success: false);
+      if (accessToken == null)
+        return const ObjectCreationResult(success: false);
+      if (mfilesUserId == null)
+        return const ObjectCreationResult(success: false);
 
       final url = Uri.parse('$baseUrl/api/CreateOrAddObject/LinkObject');
 
@@ -3881,10 +4059,17 @@ class MFilesService extends ChangeNotifier {
     );
 
     debugPrint('📋 fetchObjectVersions URL: $url');
+    debugPrint(
+      '📋 fetchObjectVersions params: displayObjectId=$displayObjectId '
+      'classId=$classId objectTypeId=$objectTypeId',
+    );
 
     final resp = await _authenticatedRequest(
       () => http.get(url, headers: _authHeadersNoJson),
     );
+
+    debugPrint('📋 GetObjectVersions status: ${resp.statusCode}');
+    debugPrint('📋 GetObjectVersions response: ${resp.body}');
 
     if (resp.statusCode != 200) {
       throw Exception(
@@ -4128,5 +4313,58 @@ class WorkflowDefinition {
               )
               .toList(),
     );
+  }
+}
+
+class VaultWorkflowState {
+  final int id;
+  final String name;
+  final bool isSelectable;
+
+  VaultWorkflowState({
+    required this.id,
+    required this.name,
+    this.isSelectable = true,
+  });
+
+  factory VaultWorkflowState.fromJson(Map<String, dynamic> m) {
+    return VaultWorkflowState(
+      id: (m['stateId'] as num).toInt(),
+      name: (m['stateName'] as String?) ?? 'State ${m['stateId']}',
+      isSelectable: (m['isSelectable'] as bool?) ?? true,
+    );
+  }
+}
+
+class VaultWorkflowDefinition {
+  final int workflowId;
+  final String workflowName;
+  final int classId;
+  final List<VaultWorkflowState> states;
+
+  VaultWorkflowDefinition({
+    required this.workflowId,
+    required this.workflowName,
+    required this.classId,
+    required this.states,
+  });
+
+  factory VaultWorkflowDefinition.fromJson(Map<String, dynamic> m) {
+    final statesRaw = (m['states'] as List?) ?? const [];
+    return VaultWorkflowDefinition(
+      workflowId: (m['workflowId'] as num).toInt(),
+      workflowName: (m['workflowName'] as String?) ?? 'Workflow ${m['workflowId']}',
+      classId: (m['classId'] as num?)?.toInt() ?? 0,
+      states: statesRaw
+          .map((s) => VaultWorkflowState.fromJson(s as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  /// First state marked selectable, falling back to the first state if none
+  /// are flagged. Null only if the workflow has no states at all.
+  VaultWorkflowState? get defaultEntryState {
+    if (states.isEmpty) return null;
+    return states.firstWhere((s) => s.isSelectable, orElse: () => states.first);
   }
 }

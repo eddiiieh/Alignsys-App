@@ -19,6 +19,7 @@ class BatchActionsMenu extends StatelessWidget {
     required this.onSelected,
     this.items = const [
       BatchMenuAction('history', Icons.history_rounded, 'Version History'),
+      BatchMenuAction('copy', Icons.copy_rounded, 'Make a copy'),
       BatchMenuAction('download', Icons.download_rounded, 'Download'),
       BatchMenuAction(
         'convertPdf',
@@ -26,15 +27,26 @@ class BatchActionsMenu extends StatelessWidget {
         'Convert to PDF',
       ),
     ],
+    this.disabledValues = const <String>{},
+    this.icon = Icons.more_vert,
+    this.iconColor,
+    this.tooltip = 'More',
   });
 
+  final Set<String> disabledValues;
   final ValueChanged<String> onSelected;
   final List<BatchMenuAction> items;
+  final IconData icon;
+  final Color? iconColor;
+  final String tooltip;
 
   @override
   Widget build(BuildContext context) {
+    
+    final visible = items.where((a) => !disabledValues.contains(a.value)).toList();
+    
     return PopupMenuButton<String>(
-      tooltip: 'More',
+      tooltip: tooltip,
       color: Colors.white,
       elevation: 6,
       shadowColor: Colors.black.withOpacity(0.18),
@@ -46,7 +58,8 @@ class BatchActionsMenu extends StatelessWidget {
       constraints: const BoxConstraints(minWidth: 190),
       onSelected: onSelected,
       itemBuilder:
-          (_) => items
+          (_) => visible
+              .where((a) => !disabledValues.contains(a.value))
               .map((a) => _buildMenuItem(a.value, a.icon, a.label))
               .toList(),
     );

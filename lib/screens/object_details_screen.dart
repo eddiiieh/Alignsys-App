@@ -2,8 +2,10 @@
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
 
 import 'package:flutter/material.dart';
-import 'package:mfiles_app/utils/snackbar_helper.dart';
+import 'package:mfiles_app/screens/dynamic_form_screen.dart';
+import 'package:mfiles_app/utils/error_messages.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
+import 'package:mfiles_app/widgets/version_history_sheet.dart';
 import 'package:provider/provider.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
 
@@ -16,6 +18,11 @@ import 'package:mfiles_app/widgets/breadcrumb_bar.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import '../theme/app_colors.dart';
 import 'package:mfiles_app/dss/screens/dss_signing_screen.dart';
+import 'package:mfiles_app/widgets/checkout_badge.dart';
+import 'package:mfiles_app/utils/delete_object_helper.dart';
+import 'package:mfiles_app/widgets/batch_actions_menu.dart';
+import 'package:mfiles_app/utils/snackbar_helper.dart';
+import 'package:flutter/services.dart';
 
 class ObjectDetailsScreen extends StatefulWidget {
   final ViewObject obj;
@@ -48,12 +55,20 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   int? _selectedWorkflowId;
   bool _assigningWorkflow = false;
 
+  late Future<List<VaultWorkflowDefinition>> _vaultWorkflowsFuture;
+  int? _selectedAssignStateId;
+
   // _editingPropId == null  →  no field is being edited
   // _editingPropId == p.id  →  that field's inline editor is open
   int? _editingPropId;
 
   bool _saving = false;
   bool _downloading = false;
+
+  /// True while we're fetching the source object's props for a Make-a-Copy
+  /// operation. Drives a full-screen loader so the user isn't left staring
+  /// at a frozen details screen during the network round-trip.
+  bool _preparingCopy = false;
 
   // e-Sign state
   bool _eSigning = false;
@@ -78,7 +93,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   final Map<int, String> _propNameById = {};
   final Set<int> _allowedMetaPropIds = {};
-  static const Set<int> _excludeMetaPropIds = {20, 21, 23, 25, 38, 100};
+  static const Set<int> _excludeMetaPropIds = {20, 21, 23, 25, 38, 81, 100};
   final Map<int, _PropVm> _dirty = {};
 
   final Map<int, List<String>> _dirtyLookupLabels = {};
@@ -91,10 +106,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   // Comments
   late Future<List<ObjectComment>> _commentsFuture;
   final TextEditingController _commentCtrl = TextEditingController();
+  final ScrollController _commentInputScroll = ScrollController();
   bool _postingComment = false;
   final FocusNode _commentFocusNode = FocusNode();
   bool _commentInputFocused = false;
   bool _commentsExpanded = true;
+  bool _showCommentSend = false;
 
   // ── Design constants ──
   static const _filledBorder = Color(0xFF2563EB);
@@ -115,51 +132,71 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   final GlobalKey _commentInputKey = GlobalKey();
 
+  //
+  bool get _isCheckedOut =>
+      context.read<MFilesService>().isCheckedOutLocally(widget.obj.id);
+
+  // ── Build the workflow dropdown card ──────────────────────────
+  Widget _buildWorkflowDropdown() => _assignWorkflowCard();
+
+  Widget _buildStateSelector(WorkflowInfo? info) {
+    if (info == null) return const SizedBox.shrink();
+    return _buildWorkflowCardWithState(info);
+  }
+
+  // ── Derive initials from a name string for comments ──────────
+  String _initialsFor(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return '?';
+    final parts = trimmed.split(' ').where((s) => s.isNotEmpty).toList();
+    return parts.length >= 2
+        ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
+        : trimmed.substring(0, trimmed.length.clamp(0, 2)).toUpperCase();
+  }
+
   bool get _isAssignment =>
       widget.obj.classId == -100 ||
       widget.obj.classTypeName.trim().toLowerCase() == 'assignment';
 
   @override
-void initState() {
-  super.initState();
-  _title = widget.obj.title;
+  void initState() {
+    super.initState();
+    _title = widget.obj.title;
 
-  // Initialise with empty futures so FutureBuilders don't crash before
-  // the first frame — then load everything safely after the frame is done.
-  _commentsFuture = Future.value([]);
-  _future = Future.value([]);
-  _filesFuture = Future.value([]);
-  _workflowFuture = Future.value(null);
-  _workflowsFuture = Future.value([]);
+    // Initialise with empty futures so FutureBuilders don't crash before
+    // the first frame — then load everything safely after the frame is done.
+    _commentsFuture = Future.value([]);
+    _future = Future.value([]);
+    _filesFuture = Future.value([]);
+    _workflowFuture = Future.value(null);
+    _workflowsFuture = Future.value([]);
+    _vaultWorkflowsFuture = Future.value([]);
 
-  _commentFocusNode.addListener(() {
-    if (mounted) {
-      setState(() => _commentInputFocused = _commentFocusNode.hasFocus);
-      if (_commentFocusNode.hasFocus) {
-        Future.delayed(const Duration(milliseconds: 350), () {
-          if (!mounted) return;
-          final ctx = _commentInputKey.currentContext;
-          if (ctx != null) {
-            Scrollable.ensureVisible(
-              ctx,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOut,
-              alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-            );
-          }
-        });
+    _commentFocusNode.addListener(() {
+      if (mounted) {
+        setState(() => _commentInputFocused = _commentFocusNode.hasFocus);
+        if (_commentFocusNode.hasFocus) {
+          Future.delayed(const Duration(milliseconds: 450), () {
+            if (!mounted) return;
+            final ctx = _commentInputKey.currentContext;
+            if (ctx != null) {
+              Scrollable.ensureVisible(
+                ctx,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+                alignment: 1.0,
+              );
+            }
+          });
+        }
       }
-    }
-  });
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final svc = context.read<MFilesService>();
       final name = svc.userEmail ?? svc.username ?? '';
-      final parts = name.split(RegExp(r'[@\s.]')).where((s) => s.isNotEmpty).toList();
       setState(() {
-        _currentUserInitials = parts.length >= 2
-            ? '${parts.first[0]}${parts[1][0]}'.toUpperCase()
-            : name.substring(0, name.length.clamp(0, 2)).toUpperCase();
+        _currentUserInitials = _initialsFor(name);
 
         // Now safe to start loading — frame is fully built
         _commentsFuture = _loadComments();
@@ -167,8 +204,13 @@ void initState() {
         _filesFuture = _loadFiles();
         _workflowFuture = _loadWorkflow();
         _workflowsFuture = _loadWorkflowsForThisObject();
+        _vaultWorkflowsFuture = svc.fetchVaultWorkflowDefinitions();
       });
-      svc.syncCheckoutStateFromServer(widget.obj.id, widget.obj.isCheckedOut);
+      svc.syncCheckoutStateFromServer(
+        widget.obj.id,
+        widget.obj.isCheckedOut,
+        ownerId: widget.obj.checkoutUserId,
+      );
     });
   }
 
@@ -176,6 +218,7 @@ void initState() {
   void dispose() {
     _pageScroll.dispose();
     _commentCtrl.dispose();
+    _commentInputScroll.dispose();
     _commentFocusNode.dispose();
     for (final c in _fieldCtrl.values) {
       c.dispose();
@@ -229,19 +272,14 @@ void initState() {
         objectTypeId: widget.obj.objectTypeId,
         classId: widget.obj.classId,
         props: [
-          {"id": p.id, "value": v.toString(), "datatype": p.datatype}
+          {"id": p.id, "value": v.toString(), "datatype": p.datatype},
         ],
       );
 
       if (!mounted) return;
 
       if (!ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Update failed: ${svc.error ?? 'Unknown error'}'),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
+        SnackbarHelper.showError(context, svc.error ?? 'Update failed');
         return;
       }
 
@@ -259,34 +297,24 @@ void initState() {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Row(children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 16),
-            SizedBox(width: 8),
-            Text('Saved'),
-          ]),
+          content: const Row(
+            children: [
+              Icon(Icons.check_circle, color: Colors.white, size: 16),
+              SizedBox(width: 8),
+              Text('Saved'),
+            ],
+          ),
           backgroundColor: Colors.green.shade600,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
-  }
-
-  int _initialStateForWorkflow(int workflowId) {
-    const map = <int, int>{
-      101: 101,
-    };
-    final v = map[workflowId];
-    if (v == null) {
-      throw Exception(
-        'Initial state not configured for workflow $workflowId. '
-        'Ask backend to expose initialStateId OR extend the map.',
-      );
-    }
-    return v;
   }
 
   String _friendlyPropLabel(_PropVm p) {
@@ -306,7 +334,14 @@ void initState() {
       return v.map(_valueToText).where((s) => s.trim().isNotEmpty).join(', ');
     }
     if (v is Map) {
-      for (final key in const ['displayValue', 'title', 'name', 'caption', 'text', 'label']) {
+      for (final key in const [
+        'displayValue',
+        'title',
+        'name',
+        'caption',
+        'text',
+        'label',
+      ]) {
         final x = v[key];
         if (x is String && x.trim().isNotEmpty) return x;
         if (x is num || x is bool) return x.toString();
@@ -323,7 +358,6 @@ void initState() {
   bool _isDate(_PropVm p) => p.datatype == 'MFDatatypeDate';
   bool _isTimestamp(_PropVm p) => p.datatype == 'MFDatatypeTimestamp';
   bool _isBoolean(_PropVm p) => p.datatype == 'MFDatatypeBoolean';
-
 
   List<int> _selectedIdsForLookup(_PropVm p, {required bool isMulti}) {
     final source = _dirty[p.id]?.editedValue ?? p.value;
@@ -433,7 +467,11 @@ void initState() {
       if (t.isNotEmpty) candidate = t;
     }
     candidate ??= vms
-        .where((p) => p.datatype == 'MFDatatypeText' || p.datatype == 'MFDatatypeMultiLineText')
+        .where(
+          (p) =>
+              p.datatype == 'MFDatatypeText' ||
+              p.datatype == 'MFDatatypeMultiLineText',
+        )
         .map((p) => _valueToText(p.value).trim())
         .firstWhere((s) => s.isNotEmpty, orElse: () => '');
     if (candidate.trim().isNotEmpty) _scheduleTitleUpdate(candidate);
@@ -448,26 +486,31 @@ void initState() {
       ),
     ];
     if (widget.parentViewName != null) {
-      segments.add(BreadcrumbSegment(
-        label: widget.parentViewName!,
-        onTap: () {
-          if (widget.groupingName != null) {
-            Navigator.pop(context);
-            Navigator.pop(context);
-          } else {
-            Navigator.pop(context);
-          }
-        },
-      ));
+      segments.add(
+        BreadcrumbSegment(
+          label: widget.parentViewName!,
+          onTap: () {
+            if (widget.groupingName != null) {
+              Navigator.pop(context);
+              Navigator.pop(context);
+            } else {
+              Navigator.pop(context);
+            }
+          },
+        ),
+      );
     }
     if (widget.groupingName != null) {
-      segments.add(BreadcrumbSegment(
-        label: widget.groupingName!,
-        onTap: () => Navigator.pop(context),
-      ));
+      segments.add(
+        BreadcrumbSegment(
+          label: widget.groupingName!,
+          onTap: () => Navigator.pop(context),
+        ),
+      );
     }
     final objTitle = _title.isEmpty ? widget.obj.title : _title;
-    final displayTitle = objTitle.length > 30 ? '${objTitle.substring(0, 30)}...' : objTitle;
+    final displayTitle =
+        objTitle.length > 30 ? '${objTitle.substring(0, 30)}...' : objTitle;
     segments.add(BreadcrumbSegment(label: displayTitle));
     return BreadcrumbBar(segments: segments);
   }
@@ -501,21 +544,26 @@ void initState() {
     // the dropdown shows fine.
     _allowedMetaPropIds
       ..clear()
-      ..addAll(raw.map((m) {
-        final id = (m['id'] as num?)?.toInt() ??
-            (m['propId'] as num?)?.toInt() ??
-            (m['propertyId'] as num?)?.toInt();
-        return id;
-      }).whereType<int>())
+      ..addAll(
+        raw.map((m) {
+          final id =
+              (m['id'] as num?)?.toInt() ??
+              (m['propId'] as num?)?.toInt() ??
+              (m['propertyId'] as num?)?.toInt();
+          return id;
+        }).whereType<int>(),
+      )
       ..add(0)
       ..removeAll(_excludeMetaPropIds);
 
     for (final m in raw) {
-      final int? id = (m['id'] as num?)?.toInt() ??
+      final int? id =
+          (m['id'] as num?)?.toInt() ??
           (m['propId'] as num?)?.toInt() ??
           (m['propertyId'] as num?)?.toInt();
       if (id == null) continue;
-      final candidate = (m['propName'] as String?) ??
+      final candidate =
+          (m['propName'] as String?) ??
           (m['propertyName'] as String?) ??
           (m['name'] as String?) ??
           (m['title'] as String?);
@@ -532,14 +580,31 @@ void initState() {
     debugPrint('classProperties count: ${svc.classProperties.length}');
     debugPrint('allowedMetaPropIds: $_allowedMetaPropIds');
     debugPrint('raw props count: ${raw.length}');
-    debugPrint('raw prop IDs: ${raw.map((m) => m['id'] ?? m['propId']).toList()}');
+    debugPrint(
+      'raw prop IDs: ${raw.map((m) => m['id'] ?? m['propId']).toList()}',
+    );
+
+    const checkIds = {20, 21, 23, 25, 38, 81, 100};
+    for (final m in raw) {
+      final id = (m['id'] as num?)?.toInt() ?? (m['propId'] as num?)?.toInt();
+      if (id != null && checkIds.contains(id)) {
+        debugPrint(
+          '🔎 system prop check: id=$id '
+          'title="${m['title'] ?? m['propName'] ?? m['name']}" '
+          'alias="${m['alias']}"',
+        );
+      }
+    }
 
     return vms;
   }
 
   Future<List<ObjectFile>> _loadFiles() async {
     final svc = context.read<MFilesService>();
-    return svc.fetchObjectFiles(objectId: widget.obj.id, objectTypeId: widget.obj.objectTypeId);
+    return svc.fetchObjectFiles(
+      objectId: widget.obj.id,
+      objectTypeId: widget.obj.objectTypeId,
+    );
   }
 
   Future<WorkflowInfo?> _loadWorkflow() async {
@@ -554,7 +619,8 @@ void initState() {
     }
     if (mounted) {
       setState(() {
-        _selectedNextStateId = info.nextStates.isNotEmpty ? info.nextStates.first.id : null;
+        _selectedNextStateId =
+            info.nextStates.isNotEmpty ? info.nextStates.first.id : null;
       });
     }
     return info;
@@ -740,9 +806,10 @@ void initState() {
   }) {
     return Container(
       decoration: BoxDecoration(
-        border: isLast
-            ? null
-            : Border(bottom: BorderSide(color: Colors.grey.shade100)),
+        border:
+            isLast
+                ? null
+                : Border(bottom: BorderSide(color: Colors.grey.shade100)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       child: Row(
@@ -760,8 +827,16 @@ void initState() {
             ),
           ),
           allowed
-              ? const Icon(Icons.check_rounded, size: 20, color: AppColors.primary)
-              : Icon(Icons.remove_rounded, size: 18, color: Colors.grey.shade300),
+              ? const Icon(
+                Icons.check_rounded,
+                size: 20,
+                color: AppColors.primary,
+              )
+              : Icon(
+                Icons.remove_rounded,
+                size: 18,
+                color: Colors.grey.shade300,
+              ),
         ],
       ),
     );
@@ -781,45 +856,55 @@ void initState() {
     if (alreadySent.isNotEmpty) {
       await showDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Text(
-            'Signing already in progress',
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-          ),
-          content: Text(
-            'This file has already been sent for signing and is waiting on '
-            '${alreadySent.length == 1 ? 'a signature' : 'signatures'} from '
-            '${alreadySent.join(', ')}.\n\n'
-            'Additional signees cannot be added once sending has started. '
-            'To send to multiple people, include all their emails the first '
-            'time you send for signing.',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13.5, height: 1.4),
-          ),
-          actions: [
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                elevation: 0,
+        builder:
+            (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Got it'),
+              title: const Text(
+                'Signing already in progress',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              content: Text(
+                'This file has already been sent for signing and is waiting on '
+                '${alreadySent.length == 1 ? 'a signature' : 'signatures'} from '
+                '${alreadySent.join(', ')}.\n\n'
+                'Additional signees cannot be added once sending has started. '
+                'To send to multiple people, include all their emails the first '
+                'time you send for signing.',
+                style: TextStyle(
+                  color: Colors.grey.shade700,
+                  fontSize: 13.5,
+                  height: 1.4,
+                ),
+              ),
+              actions: [
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    elevation: 0,
+                  ),
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Got it'),
+                ),
+              ],
             ),
-          ],
-        ),
       );
       return;
     }
 
     await showDialog(
       context: context,
-      builder: (_) => _SendForSigningDialog(
-        file: file,
-        alreadySent: _sentSigneesByFile[file.fileId] ?? const <String>{},
-        onSend: (emails) => _sendForSigning(file: file, emails: emails),
-      ),
+      builder:
+          (_) => _SendForSigningDialog(
+            file: file,
+            alreadySent: _sentSigneesByFile[file.fileId] ?? const <String>{},
+            onSend: (emails) => _sendForSigning(file: file, emails: emails),
+          ),
     );
   }
 
@@ -842,37 +927,35 @@ void initState() {
       }
 
       _sentSigneesByFile
-        .putIfAbsent(file.fileId, () => {})
-        .addAll(emails.map((e) => e.trim().toLowerCase()));
+          .putIfAbsent(file.fileId, () => {})
+          .addAll(emails.map((e) => e.trim().toLowerCase()));
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Row(children: [
-            const Icon(Icons.check_circle, color: Colors.white, size: 18),
-            const SizedBox(width: 8),
-            Text(
-                'Sent for signing to ${emails.length} signee${emails.length == 1 ? '' : 's'}'),
-          ]),
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                'Sent for signing to ${emails.length} signee${emails.length == 1 ? '' : 's'}',
+              ),
+            ],
+          ),
           backgroundColor: Colors.green.shade600,
           behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
-      final msg = e.toString().contains('DSSPostObjectFile failed [400]')
-          ? 'This file already has a signature pending. Additional signees can only be added before the first send.'
-          : 'Failed to send: $e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+      final msg =
+          e.toString().contains('Send for signing failed.')
+              ? 'This item has been checked out and cannot be signed until it is checked back in.'
+              : 'Failed to send: $e';
+      SnackbarHelper.showError(context, msg);
     }
   }
 
@@ -943,53 +1026,20 @@ void initState() {
       if (!mounted) return;
       setState(() => _eSigning = false);
 
-      final signed = await Navigator.push<bool>(
+      await Navigator.push<bool>(
         context,
         MaterialPageRoute(
           builder: (_) => DssSigningScreen(signingUrl: signingUrl),
         ),
       );
-
-      if (signed == true && mounted) {
-        setState(() {
-          _future = _loadProps();
-          _filesFuture = _loadFiles();
-          _workflowFuture = _loadWorkflow();
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('Document signing completed'),
-              ],
-            ),
-            backgroundColor: Colors.green.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
-      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _eSigning = false);
       final msg =
-          e.toString().contains('DSSSelfSign failed [400]')
-              ? 'This file already has a signature pending and cannot be self-signed right now.'
+          e.toString().contains('Self sign failed.')
+              ? 'This item has been checked out and cannot be self-signed right now.'
               : 'Signing failed: $e';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      );
+      SnackbarHelper.showError(context, msg);
     }
   }
 
@@ -1007,13 +1057,18 @@ void initState() {
             decoration: BoxDecoration(
               color: const Color(0xFFFFCC02).withOpacity(0.25),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.7)),
+              border: Border.all(
+                color: const Color(0xFFFFCC02).withOpacity(0.7),
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.person_pin_outlined,
-                    size: 11, color: Color(0xFF92700A)),
+                const Icon(
+                  Icons.person_pin_outlined,
+                  size: 11,
+                  color: Color(0xFF92700A),
+                ),
                 const SizedBox(width: 4),
                 const Text(
                   'Assigned to you',
@@ -1033,14 +1088,18 @@ void initState() {
             decoration: BoxDecoration(
               color: const Color(0xFFFFF8E1),
               borderRadius: BorderRadius.circular(8),
-              border:
-                  Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+              border: Border.all(
+                color: const Color(0xFFFFCC02).withOpacity(0.5),
+              ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.assignment_ind_outlined,
-                    size: 15, color: Color(0xFF92700A)),
+                const Icon(
+                  Icons.assignment_ind_outlined,
+                  size: 15,
+                  color: Color(0xFF92700A),
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -1094,12 +1153,13 @@ void initState() {
   // ─────────────────────────────────────────────────────────────────────────
 
   List<int> _assignedUserIds(List<_PropVm> props) {
-    final candidates = props.where((p) {
-      final n = (_propNameById[p.id] ?? p.name).toLowerCase();
-      return n.contains('assign') &&
-          (p.datatype == 'MFDatatypeMultiSelectLookup' ||
-              p.datatype == 'MFDatatypeLookup');
-    }).toList();
+    final candidates =
+        props.where((p) {
+          final n = (_propNameById[p.id] ?? p.name).toLowerCase();
+          return n.contains('assign') &&
+              (p.datatype == 'MFDatatypeMultiSelectLookup' ||
+                  p.datatype == 'MFDatatypeLookup');
+        }).toList();
 
     int? toInt(dynamic x) {
       if (x is int) return x;
@@ -1129,12 +1189,13 @@ void initState() {
 
   Map<int, String> _assignedUserLabels(List<_PropVm> props) {
     final out = <int, String>{};
-    final candidates = props.where((p) {
-      final n = (_propNameById[p.id] ?? p.name).toLowerCase();
-      return n.contains('assign') &&
-          (p.datatype == 'MFDatatypeMultiSelectLookup' ||
-              p.datatype == 'MFDatatypeLookup');
-    }).toList();
+    final candidates =
+        props.where((p) {
+          final n = (_propNameById[p.id] ?? p.name).toLowerCase();
+          return n.contains('assign') &&
+              (p.datatype == 'MFDatatypeMultiSelectLookup' ||
+                  p.datatype == 'MFDatatypeLookup');
+        }).toList();
 
     void addFromMap(dynamic x) {
       if (x is! Map) return;
@@ -1146,7 +1207,7 @@ void initState() {
       if (id == null) return;
       final label =
           (x['displayValue'] ?? x['title'] ?? x['name'])?.toString().trim() ??
-              '';
+          '';
       if (label.isNotEmpty) out[id] = label;
     }
 
@@ -1191,23 +1252,29 @@ void initState() {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(children: [
-              Icon(
-                !currentlyApproved ? Icons.check_circle : Icons.undo,
-                color: Colors.white,
-                size: 18,
-              ),
-              const SizedBox(width: 8),
-              Text(!currentlyApproved
-                  ? 'Assignment approved'
-                  : 'Approval withdrawn'),
-            ]),
-            backgroundColor: !currentlyApproved
-                ? Colors.green.shade600
-                : Colors.orange.shade600,
+            content: Row(
+              children: [
+                Icon(
+                  !currentlyApproved ? Icons.check_circle : Icons.undo,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  !currentlyApproved
+                      ? 'Assignment approved'
+                      : 'Approval withdrawn',
+                ),
+              ],
+            ),
+            backgroundColor:
+                !currentlyApproved
+                    ? Colors.green.shade600
+                    : Colors.orange.shade600,
             behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
 
@@ -1216,14 +1283,9 @@ void initState() {
           _workflowFuture = _loadWorkflow();
         });
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed: ${svc.error ?? 'Unknown error'}'),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          ),
+        SnackbarHelper.showError(
+          context,
+          svc.error ?? 'Failed to update approval',
         );
       }
     } finally {
@@ -1254,51 +1316,56 @@ void initState() {
       return SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: (_assignmentCompleted ||
-                  _completingAssignment ||
-                  _saving ||
-                  _downloading)
-              ? null
-              : _markAssignmentComplete,
+          onPressed:
+              (_assignmentCompleted ||
+                      _completingAssignment ||
+                      _saving ||
+                      _downloading)
+                  ? null
+                  : _markAssignmentComplete,
           style: ElevatedButton.styleFrom(
             backgroundColor:
-                _assignmentCompleted ? const Color(0xFFE8F5E9) : AppColors.primary,
-            foregroundColor: _assignmentCompleted
-                ? const Color(0xFF2E7D32)
-                : Colors.white,
-            disabledBackgroundColor: _assignmentCompleted
-                ? const Color(0xFFE8F5E9)
-                : Colors.grey.shade200,
-            disabledForegroundColor: _assignmentCompleted
-                ? const Color(0xFF2E7D32)
-                : Colors.grey.shade400,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                _assignmentCompleted
+                    ? const Color(0xFFE8F5E9)
+                    : AppColors.primary,
+            foregroundColor:
+                _assignmentCompleted ? const Color(0xFF2E7D32) : Colors.white,
+            disabledBackgroundColor:
+                _assignmentCompleted
+                    ? const Color(0xFFE8F5E9)
+                    : Colors.grey.shade200,
+            disabledForegroundColor:
+                _assignmentCompleted
+                    ? const Color(0xFF2E7D32)
+                    : Colors.grey.shade400,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
             elevation: 0,
             padding: const EdgeInsets.symmetric(vertical: 14),
           ),
-          icon: _completingAssignment
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(Colors.white),
+          icon:
+              _completingAssignment
+                  ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                  : Icon(
+                    _assignmentCompleted
+                        ? Icons.check_circle
+                        : Icons.check_circle_outline,
+                    size: 18,
                   ),
-                )
-              : Icon(
-                  _assignmentCompleted
-                      ? Icons.check_circle
-                      : Icons.check_circle_outline,
-                  size: 18,
-                ),
           label: Text(
             _completingAssignment
                 ? 'Completing...'
                 : _assignmentCompleted
-                    ? 'Marked as Complete'
-                    : 'Mark as Complete',
+                ? 'Marked as Complete'
+                : 'Mark as Complete',
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ),
@@ -1327,27 +1394,29 @@ void initState() {
           final rawLabel = labels[uid] ?? 'User $uid';
           final nameParts =
               rawLabel.split(' ').where((s) => s.isNotEmpty).toList();
-          final initials = nameParts.length >= 2
-              ? '${nameParts.first[0]}${nameParts.last[0]}'.toUpperCase()
-              : rawLabel
-                  .substring(0, rawLabel.length.clamp(0, 2))
-                  .toUpperCase();
+          final initials =
+              nameParts.length >= 2
+                  ? '${nameParts.first[0]}${nameParts.last[0]}'.toUpperCase()
+                  : rawLabel
+                      .substring(0, rawLabel.length.clamp(0, 2))
+                      .toUpperCase();
 
           return Container(
             margin: const EdgeInsets.only(bottom: 8),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: isApproved
-                  ? const Color(0xFFE8F5E9)
-                  : isMe
+              color:
+                  isApproved
+                      ? const Color(0xFFE8F5E9)
+                      : isMe
                       ? const Color(0xFFF0F6FF)
                       : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isApproved
-                    ? const Color(0xFF4CAF50).withOpacity(0.4)
-                    : isMe
+                color:
+                    isApproved
+                        ? const Color(0xFF4CAF50).withOpacity(0.4)
+                        : isMe
                         ? const Color(0xFF2563EB).withOpacity(0.3)
                         : Colors.grey.shade200,
               ),
@@ -1386,9 +1455,10 @@ void initState() {
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.w600,
-                                color: isMe
-                                    ? AppColors.primary
-                                    : const Color(0xFF334155),
+                                color:
+                                    isMe
+                                        ? AppColors.primary
+                                        : const Color(0xFF334155),
                               ),
                             ),
                           ),
@@ -1396,7 +1466,9 @@ void initState() {
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
                               decoration: BoxDecoration(
                                 color: AppColors.primary.withOpacity(0.10),
                                 borderRadius: BorderRadius.circular(20),
@@ -1419,9 +1491,10 @@ void initState() {
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
-                          color: isApproved
-                              ? Colors.green.shade600
-                              : AppColors.surfaceLight,
+                          color:
+                              isApproved
+                                  ? Colors.green.shade600
+                                  : AppColors.surfaceLight,
                         ),
                       ),
                     ],
@@ -1440,18 +1513,20 @@ void initState() {
                         ? Icons.check_circle
                         : Icons.radio_button_unchecked,
                     size: 24,
-                    color: isApproved
-                        ? Colors.green.shade500
-                        : Colors.grey.shade300,
+                    color:
+                        isApproved
+                            ? Colors.green.shade500
+                            : Colors.grey.shade300,
                   )
                 else
                   Tooltip(
                     message:
                         isApproved ? 'Withdraw approval' : 'Approve assignment',
                     child: GestureDetector(
-                      onTap: isBusyGlobal
-                          ? null
-                          : () => _toggleApproval(
+                      onTap:
+                          isBusyGlobal
+                              ? null
+                              : () => _toggleApproval(
                                 userId: uid,
                                 currentlyApproved: isApproved,
                               ),
@@ -1460,32 +1535,39 @@ void initState() {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          color: isApproved
-                              ? Colors.green.shade500
-                              : Colors.white,
+                          color:
+                              isApproved ? Colors.green.shade500 : Colors.white,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: isBusyGlobal
-                                ? Colors.grey.shade300
-                                : isApproved
+                            color:
+                                isBusyGlobal
+                                    ? Colors.grey.shade300
+                                    : isApproved
                                     ? Colors.green.shade500
                                     : const Color(0xFF2563EB),
                             width: 2,
                           ),
-                          boxShadow: isMe && !isApproved
-                              ? [
-                                  BoxShadow(
-                                    color: AppColors.primary.withOpacity(0.15),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  )
-                                ]
-                              : null,
+                          boxShadow:
+                              isMe && !isApproved
+                                  ? [
+                                    BoxShadow(
+                                      color: AppColors.primary.withOpacity(
+                                        0.15,
+                                      ),
+                                      blurRadius: 6,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ]
+                                  : null,
                         ),
-                        child: isApproved
-                            ? const Icon(Icons.check,
-                                size: 16, color: Colors.white)
-                            : null,
+                        child:
+                            isApproved
+                                ? const Icon(
+                                  Icons.check,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
+                                : null,
                       ),
                     ),
                   ),
@@ -1518,18 +1600,23 @@ void initState() {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Card header ─────────────────────────────────────────────────
+          // ── Card header (unchanged) ──────────────────────────────────────
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.04),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
               border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.account_tree_outlined,
-                    size: 16, color: AppColors.primary),
+                const Icon(
+                  Icons.account_tree_outlined,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
@@ -1556,40 +1643,14 @@ void initState() {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ── No workflow notice ─────────────────────────────────────
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(Icons.info_outline_rounded,
-                          size: 15, color: Colors.grey.shade400),
-                      const SizedBox(width: 8),
-                      Text(
-                        'No workflow assigned to this object',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Divider(height: 1, color: Colors.grey.shade100),
-                const SizedBox(height: 14),
-
-                // ── Assign section ─────────────────────────────────────────
+                // ── Assign section ────────────────────────────────────────
                 Row(
                   children: [
-                    const Icon(Icons.add_circle_outline_rounded,
-                        size: 14, color: AppColors.primary),
+                    const Icon(
+                      Icons.add_circle_outline_rounded,
+                      size: 14,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 6),
                     const Text(
                       'ASSIGN WORKFLOW',
@@ -1603,6 +1664,7 @@ void initState() {
                   ],
                 ),
                 const SizedBox(height: 10),
+
                 FutureBuilder<List<WorkflowOption>>(
                   future: _workflowsFuture,
                   builder: (context, snap) {
@@ -1614,7 +1676,10 @@ void initState() {
                     }
                     if (snap.hasError) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.orange.shade50,
                           borderRadius: BorderRadius.circular(10),
@@ -1622,12 +1687,20 @@ void initState() {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.error_outline_rounded, size: 15, color: Colors.orange.shade700),
+                            Icon(
+                              Icons.error_outline_rounded,
+                              size: 15,
+                              color: Colors.orange.shade700,
+                            ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 "Couldn't load workflows. Pull to refresh or try again.",
-                                style: TextStyle(fontSize: 13, color: Colors.orange.shade800, fontWeight: FontWeight.w500),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.orange.shade800,
+                                  fontWeight: FontWeight.w500,
+                                ),
                               ),
                             ),
                           ],
@@ -1637,7 +1710,10 @@ void initState() {
                     final workflows = snap.data ?? [];
                     if (workflows.isEmpty) {
                       return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.grey.shade50,
                           borderRadius: BorderRadius.circular(10),
@@ -1645,139 +1721,287 @@ void initState() {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.info_outline_rounded, size: 15, color: Colors.grey.shade400),
+                            Icon(
+                              Icons.info_outline_rounded,
+                              size: 15,
+                              color: Colors.grey.shade400,
+                            ),
                             const SizedBox(width: 8),
                             Text(
                               "No workflow available for this item",
-                              style: TextStyle(fontSize: 13, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey.shade600,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ],
                         ),
                       );
                     }
                     _selectedWorkflowId ??= workflows.first.id;
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(10),
-                              border:
-                                  Border.all(color: Colors.grey.shade200),
-                            ),
-                            child: DropdownButtonHideUnderline(
-                              child: ButtonTheme(
-                                alignedDropdown: true,
-                                child: DropdownButton<int>(
-                                  value: _selectedWorkflowId,
-                                  isExpanded: true,
-                                  isDense: true,
-                                  style: const TextStyle(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w500,
-                                    color: Color(0xFF1E293B),
-                                  ),
-                                  icon: Icon(
-                                    Icons.keyboard_arrow_down_rounded,
-                                    color: Colors.grey.shade500,
-                                    size: 20,
-                                  ),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 10),
-                                  borderRadius: BorderRadius.circular(10),
-                                  items: workflows
-                                      .map((w) => DropdownMenuItem<int>(
-                                            value: w.id,
-                                            child: Text(
-                                              w.title,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
-                                                fontSize: 13.5,
-                                                fontWeight: FontWeight.w500,
-                                                color: Color(0xFF1E293B),
+
+                    // ── Nested: derive states for the selected workflow ──────
+                    return FutureBuilder<List<VaultWorkflowDefinition>>(
+                      future: _vaultWorkflowsFuture,
+                      builder: (context, defSnap) {
+                        final defs =
+                            defSnap.data ?? const <VaultWorkflowDefinition>[];
+                        final selectedDef = defs.firstWhere(
+                          (d) => d.workflowId == _selectedWorkflowId,
+                          orElse:
+                              () => VaultWorkflowDefinition(
+                                workflowId: _selectedWorkflowId ?? -1,
+                                workflowName: '',
+                                classId: 0,
+                                states: const [],
+                              ),
+                        );
+
+                        // Default or reset the starting-state pick whenever the
+                        // workflow selection changes or hasn't been set yet.
+                        if (selectedDef.states.isNotEmpty &&
+                            !selectedDef.states.any(
+                              (s) => s.id == _selectedAssignStateId,
+                            )) {
+                          final entry = selectedDef.states.firstWhere(
+                            (s) => s.isSelectable,
+                            orElse: () => selectedDef.states.first,
+                          );
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted)
+                              setState(() => _selectedAssignStateId = entry.id);
+                          });
+                        }
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ── Workflow dropdown (full width now) ──────────
+                            Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(color: Colors.grey.shade200),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: ButtonTheme(
+                                  alignedDropdown: true,
+                                  child: DropdownButton<int>(
+                                    value: _selectedWorkflowId,
+                                    isExpanded: true,
+                                    isDense: true,
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF1E293B),
+                                    ),
+                                    icon: Icon(
+                                      Icons.keyboard_arrow_down_rounded,
+                                      color: Colors.grey.shade500,
+                                      size: 20,
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    borderRadius: BorderRadius.circular(10),
+                                    items:
+                                        workflows
+                                            .map(
+                                              (w) => DropdownMenuItem<int>(
+                                                value: w.id,
+                                                child: Text(
+                                                  w.title,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: const TextStyle(
+                                                    fontSize: 13.5,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Color(0xFF1E293B),
+                                                  ),
+                                                ),
                                               ),
-                                            ),
-                                          ))
-                                      .toList(),
-                                  onChanged: !canInteract
-                                      ? null
-                                      : (v) => setState(
-                                          () => _selectedWorkflowId = v),
+                                            )
+                                            .toList(),
+                                    onChanged:
+                                        !canInteract
+                                            ? null
+                                            : (v) => setState(() {
+                                              _selectedWorkflowId = v;
+                                              _selectedAssignStateId = null;
+                                            }),
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        SizedBox(
-                          height: 44,
-                          child: ElevatedButton(
-                            onPressed: (!canInteract ||
-                                    _selectedWorkflowId == null)
-                                ? null
-                                : () async {
-                                    setState(
-                                        () => _assigningWorkflow = true);
-                                    try {
-                                      final workflowId = _selectedWorkflowId!;
-                                      final initialStateId =
-                                          _initialStateForWorkflow(workflowId);
-                                      final svc =
-                                          context.read<MFilesService>();
-                                      final ok =
-                                          await svc.setObjectWorkflowState(
-                                        objectTypeId: widget.obj.objectTypeId,
-                                        objectId: widget.obj.id,
-                                        workflowId: workflowId,
-                                        stateId: initialStateId,
-                                      );
-                                      if (!ok) {
-                                        throw Exception(
-                                            svc.error ?? 'Unknown');
-                                      }
-                                      if (!mounted) return;
-                                      setState(() {
-                                        _workflowFuture = _loadWorkflow();
-                                        _future = _loadProps();
-                                      });
-                                    } catch (e) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                        SnackBar(
-                                          content: Text(e.toString()),
-                                          backgroundColor: Colors.red.shade600,
-                                        ),
-                                      );
-                                    } finally {
-                                      if (mounted) {
-                                        setState(
-                                            () => _assigningWorkflow = false);
-                                      }
-                                    }
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              foregroundColor: Colors.white,
-                              disabledBackgroundColor: Colors.grey.shade200,
-                              disabledForegroundColor: Colors.grey.shade400,
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(10)),
-                              elevation: 0,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 20),
+
+                            // ── Starting state dropdown (new) ────────────────
+                            if (selectedDef.states.isNotEmpty) ...[
+                              const SizedBox(height: 10),
+                              Row(
+                                children: [
+                                  const Icon(
+                                    Icons.flag_outlined,
+                                    size: 14,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  const Text(
+                                    'STATE',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: AppColors.primary,
+                                      letterSpacing: 0.8,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 10),
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF8FAFC),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.grey.shade200,
+                                  ),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: ButtonTheme(
+                                    alignedDropdown: true,
+                                    child: DropdownButton<int>(
+                                      value: _selectedAssignStateId,
+                                      isExpanded: true,
+                                      isDense: true,
+                                      style: const TextStyle(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: Color(0xFF1E293B),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                      borderRadius: BorderRadius.circular(10),
+                                      items:
+                                          selectedDef.states
+                                              .where((s) => s.isSelectable)
+                                              .map(
+                                                (s) => DropdownMenuItem<int>(
+                                                  value: s.id,
+                                                  child: Text(
+                                                    s.name,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              )
+                                              .toList(),
+                                      onChanged:
+                                          !canInteract
+                                              ? null
+                                              : (v) => setState(
+                                                () =>
+                                                    _selectedAssignStateId = v,
+                                              ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+
+                            // ── Assign button ────────────────────────────────
+                            const SizedBox(height: 10),
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: ElevatedButton(
+                                onPressed:
+                                    (!canInteract ||
+                                            _selectedWorkflowId == null ||
+                                            _selectedAssignStateId == null)
+                                        ? null
+                                        : () async {
+                                          if (_isCheckedOut) {
+                                            SnackbarHelper.showWarning(
+                                              context,
+                                              'Check this item in before assigning a workflow.',
+                                            );
+                                            return;
+                                          }
+                                          setState(
+                                            () => _assigningWorkflow = true,
+                                          );
+                                          try {
+                                            final workflowId =
+                                                _selectedWorkflowId!;
+                                            final initialStateId =
+                                                _selectedAssignStateId;
+                                            if (initialStateId == null) {
+                                              throw Exception(
+                                                'Select a starting state before assigning.',
+                                              );
+                                            }
+                                            final svc =
+                                                context.read<MFilesService>();
+                                            final ok = await svc
+                                                .setObjectWorkflowState(
+                                                  objectTypeId:
+                                                      widget.obj.objectTypeId,
+                                                  objectId: widget.obj.id,
+                                                  workflowId: workflowId,
+                                                  stateId: initialStateId,
+                                                );
+                                            if (!ok) {
+                                              throw Exception(
+                                                svc.error ?? 'Unknown',
+                                              );
+                                            }
+                                            if (!mounted) return;
+                                            setState(() {
+                                              _workflowFuture = _loadWorkflow();
+                                              _future = _loadProps();
+                                              _selectedWorkflowId = null;
+                                              _selectedAssignStateId = null;
+                                            });
+                                          } catch (e) {
+                                            if (!mounted) return;
+                                            SnackbarHelper.showError(
+                                              context,
+                                              e,
+                                            );
+                                          } finally {
+                                            if (mounted) {
+                                              setState(
+                                                () =>
+                                                    _assigningWorkflow = false,
+                                              );
+                                            }
+                                          }
+                                        },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  disabledBackgroundColor: Colors.grey.shade200,
+                                  disabledForegroundColor: Colors.grey.shade400,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: const Text(
+                                  'Assign',
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
                             ),
-                            child: const Text(
-                              'Assign',
-                              style: TextStyle(
-                                  fontSize: 13.5,
-                                  fontWeight: FontWeight.w700),
-                            ),
-                          ),
-                        ),
-                      ],
+                          ],
+                        );
+                      },
                     );
                   },
                 ),
@@ -1789,76 +2013,111 @@ void initState() {
     );
   }
 
-  Future<void> _confirmAndDelete() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Delete object?'),
-        content: const Text('This will move the object to Deleted items.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    if (!mounted) return;
+  /// ────────────────────────── MAKE COPY ────────────────────────────────────
+  Future<void> _makeCopy() async {
     final svc = context.read<MFilesService>();
-    final success = await svc.deleteObject(
-      objectId: widget.obj.id,
-      classId: widget.obj.classId,
-    );
-    if (!mounted) return;
-    if (success) {
-      SnackbarHelper.showSuccess(
+
+    final objectType =
+        svc.objectTypes
+            .where((t) => t.id == widget.obj.objectTypeId)
+            .firstOrNull;
+    if (objectType == null) {
+      SnackbarHelper.showWarning(
         context,
-        'Object deleted successfully',
+        'Object type unavailable — please refresh',
       );
-      Navigator.pop(context, true);
-    } else {
-      SnackbarHelper.showError(
-        context,
-        'Failed to delete object: ${svc.error ?? 'Unknown error'}',
-      );
+      return;
     }
+
+    // ── Block the details body while we fetch props for the copy form.
+    setState(() => _preparingCopy = true);
+
+    try {
+      await svc.fetchClassProperties(
+        widget.obj.objectTypeId,
+        widget.obj.classId,
+      );
+
+      final displayIdInt = int.tryParse(widget.obj.displayId) ?? widget.obj.id;
+      List<Map<String, dynamic>>? srcProps;
+      try {
+        srcProps = await svc.fetchObjectViewProps(
+          objectId: displayIdInt,
+          objectTypeId: widget.obj.objectTypeId,
+        );
+      } catch (e) {
+        debugPrint('⚠️ Make-a-copy: could not preload source props: $e');
+      }
+
+      if (!mounted) return;
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder:
+              (_) => DynamicFormScreen(
+                objectType: objectType,
+                copyFrom: widget.obj,
+                copyFromPrefetchedProps: srcProps,
+              ),
+        ),
+      );
+    } finally {
+      // Clear the flag whether we succeeded, failed, or the user
+      // navigated away mid-fetch. Never leave the screen stuck on the loader.
+      if (mounted) setState(() => _preparingCopy = false);
+    }
+  }
+
+  Future<void> _confirmAndDelete() async {
+    await showLongPressDeleteSheet(
+      context,
+      obj: widget.obj,
+      onDeleted: () {
+        if (!mounted) return;
+        Navigator.pop(context, true);
+      },
+    );
   }
 
   Future<void> _markAssignmentComplete() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text(
-          'Complete assignment?',
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        content: Text(
-          'Mark this assignment as complete?\nThis cannot be undone.',
-          style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: TextStyle(color: Colors.grey.shade700)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-              elevation: 0,
+      builder:
+          (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Complete'),
+            title: const Text(
+              'Complete assignment?',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+            content: Text(
+              'Mark this assignment as complete?\nThis cannot be undone.',
+              style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  elevation: 0,
+                ),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Complete'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
 
     if (confirmed != true || !mounted) return;
@@ -1866,36 +2125,37 @@ void initState() {
     setState(() => _completingAssignment = true);
     try {
       final svc = context.read<MFilesService>();
-      final ok = await svc.markAssignmentComplete(
+      final ok = await svc.approveAssignment(
         objectId: widget.obj.id,
         classId: widget.obj.classId,
+        objectTypeId: widget.obj.objectTypeId,
+        userId: svc.mfilesUserId ?? 0,
+        approve: true,
       );
       if (!mounted) return;
       if (ok) {
         setState(() => _assignmentCompleted = true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Row(children: [
-              Icon(Icons.check_circle, color: Colors.white, size: 18),
-              SizedBox(width: 8),
-              Text('Assignment marked as complete'),
-            ]),
+            content: const Row(
+              children: [
+                Icon(Icons.check_circle, color: Colors.white, size: 18),
+                SizedBox(width: 8),
+                Text('Assignment marked as complete'),
+              ],
+            ),
             backgroundColor: Colors.green.shade600,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
         );
         Navigator.pop(context, true);
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed: ${svc.error ?? 'Unknown error'}'),
-            backgroundColor: Colors.red.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
-          ),
+        SnackbarHelper.showError(
+          context,
+          svc.error ?? 'Failed to complete assignment! Please try again.',
         );
       }
     } finally {
@@ -1962,12 +2222,13 @@ void initState() {
       initialDate: initial,
       firstDate: DateTime(1900),
       lastDate: DateTime(2100),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-          colorScheme: const ColorScheme.light(primary: AppColors.primary),
-        ),
-        child: child!,
-      ),
+      builder:
+          (ctx, child) => Theme(
+            data: Theme.of(ctx).copyWith(
+              colorScheme: const ColorScheme.light(primary: AppColors.primary),
+            ),
+            child: child!,
+          ),
     );
 
     if (pickedDate == null || !mounted) return;
@@ -1978,12 +2239,15 @@ void initState() {
       final pickedTime = await showTimePicker(
         context: context,
         initialTime: TimeOfDay(hour: initial.hour, minute: initial.minute),
-        builder: (ctx, child) => Theme(
-          data: Theme.of(ctx).copyWith(
-            colorScheme: const ColorScheme.light(primary: AppColors.primary),
-          ),
-          child: child!,
-        ),
+        builder:
+            (ctx, child) => Theme(
+              data: Theme.of(ctx).copyWith(
+                colorScheme: const ColorScheme.light(
+                  primary: AppColors.primary,
+                ),
+              ),
+              child: child!,
+            ),
       );
       if (!mounted) return;
       if (pickedTime != null) {
@@ -2032,6 +2296,7 @@ void initState() {
                 ),
               ),
             ),
+
           // ── TEMPORARY: smoke-test button for checkoutObject/undoCheckoutObject.
           //    Remove once the long-press multi-select menu ships this properly.
           Consumer<MFilesService>(
@@ -2040,51 +2305,103 @@ void initState() {
               final busy = _saving || _downloading || _changingWorkflow;
               return IconButton(
                 tooltip: isCheckedOut ? 'Check In' : 'Check Out',
-                onPressed: busy
-                    ? null
-                    : () async {
-                        final ok = isCheckedOut
-                            ? await svc.undoCheckoutObject(
-                                objectId: widget.obj.id,
-                                objectTypeId: widget.obj.objectTypeId,
-                              )
-                            : await svc.checkoutObject(
-                                objectId: widget.obj.id,
-                                objectTypeId: widget.obj.objectTypeId,
-                              );
-                        final errorMsg = svc.error ?? 'Unknown error';
+                onPressed:
+                    busy
+                        ? null
+                        : () async {
+                          final ok =
+                              isCheckedOut
+                                  ? await svc.undoCheckoutObject(
+                                    objectId: widget.obj.id,
+                                    objectTypeId: widget.obj.objectTypeId,
+                                  )
+                                  : await svc.checkoutObject(
+                                    objectId: widget.obj.id,
+                                    objectTypeId: widget.obj.objectTypeId,
+                                  );
                           if (!mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                ok
-                                    ? (isCheckedOut ? 'Checked in' : 'Checked out')
-                                    : errorMsg == 'already_checked_out'
-                                        ? 'Already checked out — status updated'
-                                        : 'Failed: $errorMsg',
-                              ),
-                            backgroundColor: ok
-                                ? Colors.green.shade600
-                                : Colors.red.shade600,
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      },
-                icon: Icon(
-                  isCheckedOut ? Icons.lock_open : Icons.lock,
-                ),
+                          final err = svc.error ?? '';
+                          if (ok) {
+                            SnackbarHelper.showSuccess(
+                              context,
+                              isCheckedOut ? 'Checked in' : 'Checked out',
+                            );
+                          } else if (err == 'already_checked_out') {
+                            SnackbarHelper.showWarning(
+                              context,
+                              'Already checked out — status updated',
+                            );
+                          } else {
+                            SnackbarHelper.showError(
+                              context,
+                              err.isEmpty ? 'Action failed' : err,
+                            );
+                          }
+                        },
+                icon: Icon(isCheckedOut ? Icons.lock_open : Icons.lock),
               );
             },
           ),
-          if (widget.obj.userPermission?.deletePermission ?? false)
-            IconButton(
-              onPressed:
-                  (_saving || _downloading || _changingWorkflow)
-                      ? null
-                      : _confirmAndDelete,
-              icon: const Icon(Icons.delete_outline),
-            ),
-          const SizedBox(width: 4),
+
+          Consumer<MFilesService>(
+            builder:
+                (context, svc, _) => BatchActionsMenu(
+                  onSelected: (value) async {
+                    switch (value) {
+                      case 'history':
+                        if (svc.isCheckedOutLocally(widget.obj.id)) {
+                          SnackbarHelper.showWarning(
+                            context,
+                            'Check in this item to view its version history.',
+                          );
+                          break;
+                        }
+                        await showVersionHistorySheet(
+                          context,
+                          obj: widget.obj,
+                          onRolledBack: () {
+                            setState(() {
+                              _future = _loadProps();
+                              _filesFuture = _loadFiles();
+                              _workflowFuture = _loadWorkflow();
+                            });
+                          },
+                        );
+                        break;
+
+                      case 'copy':
+                        await _makeCopy();
+                        break;
+
+                      case 'delete':
+                        await _confirmAndDelete();
+                        break;
+                    }
+                  },
+                  disabledValues: {
+                    // Match the list screens' guards: only single-object screens
+                    // here, so history/copy are always enabled.
+                    // Hide the actions the user lacks permission for.
+                    if (svc.isCheckedOutLocally(widget.obj.id)) 'history',
+                    if (!(widget.obj.userPermission?.readPermission ?? false))
+                      'copy',
+                    if (!(widget.obj.userPermission?.deletePermission ?? false))
+                      'delete',
+                  },
+                  items: const [
+                    BatchMenuAction(
+                      'history',
+                      Icons.history_rounded,
+                      'Version History',
+                    ),
+                    BatchMenuAction('copy', Icons.copy_rounded, 'Make a Copy'),
+                    // Delete is not in the default items list; add it explicitly here.
+                    BatchMenuAction('delete', Icons.delete_outline, 'Delete'),
+                  ],
+                  // White icon to match the appbar foreground.
+                  iconColor: Colors.white,
+                ),
+          ),
         ],
       ),
       body: NetworkBanner(
@@ -2092,153 +2409,173 @@ void initState() {
           children: [
             _buildBreadcrumbs(),
             Expanded(
-              child: FutureBuilder<List<_PropVm>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  
-                  // ── Error state ─────────
-                  if (snap.hasError) {
-                    return Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        children: [
-                          Icon(Icons.info_outline_rounded, size: 16, color: Colors.grey.shade400),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Object details aren\'t available right now. Pull to refresh to try again.',
-                              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+              child:
+                  _preparingCopy
+                      ? const _PreparingCopyLoader()
+                      : FutureBuilder<List<_PropVm>>(
+                        future: _future,
+                        builder: (context, snap) {
+                          if (snap.connectionState == ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
 
-                  final props = snap.data ?? [];
-                  final metaProps = props
-                      .where((p) => _allowedMetaPropIds.contains(p.id))
-                      .toList();
-                  return RefreshIndicator(
-                    onRefresh: () async {
-                      setState(() {
-                        _future = _loadProps();
-                        _filesFuture = _loadFiles();
-                        _workflowFuture = _loadWorkflow();
-                        _commentsFuture = _loadComments();
-                        _dirty.clear();
-                        _dirtyLookupLabels.clear();
-                        _editingPropId = null;
-                        _approvedUserIds.clear();
-                        _approvingUserIds.clear();
-                        _assignedIdsSnapshot = null;
-                      });
-                      await _future;
-                    },
-                    child: Scrollbar(
-                      controller: _pageScroll,
-                      thickness: 6,
-                      radius: const Radius.circular(3),
-                      interactive: true,
-                      child: ListView(
-                        controller: _pageScroll,
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
-                        children: [
-                          // ── Header card ──────────────────────────────────
-                          FutureBuilder<List<ObjectFile>>(
-                            future: _filesFuture,
-                            builder: (context, sigSnap) {
-                              final files = sigSnap.data ?? [];
-                              return Column(
+                          // ── Error state ─────────
+                          if (snap.hasError) {
+                            return Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
                                 children: [
-                                  const SizedBox(height: 12),
-                                  _headerCard(
-                                    obj,
-                                    firstFile:
-                                        files.isNotEmpty ? files.first : null,
+                                  Icon(
+                                    Icons.info_outline_rounded,
+                                    size: 16,
+                                    color: Colors.grey.shade400,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Object details aren\'t available right now. Pull to refresh to try again.',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Colors.grey.shade500,
+                                      ),
+                                    ),
                                   ),
                                 ],
-                              );
+                              ),
+                            );
+                          }
+
+                          final props = snap.data ?? [];
+                          final metaProps =
+                              props
+                                  .where(
+                                    (p) => _allowedMetaPropIds.contains(p.id),
+                                  )
+                                  .toList();
+                          return RefreshIndicator(
+                            onRefresh: () async {
+                              setState(() {
+                                _future = _loadProps();
+                                _filesFuture = _loadFiles();
+                                _workflowFuture = _loadWorkflow();
+                                _commentsFuture = _loadComments();
+                                _dirty.clear();
+                                _dirtyLookupLabels.clear();
+                                _editingPropId = null;
+                                _approvedUserIds.clear();
+                                _approvingUserIds.clear();
+                                _assignedIdsSnapshot = null;
+                              });
+                              await _future;
                             },
-                          ),
-                          const SizedBox(height: 12),
-
-                          // ── Metadata card ────────────────────────────────
-                          _metadataCard(metaProps),
-
-                          // ── Workflow card ────────────────────────────────
-                          FutureBuilder<WorkflowInfo?>(
-                            future: _workflowFuture,
-                            builder: (context, wsnap) {
-                              if (wsnap.connectionState ==
-                                  ConnectionState.waiting) {
-                                return const SizedBox.shrink();
-                              }
-                              final info = wsnap.data;
-                              return Column(
+                            child: Scrollbar(
+                              controller: _pageScroll,
+                              thickness: 6,
+                              radius: const Radius.circular(3),
+                              interactive: true,
+                              child: ListView(
+                                controller: _pageScroll,
+                                keyboardDismissBehavior:
+                                    ScrollViewKeyboardDismissBehavior.onDrag,
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
                                 children: [
+                                  // ── Header card ──────────────────────────────────
+                                  FutureBuilder<List<ObjectFile>>(
+                                    future: _filesFuture,
+                                    builder: (context, sigSnap) {
+                                      final files = sigSnap.data ?? [];
+                                      return Column(
+                                        children: [
+                                          const SizedBox(height: 0),
+                                          _headerCard(
+                                            obj,
+                                            firstFile:
+                                                files.isNotEmpty
+                                                    ? files.first
+                                                    : null,
+                                          ),
+                                        ],
+                                      );
+                                    },
+                                  ),
                                   const SizedBox(height: 12),
-                                  if (info == null)
-                                    _assignWorkflowCard()
-                                  else
-                                    _buildWorkflowCardWithState(info),
-                                ],
-                              );
-                            },
-                          ),
 
-                          // ── Preview card ─────────────────────────────────
-                          FutureBuilder<List<ObjectFile>>(
-                            future: _filesFuture,
-                            builder: (context, previewSnap) {
-                              final files = previewSnap.data;
-                              if (files != null &&
-                                  files.isEmpty &&
-                                  widget.obj.objectTypeId != 0) {
-                                return const SizedBox.shrink();
-                              }
-                              return Column(
-                                children: [
+                                  // ── Metadata card ────────────────────────────────
+                                  _metadataCard(metaProps),
+
+                                  // ── Workflow card ────────────────────────────────
                                   const SizedBox(height: 12),
-                                  _previewCard(obj),
-                                ],
-                              );
-                            },
-                          ),
 
-                          // ── e-Signature card (separate, optional) ────────
-                          FutureBuilder<List<ObjectFile>>(
-                            future: _filesFuture,
-                            builder: (context, sigSnap) {
-                              final files = sigSnap.data ?? [];
-                              if (files.isEmpty) {
-                                return const SizedBox.shrink();
-                              }
-                              return Column(
-                                children: [
+                                  // Inside your build method or workflow section builder:
+                                  FutureBuilder<WorkflowInfo?>(
+                                    future: _workflowFuture,
+                                    builder: (context, snapshot) {
+                                      final workflowInfo = snapshot.data;
+                                      final bool hasWorkflowAssigned =
+                                          workflowInfo != null &&
+                                          workflowInfo.workflowId > 0;
+
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          // Assign card — only while nothing is assigned yet
+                                          if (!hasWorkflowAssigned)
+                                            _buildWorkflowDropdown(),
+
+                                          // Assigned card — only once the workflow is actually on the object
+                                          if (hasWorkflowAssigned)
+                                            _buildStateSelector(workflowInfo),
+                                        ],
+                                      );
+                                    },
+                                  ),
+
+                                  // ── Preview card ─────────────────────────────────
                                   const SizedBox(height: 12),
-                                  _signingCard(files),
-                                ],
-                              );
-                            },
-                          ),
+                                  FutureBuilder<List<ObjectFile>>(
+                                    future: _filesFuture,
+                                    builder: (context, previewSnap) {
+                                      final files = previewSnap.data;
+                                      if (files != null &&
+                                          files.isEmpty &&
+                                          widget.obj.objectTypeId != 0) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return _previewCard(obj);
+                                    },
+                                  ),
 
-                          // ── Comments card ────────────────────────────────
-                          const SizedBox(height: 12),
-                          _commentsCard(),
-                          const SizedBox(height: 32),
-                        ],
+                                  // ── e-Signature card (separate, optional) ────────
+                                  FutureBuilder<List<ObjectFile>>(
+                                    future: _filesFuture,
+                                    builder: (context, sigSnap) {
+                                      final files = sigSnap.data ?? [];
+                                      if (files.isEmpty) {
+                                        return const SizedBox.shrink();
+                                      }
+                                      return Column(
+                                        children: [
+                                          const SizedBox(height: 12),
+                                          _signingCard(files),
+                                        ],
+                                      );
+                                    },
+                                  ),
+
+                                  // ── Comments card ────────────────────────────────
+                                  const SizedBox(height: 12),
+                                  _commentsCard(),
+                                  const SizedBox(height: 32),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    ),
-                  );
-                },
-              ),
             ),
           ],
         ),
@@ -2261,7 +2598,8 @@ void initState() {
       }
     }
     final hasPdf = pdfFile != null;
-    final conversionTarget = files.first; // offered for conversion when no PDF exists
+    final conversionTarget =
+        files.first; // offered for conversion when no PDF exists
 
     return Container(
       decoration: BoxDecoration(
@@ -2277,22 +2615,33 @@ void initState() {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.04),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
               border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.draw_rounded, size: 16, color: AppColors.primary),
+                const Icon(
+                  Icons.draw_rounded,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
                     'e-Sign options',
-                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.primary),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
                   ),
                 ),
                 if (_eSigning)
                   const SizedBox(
-                    height: 16, width: 16,
+                    height: 16,
+                    width: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
               ],
@@ -2301,9 +2650,10 @@ void initState() {
 
           Padding(
             padding: const EdgeInsets.all(12),
-            child: hasPdf
-                ? _signingReadyBody(pdfFile, busy)
-                : _signingLockedBody(conversionTarget, busy),
+            child:
+                hasPdf
+                    ? _signingReadyBody(pdfFile, busy)
+                    : _signingLockedBody(conversionTarget, busy),
           ),
         ],
       ),
@@ -2312,7 +2662,8 @@ void initState() {
 
   // Extracted from the old body — unchanged buttons, just fed `pdfFile` explicitly
   Widget _signingReadyBody(ObjectFile file, bool busy) {
-    final fileName = file.fileTitle.trim().isEmpty ? 'this file' : file.fileTitle;
+    final fileName =
+        file.fileTitle.trim().isEmpty ? 'this file' : file.fileTitle;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2338,20 +2689,29 @@ void initState() {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 11),
                   elevation: 0,
-                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-                icon: _eSigning
-                    ? const SizedBox(
-                        width: 14, height: 14,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.draw_rounded, size: 15),
+                icon:
+                    _eSigning
+                        ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Colors.white,
+                            ),
+                          ),
+                        )
+                        : const Icon(Icons.draw_rounded, size: 15),
                 label: const Text('Sign Myself'),
               ),
             ),
@@ -2362,10 +2722,15 @@ void initState() {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
                   side: const BorderSide(color: AppColors.primary),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 11),
                   elevation: 0,
-                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  textStyle: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
                 icon: const Icon(Icons.send_rounded, size: 15),
                 label: const Text('Send for Signing'),
@@ -2385,7 +2750,11 @@ void initState() {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.lock_outline_rounded, size: 13, color: Colors.grey.shade400),
+            Icon(
+              Icons.lock_outline_rounded,
+              size: 13,
+              color: Colors.grey.shade400,
+            ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
@@ -2399,14 +2768,20 @@ void initState() {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: busy ? null : () => _convertToPdf(widget.obj, conversionTarget),
+            onPressed:
+                busy ? null : () => _convertToPdf(widget.obj, conversionTarget),
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.primary,
               side: const BorderSide(color: AppColors.primary),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
               padding: const EdgeInsets.symmetric(vertical: 11),
               elevation: 0,
-              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              textStyle: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
             icon: const Icon(Icons.picture_as_pdf_rounded, size: 15),
             label: const Text('Convert to PDF'),
@@ -2421,7 +2796,8 @@ void initState() {
   // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildWorkflowCardWithState(WorkflowInfo info) {
-    final canChange = info.nextStates.isNotEmpty &&
+    final canChange =
+        info.nextStates.isNotEmpty &&
         !_changingWorkflow &&
         !_saving &&
         !_downloading;
@@ -2442,13 +2818,18 @@ void initState() {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.04),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
               border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.account_tree_outlined,
-                    size: 16, color: AppColors.primary),
+                const Icon(
+                  Icons.account_tree_outlined,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
@@ -2500,12 +2881,15 @@ void initState() {
                     const SizedBox(width: 10),
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: AppColors.primary.withOpacity(0.10),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                            color: AppColors.primary.withOpacity(0.25)),
+                          color: AppColors.primary.withOpacity(0.25),
+                        ),
                       ),
                       child: Text(
                         info.currentStateTitle,
@@ -2533,7 +2917,9 @@ void initState() {
                   const SizedBox(height: 14),
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.grey.shade50,
                       borderRadius: BorderRadius.circular(10),
@@ -2541,8 +2927,11 @@ void initState() {
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.lock_outline_rounded,
-                            size: 15, color: Colors.grey.shade400),
+                        Icon(
+                          Icons.lock_outline_rounded,
+                          size: 15,
+                          color: Colors.grey.shade400,
+                        ),
                         const SizedBox(width: 8),
                         Text(
                           'No further steps available',
@@ -2561,8 +2950,11 @@ void initState() {
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      const Icon(Icons.arrow_circle_right_outlined,
-                          size: 14, color: AppColors.primary),
+                      const Icon(
+                        Icons.arrow_circle_right_outlined,
+                        size: 14,
+                        color: AppColors.primary,
+                      ),
                       const SizedBox(width: 6),
                       const Text(
                         'ADVANCE TO',
@@ -2604,26 +2996,33 @@ void initState() {
                                   size: 20,
                                 ),
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 10),
+                                  horizontal: 12,
+                                  vertical: 10,
+                                ),
                                 borderRadius: BorderRadius.circular(10),
-                                items: info.nextStates
-                                    .map((s) => DropdownMenuItem<int>(
-                                          value: s.id,
-                                          child: Text(
-                                            s.title,
-                                            overflow: TextOverflow.ellipsis,
-                                            style: const TextStyle(
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.w500,
-                                              color: Color(0xFF1E293B),
+                                items:
+                                    info.nextStates
+                                        .map(
+                                          (s) => DropdownMenuItem<int>(
+                                            value: s.id,
+                                            child: Text(
+                                              s.title,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 13.5,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF1E293B),
+                                              ),
                                             ),
                                           ),
-                                        ))
-                                    .toList(),
-                                onChanged: canChange
-                                    ? (v) => setState(
-                                        () => _selectedNextStateId = v)
-                                    : null,
+                                        )
+                                        .toList(),
+                                onChanged:
+                                    canChange
+                                        ? (v) => setState(
+                                          () => _selectedNextStateId = v,
+                                        )
+                                        : null,
                               ),
                             ),
                           ),
@@ -2633,54 +3032,71 @@ void initState() {
                       SizedBox(
                         height: 44,
                         child: ElevatedButton(
-                          onPressed: (!canChange || _selectedNextStateId == null)
-                              ? null
-                              : () async {
-                                  setState(() => _changingWorkflow = true);
-                                  try {
-                                    final svc = context.read<MFilesService>();
-                                    final ok = await svc.setObjectWorkflowState(
-                                      objectTypeId: widget.obj.objectTypeId,
-                                      objectId: widget.obj.id,
-                                      workflowId: info.workflowId,
-                                      stateId: _selectedNextStateId!,
-                                    );
-                                    if (!ok) {
-                                      if (!mounted) return;
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                              'Workflow update failed: ${svc.error ?? 'Unknown'}'),
-                                          backgroundColor: Colors.red.shade600,
-                                        ),
+                          onPressed:
+                              (!canChange || _selectedNextStateId == null)
+                                  ? null
+                                  : () async {
+                                    if (_isCheckedOut) {
+                                      SnackbarHelper.showWarning(
+                                        context,
+                                        'Check this item in before changing its workflow state.',
                                       );
                                       return;
                                     }
-                                    if (!mounted) return;
-                                    setState(() {
-                                      _workflowFuture = _loadWorkflow();
-                                      _future = _loadProps();
-                                    });
-                                  } finally {
-                                    if (mounted) {
-                                      setState(() => _changingWorkflow = false);
+                                    setState(() => _changingWorkflow = true);
+                                    try {
+                                      final svc = context.read<MFilesService>();
+                                      final ok = await svc
+                                          .setObjectWorkflowState(
+                                            objectTypeId:
+                                                widget.obj.objectTypeId,
+                                            objectId: widget.obj.id,
+                                            workflowId: info.workflowId,
+                                            stateId: _selectedNextStateId!,
+                                          );
+                                      if (!ok) {
+                                        if (!mounted) return;
+                                        SnackbarHelper.showError(
+                                          context,
+                                          svc.error ??
+                                              'Workflow update failed. Please try again.',
+                                        );
+                                        return;
+                                      }
+                                      if (!mounted) return;
+                                      setState(() {
+                                        _workflowFuture = _loadWorkflow();
+                                        _future = _loadProps();
+                                      });
+                                    } catch (e) {
+                                      if (mounted) {
+                                        SnackbarHelper.showError(context, e);
+                                      }
+                                    } finally {
+                                      if (mounted) {
+                                        setState(
+                                          () => _changingWorkflow = false,
+                                        );
+                                      }
                                     }
-                                  }
-                                },
+                                  },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             foregroundColor: Colors.white,
                             disabledBackgroundColor: Colors.grey.shade200,
                             disabledForegroundColor: Colors.grey.shade400,
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
                             elevation: 0,
                             padding: const EdgeInsets.symmetric(horizontal: 20),
                           ),
                           child: const Text(
                             'Apply',
                             style: TextStyle(
-                                fontSize: 13.5, fontWeight: FontWeight.w700),
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                         ),
                       ),
@@ -2713,15 +3129,21 @@ void initState() {
           Row(
             children: [
               (firstFile != null && !isMultiFileObj)
-                  ? _CheckoutBadge(
-                    objectId: obj.id,
+                  ? CheckoutBadge(
+                    isCheckedOut:
+                        svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+                    checkoutUserId:
+                        svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
                     child: FileTypeBadge(
                       extension: firstFile.extension,
                       size: 36,
                     ),
                   )
-                  : _CheckoutBadge(
-                    objectId: obj.id,
+                  : CheckoutBadge(
+                    isCheckedOut:
+                        svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+                    checkoutUserId:
+                        svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
                     child: Container(
                       width: 36,
                       height: 36,
@@ -2755,8 +3177,10 @@ void initState() {
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(20),
-                  onTap: () => setState(
-                      () => _headerDetailsExpanded = !_headerDetailsExpanded),
+                  onTap:
+                      () => setState(
+                        () => _headerDetailsExpanded = !_headerDetailsExpanded,
+                      ),
                   child: Padding(
                     padding: const EdgeInsets.all(4),
                     child: Icon(
@@ -2785,17 +3209,25 @@ void initState() {
             child: GestureDetector(
               onTap: _showPermissionsSheet,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF0F6FF),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.primary.withOpacity(0.25)),
+                  border: Border.all(
+                    color: AppColors.primary.withOpacity(0.25),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.lock_outline_rounded,
-                        size: 13, color: AppColors.primary),
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 13,
+                      color: AppColors.primary,
+                    ),
                     const SizedBox(width: 5),
                     const Text(
                       'Permissions',
@@ -2825,9 +3257,10 @@ void initState() {
                 ],
               ),
             ),
-            crossFadeState: _headerDetailsExpanded
-                ? CrossFadeState.showSecond
-                : CrossFadeState.showFirst,
+            crossFadeState:
+                _headerDetailsExpanded
+                    ? CrossFadeState.showSecond
+                    : CrossFadeState.showFirst,
             duration: const Duration(milliseconds: 180),
           ),
         ],
@@ -2853,7 +3286,11 @@ void initState() {
           // ── Header ────────────────────────────────────────────────────────
           Row(
             children: [
-              const Icon(Icons.tune_rounded, size: 15, color: AppColors.primary),
+              const Icon(
+                Icons.tune_rounded,
+                size: 15,
+                color: AppColors.primary,
+              ),
               const SizedBox(width: 6),
               const Text(
                 'Metadata',
@@ -2894,22 +3331,19 @@ void initState() {
               curve: Curves.easeInOut,
               alignment: Alignment.topCenter,
               child: Column(
-                children: List.generate(
-                  visibleProps.length * 2 - 1,
-                  (index) {
-                    if (index.isOdd) {
-                      return const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 10),
-                        child: Divider(
-                          height: 1,
-                          thickness: 1.5,
-                          color: Color(0xFFCBD5E1),
-                        ),
-                      );
-                    }
-                    return _propField(visibleProps[index ~/ 2]);
-                  },
-                ),
+                children: List.generate(visibleProps.length * 2 - 1, (index) {
+                  if (index.isOdd) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 10),
+                      child: Divider(
+                        height: 1,
+                        thickness: 1.5,
+                        color: Color(0xFFCBD5E1),
+                      ),
+                    );
+                  }
+                  return _propField(visibleProps[index ~/ 2]);
+                }),
               ),
             ),
 
@@ -2920,9 +3354,14 @@ void initState() {
             const SizedBox(height: 8),
             Center(
               child: GestureDetector(
-                onTap: () => setState(() => _metadataExpanded = !_metadataExpanded),
+                onTap:
+                    () =>
+                        setState(() => _metadataExpanded = !_metadataExpanded),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(20),
@@ -2990,15 +3429,18 @@ void initState() {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.04),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(12)),
-              border:
-                  Border(bottom: BorderSide(color: Colors.grey.shade100)),
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(12),
+              ),
+              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
             ),
             child: Row(
               children: [
-                const Icon(Icons.insert_drive_file_outlined,
-                    size: 16, color: AppColors.primary),
+                const Icon(
+                  Icons.insert_drive_file_outlined,
+                  size: 16,
+                  color: AppColors.primary,
+                ),
                 const SizedBox(width: 6),
                 const Expanded(
                   child: Text(
@@ -3012,9 +3454,10 @@ void initState() {
                 ),
                 if (_downloading)
                   const SizedBox(
-                      height: 16,
-                      width: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2)),
+                    height: 16,
+                    width: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
               ],
             ),
           ),
@@ -3033,9 +3476,11 @@ void initState() {
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Text(
-                      'Failed to load files: ${snap.error}',
+                      humanizeError(snap.error.toString()),
                       style: TextStyle(
-                          fontSize: 12, color: Colors.red.shade700),
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                      ),
                     ),
                   );
                 }
@@ -3051,13 +3496,15 @@ void initState() {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(Icons.insert_drive_file_outlined,
-                                  color: Colors.grey.shade400, size: 36),
+                              Icon(
+                                Icons.insert_drive_file_outlined,
+                                color: Colors.grey.shade400,
+                                size: 36,
+                              ),
                               const SizedBox(height: 8),
                               Text(
                                 'There are no files attached to this item yet.',
-                                style: TextStyle(
-                                    color: Colors.grey.shade600),
+                                style: TextStyle(color: Colors.grey.shade600),
                                 textAlign: TextAlign.center,
                               ),
                             ],
@@ -3067,7 +3514,7 @@ void initState() {
                     // ── File rows — no signing buttons here ───────────────
                     ...files.map((f) {
                       (f.extension.isEmpty ? '' : '.${f.extension}')
-                              .toLowerCase();
+                          .toLowerCase();
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
@@ -3079,15 +3526,16 @@ void initState() {
                           color: Colors.transparent,
                           child: InkWell(
                             borderRadius: BorderRadius.circular(12),
-                            onTap: (_saving ||
-                                    _downloading ||
-                                    _changingWorkflow)
-                                ? null
-                                : () => _previewFileInApp(obj, f),
+                            onTap:
+                                (_saving || _downloading || _changingWorkflow)
+                                    ? null
+                                    : () => _previewFileInApp(obj, f),
                             child: ListTile(
                               dense: true,
                               leading: FileTypeBadge(
-                                  extension: f.extension, size: 36),
+                                extension: f.extension,
+                                size: 36,
+                              ),
                               title: Text(
                                 f.fileTitle.isEmpty
                                     ? 'File ${f.fileId}'
@@ -3096,25 +3544,23 @@ void initState() {
                                 overflow: TextOverflow.ellipsis,
                               ),
                               //subtitle: Text(
-                                  //'v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
+                              //'v${f.fileVersion}${ext.isEmpty ? '' : ' • $ext'}'),
                               trailing: PopupMenuButton<String>(
                                 onSelected: (action) async {
-                                  final displayIdInt =
-                                      int.tryParse(obj.displayId);
+                                  final displayIdInt = int.tryParse(
+                                    obj.displayId,
+                                  );
                                   if (displayIdInt == null) {
                                     if (!mounted) return;
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(SnackBar(
-                                      content: Text(
-                                          'Invalid object display ID: ${obj.displayId}'),
-                                      backgroundColor: Colors.red.shade600,
-                                    ));
+                                    SnackbarHelper.showError(
+                                      context,
+                                      'Invalid object display ID: ${obj.displayId}',
+                                    );
                                     return;
                                   }
                                   setState(() => _downloading = true);
                                   try {
-                                    final svc =
-                                        context.read<MFilesService>();
+                                    final svc = context.read<MFilesService>();
                                     if (action == 'preview') {
                                       await _previewFileInApp(obj, f);
                                     } else if (action == 'open') {
@@ -3127,26 +3573,27 @@ void initState() {
                                         reportGuid: f.reportGuid,
                                       );
                                     } else if (action == 'download') {
-                                      final savedPath =
-                                          await svc.downloadAndSaveFile(
-                                        displayObjectId: displayIdInt,
-                                        classId: obj.classId,
-                                        fileId: f.fileId,
-                                        fileTitle: f.fileTitle,
-                                        extension: f.extension,
-                                        reportGuid: f.reportGuid,
-                                      );
-                                    
+                                      final savedPath = await svc
+                                          .downloadAndSaveFile(
+                                            displayObjectId: displayIdInt,
+                                            classId: obj.classId,
+                                            fileId: f.fileId,
+                                            fileTitle: f.fileTitle,
+                                            extension: f.extension,
+                                            reportGuid: f.reportGuid,
+                                          );
+
                                       if (!mounted) return;
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(SnackBar(
-                                        content: Text(
-                                            'Saved to: $savedPath'),
-                                        backgroundColor:
-                                            Colors.green.shade600,
-                                        duration:
-                                            const Duration(seconds: 4),
-                                      ));
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text('Saved to: $savedPath'),
+                                          backgroundColor:
+                                              Colors.green.shade600,
+                                          duration: const Duration(seconds: 4),
+                                        ),
+                                      );
                                     } else if (action == 'convert_pdf') {
                                       _downloading = false;
                                       setState(() {});
@@ -3154,69 +3601,77 @@ void initState() {
                                     }
                                   } catch (e) {
                                     if (!mounted) return;
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(SnackBar(
-                                      content:
-                                          Text('Action failed: $e'),
-                                      backgroundColor:
-                                          Colors.red.shade600,
-                                    ));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('Action failed: $e'),
+                                        backgroundColor: Colors.red.shade600,
+                                      ),
+                                    );
                                   } finally {
                                     if (mounted) {
-                                      setState(
-                                          () => _downloading = false);
+                                      setState(() => _downloading = false);
                                     }
                                   }
                                 },
                                 itemBuilder: (_) {
-                                  final canDownload = widget
-                                          .obj.userPermission
+                                  final canDownload =
+                                      widget
+                                          .obj
+                                          .userPermission
                                           ?.readPermission ??
                                       false;
                                   return [
                                     const PopupMenuItem(
                                       value: 'preview',
-                                      child: Row(children: [
-                                        Icon(Icons.visibility,
-                                            size: 18),
-                                        SizedBox(width: 12),
-                                        Text('Preview'),
-                                      ]),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.visibility, size: 18),
+                                          SizedBox(width: 12),
+                                          Text('Preview'),
+                                        ],
+                                      ),
                                     ),
                                     const PopupMenuItem(
                                       value: 'open',
-                                      child: Row(children: [
-                                        Icon(Icons.open_in_new,
-                                            size: 18),
-                                        SizedBox(width: 12),
-                                        Text('Open Externally'),
-                                      ]),
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.open_in_new, size: 18),
+                                          SizedBox(width: 12),
+                                          Text('Open Externally'),
+                                        ],
+                                      ),
                                     ),
                                     if (canDownload)
                                       const PopupMenuItem(
                                         value: 'download',
-                                        child: Row(children: [
-                                          Icon(Icons.download,
-                                              size: 18),
-                                          SizedBox(width: 12),
-                                          Text('Download'),
-                                        ]),
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.download, size: 18),
+                                            SizedBox(width: 12),
+                                            Text('Download'),
+                                          ],
+                                        ),
                                       ),
 
-                                      // ── Only show for non-PDF files ──
-                                      if (f.extension.trim().toLowerCase() != 'pdf')
-                                        const PopupMenuItem(
-                                          value: 'convert_pdf',
-                                          child: Row(children: [
-                                            Icon(Icons.picture_as_pdf_rounded, size: 18),
+                                    // ── Only show for non-PDF files ──
+                                    if (f.extension.trim().toLowerCase() !=
+                                        'pdf')
+                                      const PopupMenuItem(
+                                        value: 'convert_pdf',
+                                        child: Row(
+                                          children: [
+                                            Icon(
+                                              Icons.picture_as_pdf_rounded,
+                                              size: 18,
+                                            ),
                                             SizedBox(width: 12),
                                             Text('Convert to PDF'),
-                                          ]),
+                                          ],
                                         ),
+                                      ),
                                   ];
                                 },
-                                child: const Icon(Icons.more_vert,
-                                    size: 18),
+                                child: const Icon(Icons.more_vert, size: 18),
                               ),
                             ),
                           ),
@@ -3248,16 +3703,17 @@ void initState() {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => DocumentPreviewScreen(
-          displayObjectId: displayIdInt,
-          classId: obj.classId,
-          fileId: f.fileId,
-          fileTitle: f.fileTitle,
-          extension: f.extension,
-          reportGuid: f.reportGuid,
-          objectTypeId: widget.obj.objectTypeId,
-          canDownload: widget.obj.userPermission?.readPermission ?? false,
-        ),
+        builder:
+            (_) => DocumentPreviewScreen(
+              displayObjectId: displayIdInt,
+              classId: obj.classId,
+              fileId: f.fileId,
+              fileTitle: f.fileTitle,
+              extension: f.extension,
+              reportGuid: f.reportGuid,
+              objectTypeId: widget.obj.objectTypeId,
+              canDownload: widget.obj.userPermission?.readPermission ?? false,
+            ),
       ),
     );
   }
@@ -3302,8 +3758,11 @@ void initState() {
                           color: AppColors.primary.withOpacity(0.10),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.picture_as_pdf_rounded,
-                            color: AppColors.primary, size: 20),
+                        child: const Icon(
+                          Icons.picture_as_pdf_rounded,
+                          color: AppColors.primary,
+                          size: 20,
+                        ),
                       ),
                       const SizedBox(width: 12),
                       const Expanded(
@@ -3354,10 +3813,14 @@ void initState() {
                     ),
                     value: overwrite,
                     activeColor: AppColors.primary,
-                    onChanged: (v) => setSheet(() {
-                      overwrite = v;
-                      if (v) separate = false; // Disable separate if overwrite is enabled
-                    }),
+                    onChanged:
+                        (v) => setSheet(() {
+                          overwrite = v;
+                          if (v) {
+                            separate =
+                                false; // Disable separate if overwrite is enabled
+                          }
+                        }),
                   ),
                   Divider(height: 1, color: Colors.grey.shade100),
 
@@ -3381,10 +3844,11 @@ void initState() {
                     ),
                     value: separate,
                     activeColor: AppColors.primary,
-                    onChanged: (v) => setSheet(() {
-                      separate = v;
-                      if (v) overwrite = false;
-                    }),
+                    onChanged:
+                        (v) => setSheet(() {
+                          separate = v;
+                          if (v) overwrite = false;
+                        }),
                   ),
                   const SizedBox(height: 24),
 
@@ -3397,7 +3861,8 @@ void initState() {
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         elevation: 0,
                       ),
@@ -3405,7 +3870,9 @@ void initState() {
                       label: const Text(
                         'Convert',
                         style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.w700),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
@@ -3431,29 +3898,12 @@ void initState() {
       );
       if (!mounted) return;
       setState(() => _filesFuture = _loadFiles());
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Row(children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('Converted to PDF successfully'),
-          ]),
-          backgroundColor: Colors.green.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
+      SnackbarHelper.showSuccess(context, 'Converted to PDF successfully!');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Conversion failed: $e'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
+      SnackbarHelper.showError(
+        context,
+        'Conversion failed, please try again: $e',
       );
     } finally {
       if (mounted) setState(() => _downloading = false);
@@ -3493,19 +3943,16 @@ void initState() {
       );
       if (!ok) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content:
-                Text('Comment failed: ${svc.error ?? 'Unknown error'}'),
-            backgroundColor: Colors.red.shade600,
-          ),
-        );
+        SnackbarHelper.showError(context, svc.error ?? 'Comment failed');
         return;
       }
       _commentCtrl.clear();
       _commentFocusNode.unfocus();
       if (!mounted) return;
-      setState(() => _commentsFuture = _loadComments());
+      setState(() {
+        _commentsFuture = _loadComments();
+        _showCommentSend = false;
+      });
     } finally {
       if (mounted) setState(() => _postingComment = false);
     }
@@ -3513,127 +3960,120 @@ void initState() {
 
   String _fmtCommentDate(DateTime? dt) {
     if (dt == null) return '';
-    final now = DateTime.now();
     final local = dt.toLocal();
-    final diff = now.difference(local);
-    if (diff.inMinutes < 1) return 'Just now';
-    if (diff.inHours < 1) return '${diff.inMinutes}m ago';
-    if (diff.inDays < 1) return '${diff.inHours}h ago';
-    if (diff.inDays < 7) return '${diff.inDays}d ago';
-    return '${local.month}/${local.day}/${local.year}';
+    final h = local.hour.toString().padLeft(2, '0');
+    final m = local.minute.toString().padLeft(2, '0');
+    return '${local.day}/${local.month}/${local.year} $h:$m';
   }
 
   Widget _commentRow(ObjectComment c, {bool isPreview = false}) {
     final dateText = _fmtCommentDate(c.modifiedDate);
     final authorName = c.author.trim();
     final hasAuthor = authorName.isNotEmpty;
+    final initials = hasAuthor ? _initialsFor(authorName) : '?';
 
-    final parts = authorName.split(' ').where((s) => s.isNotEmpty).toList();
-    final initials = hasAuthor
-        ? (parts.length >= 2
-            ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
-            : authorName.substring(0, authorName.length.clamp(0, 2)).toUpperCase())
-        : '?';
-
-    // Give each author a consistent subtle color based on their name
-    final avatarColors = [
-      const Color(0xFF6366F1), // indigo
-      const Color(0xFF0EA5E9), // sky
-      const Color(0xFF10B981), // emerald
-      const Color(0xFFF59E0B), // amber
-      const Color(0xFFEF4444), // red
-      const Color(0xFF8B5CF6), // violet
-      const Color(0xFF14B8A6), // teal
+    // Consistent per-author accent color
+    const avatarColors = [
+      Color(0xFF6366F1),
+      Color(0xFF0EA5E9),
+      Color(0xFF10B981),
+      Color(0xFFF59E0B),
+      Color(0xFFEF4444),
+      Color(0xFF8B5CF6),
+      Color(0xFF14B8A6),
     ];
     final avatarColor =
         avatarColors[authorName.hashCode.abs() % avatarColors.length];
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // ── Avatar ──────────────────────────────────────────────────────
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: hasAuthor ? avatarColor : Colors.grey.shade300,
-            shape: BoxShape.circle,
-          ),
-          child: Center(
-            child: Text(
-              initials,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: Colors.white,
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Avatar ────────────────────────────────────────────────────
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: hasAuthor ? avatarColor : Colors.grey.shade300,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                initials,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  letterSpacing: 0.2,
+                ),
               ),
             ),
           ),
-        ),
-        const SizedBox(width: 10),
+          const SizedBox(width: 10),
 
-        // ── Bubble ──────────────────────────────────────────────────────
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Author + timestamp
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
-                children: [
-                  if (hasAuthor)
-                    Text(
-                      authorName,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1E293B),
+          // ── Content ───────────────────────────────────────────────────
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    if (hasAuthor)
+                      Flexible(
+                        child: Text(
+                          authorName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1E293B),
+                            letterSpacing: -0.1,
+                          ),
+                        ),
                       ),
-                    ),
-                  if (hasAuthor) const SizedBox(width: 6),
-                  if (dateText.isNotEmpty)
-                    Text(
-                      dateText,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade400,
-                        fontWeight: FontWeight.w400,
+                    if (hasAuthor && dateText.isNotEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Text(
+                          '·',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Color(0xFFCBD5E1),
+                          ),
+                        ),
                       ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              // Message bubble
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 9),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: const BorderRadius.only(
-                    topRight: Radius.circular(12),
-                    bottomLeft: Radius.circular(12),
-                    bottomRight: Radius.circular(12),
-                  ),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                    if (dateText.isNotEmpty)
+                      Text(
+                        dateText,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF94A3B8),
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                  ],
                 ),
-                child: Text(
+                const SizedBox(height: 3),
+                Text(
                   c.text,
                   style: const TextStyle(
-                    fontSize: 13,
+                    fontSize: 13.5,
                     height: 1.45,
                     color: Color(0xFF334155),
+                    letterSpacing: -0.05,
                   ),
                   maxLines: isPreview ? 2 : null,
                   overflow:
                       isPreview ? TextOverflow.ellipsis : TextOverflow.visible,
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -3648,8 +4088,7 @@ void initState() {
           Expanded(child: Divider(height: 1, color: Colors.grey.shade200)),
           const SizedBox(width: 10),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
             decoration: BoxDecoration(
               color: Colors.grey.shade100,
               borderRadius: BorderRadius.circular(20),
@@ -3675,9 +4114,12 @@ void initState() {
     if (dt == null) return '';
     final now = DateTime.now();
     final local = dt.toLocal();
-    final diff = DateTime(now.year, now.month, now.day)
-        .difference(DateTime(local.year, local.month, local.day))
-        .inDays;
+    final diff =
+        DateTime(
+          now.year,
+          now.month,
+          now.day,
+        ).difference(DateTime(local.year, local.month, local.day)).inDays;
     if (diff == 0) return 'Today';
     if (diff == 1) return 'Yesterday';
     if (diff < 7) return '${diff} days ago';
@@ -3687,7 +4129,7 @@ void initState() {
   // ─────────────────────────────────────────────────────────────────────────
   // COMMENTS CARD  ── redesigned
   // ─────────────────────────────────────────────────────────────────────────
-  Widget _commentsCard() {
+    Widget _commentsCard() {
     final disabled =
         _saving || _downloading || _changingWorkflow || _assigningWorkflow;
 
@@ -3695,9 +4137,7 @@ void initState() {
       future: _commentsFuture,
       builder: (context, snap) {
         final isLoading = snap.connectionState == ConnectionState.waiting;
-        // Reverse so newest is at top
-        final comments =
-            (snap.data ?? []).reversed.toList();
+        final comments = (snap.data ?? []).reversed.toList();
         final count = comments.length;
 
         return Container(
@@ -3709,7 +4149,7 @@ void initState() {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Card header (tappable toggle) ──────────────────────────
+              // ── Header (tappable toggle) ─────────────────────────────
               Material(
                 color: Colors.transparent,
                 borderRadius: BorderRadius.circular(12),
@@ -3717,10 +4157,8 @@ void initState() {
                   borderRadius: BorderRadius.only(
                     topLeft: const Radius.circular(12),
                     topRight: const Radius.circular(12),
-                    bottomLeft:
-                        Radius.circular(_commentsExpanded ? 0 : 12),
-                    bottomRight:
-                        Radius.circular(_commentsExpanded ? 0 : 12),
+                    bottomLeft: Radius.circular(_commentsExpanded ? 0 : 12),
+                    bottomRight: Radius.circular(_commentsExpanded ? 0 : 12),
                   ),
                   onTap: () => setState(() {
                     _commentsExpanded = !_commentsExpanded;
@@ -3728,11 +4166,16 @@ void initState() {
                   }),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
                     child: Row(
                       children: [
-                        const Icon(Icons.chat_bubble_outline_rounded,
-                            size: 15, color: AppColors.primary),
+                        const Icon(
+                          Icons.chat_bubble_outline_rounded,
+                          size: 15,
+                          color: AppColors.primary,
+                        ),
                         const SizedBox(width: 6),
                         Text(
                           count > 0 ? 'Comments ($count)' : 'Comments',
@@ -3749,8 +4192,7 @@ void initState() {
                             child: SizedBox(
                               height: 14,
                               width: 14,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2),
+                              child: CircularProgressIndicator(strokeWidth: 2),
                             ),
                           ),
                         AnimatedRotation(
@@ -3768,32 +4210,41 @@ void initState() {
                 ),
               ),
 
-              // ── Collapsed preview — newest comment ─────────────────────
+              // ── Collapsed preview ─────────────────────────────────────
               if (!_commentsExpanded) ...[
                 Divider(height: 1, color: Colors.grey.shade100),
                 if (isLoading)
                   Padding(
                     padding: const EdgeInsets.symmetric(
-                        vertical: 12, horizontal: 14),
+                      vertical: 12,
+                      horizontal: 14,
+                    ),
                     child: LinearProgressIndicator(
                       minHeight: 2,
                       backgroundColor: Colors.grey.shade100,
                       valueColor: const AlwaysStoppedAnimation<Color>(
-                          AppColors.primary),
+                        AppColors.primary,
+                      ),
                     ),
                   )
                 else if (comments.isEmpty)
                   InkWell(
                     borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(12)),
+                      bottom: Radius.circular(12),
+                    ),
                     onTap: () => setState(() => _commentsExpanded = true),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 14),
+                        horizontal: 14,
+                        vertical: 14,
+                      ),
                       child: Row(
                         children: [
-                          Icon(Icons.add_comment_outlined,
-                              size: 14, color: Colors.grey.shade400),
+                          Icon(
+                            Icons.add_comment_outlined,
+                            size: 14,
+                            color: Colors.grey.shade400,
+                          ),
                           const SizedBox(width: 8),
                           Text(
                             'No comments yet — tap to add one',
@@ -3810,7 +4261,8 @@ void initState() {
                 else
                   InkWell(
                     borderRadius: const BorderRadius.vertical(
-                        bottom: Radius.circular(12)),
+                      bottom: Radius.circular(12),
+                    ),
                     onTap: () => setState(() => _commentsExpanded = true),
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
@@ -3819,17 +4271,19 @@ void initState() {
                         children: [
                           _commentRow(comments.first, isPreview: true),
                           if (count > 1) ...[
-                            const SizedBox(height: 10),
+                            const SizedBox(height: 8),
                             Center(
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 5),
+                                  horizontal: 12,
+                                  vertical: 5,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppColors.primary.withOpacity(0.06),
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                      color:
-                                          AppColors.primary.withOpacity(0.15)),
+                                    color: AppColors.primary.withOpacity(0.15),
+                                  ),
                                 ),
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
@@ -3859,24 +4313,26 @@ void initState() {
                   ),
               ],
 
-              // ── Expanded: comment list (newest first) + input at bottom ─
+              // ── Expanded: list + input ────────────────────────────────
               if (_commentsExpanded) ...[
                 Divider(height: 1, color: Colors.grey.shade100),
 
-                // Comment list
                 if (isLoading)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 24),
                     child: Center(
-                        child: CircularProgressIndicator(strokeWidth: 2)),
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                   )
                 else if (snap.hasError)
                   Padding(
                     padding: const EdgeInsets.all(14),
                     child: Text(
-                      'Failed to load comments: ${snap.error}',
+                      humanizeError(snap.error.toString()),
                       style: TextStyle(
-                          fontSize: 12, color: Colors.red.shade600),
+                        fontSize: 12,
+                        color: Colors.red.shade600,
+                      ),
                     ),
                   )
                 else if (comments.isEmpty)
@@ -3885,8 +4341,11 @@ void initState() {
                     child: Center(
                       child: Column(
                         children: [
-                          Icon(Icons.chat_bubble_outline_rounded,
-                              size: 30, color: Colors.grey.shade300),
+                          Icon(
+                            Icons.chat_bubble_outline_rounded,
+                            size: 30,
+                            color: Colors.grey.shade300,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'No comments yet.\nBe the first to comment.',
@@ -3903,150 +4362,21 @@ void initState() {
                   )
                 else
                   Padding(
-                    padding:
-                        const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 8),
                     child: _buildCommentList(comments),
                   ),
 
-                // ── Comment input — always docked at the bottom ────────────
+                // ── Docked composer ────────────────────────────────────
                 Divider(height: 1, color: Colors.grey.shade100),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      // Current user avatar
-                      Container(
-                        width: 30,
-                        height: 30,
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: _currentUserInitials.isNotEmpty
-                              ? Text(
-                                  _currentUserInitials,
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.person_outline,
-                                  size: 16, color: Colors.white),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-
-                      // Input field + send button
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Container(
-                              key: _commentInputKey,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: _commentInputFocused
-                                      ? AppColors.primary
-                                      : Colors.grey.shade200,
-                                  width: _commentInputFocused ? 1.5 : 1,
-                                ),
-                              ),
-                              child: TextField(
-                                controller: _commentCtrl,
-                                focusNode: _commentFocusNode,
-                                enabled: !disabled && !_postingComment,
-                                minLines: 1,
-                                maxLines: _commentInputFocused ? 4 : 1,
-                                decoration: InputDecoration(
-                                  hintText: 'Add a comment…',
-                                  hintStyle: TextStyle(
-                                    color: Colors.grey.shade400,
-                                    fontSize: 13,
-                                  ),
-                                  border: InputBorder.none,
-                                  contentPadding:
-                                      const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 10),
-                                  isDense: true,
-                                ),
-                                style: const TextStyle(fontSize: 13.5),
-                              ),
-                            ),
-                            if (_commentInputFocused) ...[
-                              const SizedBox(height: 8),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  TextButton(
-                                    onPressed: () {
-                                      _commentCtrl.clear();
-                                      _commentFocusNode.unfocus();
-                                    },
-                                    style: TextButton.styleFrom(
-                                      foregroundColor:
-                                          Colors.grey.shade600,
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 6),
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(20)),
-                                    ),
-                                    child: const Text('Cancel',
-                                        style: TextStyle(fontSize: 12)),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  ElevatedButton.icon(
-                                    onPressed: (disabled || _postingComment)
-                                        ? null
-                                        : _submitComment,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.primary,
-                                      foregroundColor: Colors.white,
-                                      disabledBackgroundColor:
-                                          Colors.grey.shade200,
-                                      disabledForegroundColor:
-                                          Colors.grey.shade400,
-                                      shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(20)),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 14, vertical: 7),
-                                      elevation: 0,
-                                      textStyle: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    icon: _postingComment
-                                        ? const SizedBox(
-                                            width: 12,
-                                            height: 12,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2,
-                                              valueColor:
-                                                  AlwaysStoppedAnimation
-                                                      <Color>(Colors.white),
-                                            ),
-                                          )
-                                        : const Icon(
-                                            Icons.send_rounded,
-                                            size: 13,
-                                          ),
-                                    label: const Text('Send'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ],
+                  key: _commentInputKey,
+                  padding: EdgeInsets.fromLTRB(
+                    12,
+                    10,
+                    12,
+                    MediaQuery.of(context).viewInsets.bottom > 0 ? 10 : 12,
                   ),
+                  child: _commentComposer(disabled),
                 ),
               ],
             ],
@@ -4056,33 +4386,199 @@ void initState() {
     );
   }
 
-// ─────────────────────────────────────────────────────────────────────────
-// COMMENT LIST WITH DATE GROUP SEPARATORS
-// ─────────────────────────────────────────────────────────────────────────
+    // ── Apple-grade expanding comment composer ──────────────────────────────
+  Widget _commentComposer(bool disabled) {
+    const int minLines = 1;
+    const int maxLines = 6;
 
-Widget _buildCommentList(List<ObjectComment> comments) {
-  final items = <Widget>[];
-  String? lastGroup;
+    final hasText = _commentCtrl.text.trim().isNotEmpty;
+    final canSend = hasText && !disabled && !_postingComment;
 
-  for (final c in comments) {
-    final group = _dateGroupLabel(c.modifiedDate);
-    if (group != lastGroup) {
-      items.add(_dateSeparator(group));
-      lastGroup = group;
-    }
-    items.add(
-      Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: _commentRow(c),
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _commentInputFocused
+              ? AppColors.primary.withOpacity(0.5)
+              : const Color(0xFFE2E8F0),
+          width: _commentInputFocused ? 1.5 : 1,
+        ),
+        boxShadow: _commentInputFocused
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.08),
+                  blurRadius: 12,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          // Avatar
+          Padding(
+            padding: const EdgeInsets.only(left: 8, right: 0, top: 8, bottom: 8),
+            child: Container(
+              width: 30,
+              height: 30,
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: _currentUserInitials.isNotEmpty
+                    ? Text(
+                        _currentUserInitials,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          letterSpacing: 0.2,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.person_outline,
+                        size: 16,
+                        color: Colors.white,
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+
+          // Expanding TextField (internal scroll, Enter = newline)
+          Expanded(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: 40,
+                maxHeight: 160,
+              ),
+              child: Scrollbar(
+                controller: _commentInputScroll,
+                thumbVisibility: false,
+                radius: const Radius.circular(8),
+                child: TextField(
+                  controller: _commentCtrl,
+                  focusNode: _commentFocusNode,
+                  scrollController: _commentInputScroll,
+                  enabled: !disabled && !_postingComment,
+                  minLines: minLines,
+                  maxLines: maxLines,
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
+                  textCapitalization: TextCapitalization.sentences,
+                  onChanged: (_) {
+                    final now = _commentCtrl.text.trim().isNotEmpty;
+                    if (now != _showCommentSend) {
+                      setState(() => _showCommentSend = now);
+                    } else {
+                      setState(() {});
+                    }
+                  },
+                  style: const TextStyle(
+                    fontSize: 14,
+                    height: 1.4,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.1,
+                  ),
+                  decoration: InputDecoration(
+                    hintText: 'Add a comment…',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade400,
+                      fontSize: 14,
+                      letterSpacing: -0.1,
+                    ),
+                    border: InputBorder.none,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 12,
+                    ),
+                    suffixIcon: null,
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Send button (only visible when there is text)
+          AnimatedSize(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            child: _showCommentSend || hasText
+                ? Padding(
+                    padding: const EdgeInsets.only(
+                      right: 8,
+                      bottom: 8,
+                      top: 8,
+                      left: 2,
+                    ),
+                    child: GestureDetector(
+                      onTap: canSend ? _submitComment : null,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 160),
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: canSend
+                              ? AppColors.primary
+                              : AppColors.primary.withOpacity(0.35),
+                          shape: BoxShape.circle,
+                        ),
+                        child: _postingComment
+                            ? const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.arrow_upward_rounded,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                      ),
+                    ),
+                  )
+                : const SizedBox(width: 8),
+          ),
+        ],
       ),
     );
   }
 
-  return Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: items,
-  );
-}
+  // ─────────────────────────────────────────────────────────────────────────
+  // COMMENT LIST WITH DATE GROUP SEPARATORS
+  // ─────────────────────────────────────────────────────────────────────────
+
+  Widget _buildCommentList(List<ObjectComment> comments) {
+    final items = <Widget>[];
+    String? lastGroup;
+
+    for (final c in comments) {
+      final group = _dateGroupLabel(c.modifiedDate);
+      if (group != lastGroup) {
+        items.add(_dateSeparator(group));
+        lastGroup = group;
+      }
+      items.add(
+        Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: _commentRow(c),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: items,
+    );
+  }
 
   Widget _kv(String k, String v) {
     return Padding(
@@ -4091,15 +4587,15 @@ Widget _buildCommentList(List<ObjectComment> comments) {
         children: [
           SizedBox(
             width: 110,
-            child: Text(k,
-                style:
-                    TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+            child: Text(
+              k,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+            ),
           ),
           Expanded(
             child: Text(
               v.isEmpty ? '-' : v,
-              style: const TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -4133,9 +4629,10 @@ Widget _buildCommentList(List<ObjectComment> comments) {
         display = b ? 'Yes' : 'No';
       } else if (_isDate(p) || _isTimestamp(p)) {
         final text = _valueToText(p.value);
-        display = text.trim().isNotEmpty
-            ? _displayDate(text, includeTime: _isTimestamp(p))
-            : '';
+        display =
+            text.trim().isNotEmpty
+                ? _displayDate(text, includeTime: _isTimestamp(p))
+                : '';
       } else {
         display = _valueToText(p.value);
       }
@@ -4162,9 +4659,8 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                 color: hasDirtySelection ? _filledFill : AppColors.surfaceLight,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: hasDirtySelection
-                      ? _filledBorder
-                      : Colors.grey.shade300,
+                  color:
+                      hasDirtySelection ? _filledBorder : Colors.grey.shade300,
                   width: hasDirtySelection ? 1.5 : 1,
                 ),
               ),
@@ -4177,24 +4673,24 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                         title: label,
                         propertyId: p.id,
                         isMultiSelect: isMulti,
-                        preSelectedIds:
-                            _selectedIdsForLookup(p, isMulti: isMulti),
+                        preSelectedIds: _selectedIdsForLookup(
+                          p,
+                          isMulti: isMulti,
+                        ),
                         preSelectedLabels: _selectedLabelsForLookup(p),
                         onSelected: (items) {
                           setState(() {
                             if (isMulti) {
-                              final ids =
-                                  items.map((x) => x.id).toList();
-                              final labels = items
-                                  .map((x) =>
-                                      x.displayValue.toString())
-                                  .toList();
+                              final ids = items.map((x) => x.id).toList();
+                              final labels =
+                                  items
+                                      .map((x) => x.displayValue.toString())
+                                      .toList();
                               if (ids.isEmpty) {
                                 _dirty.remove(p.id);
                                 _dirtyLookupLabels.remove(p.id);
                               } else {
-                                _dirty[p.id] =
-                                    p.copyWith(editedValue: ids);
+                                _dirty[p.id] = p.copyWith(editedValue: ids);
                                 _dirtyLookupLabels[p.id] = labels;
                               }
                             } else {
@@ -4204,8 +4700,7 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                                 _dirty.remove(p.id);
                                 _dirtyLookupLabels.remove(p.id);
                               } else {
-                                _dirty[p.id] =
-                                    p.copyWith(editedValue: id);
+                                _dirty[p.id] = p.copyWith(editedValue: id);
                               }
                             }
                           });
@@ -4216,15 +4711,16 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                   if (hasDirtySelection)
                     const Padding(
                       padding: EdgeInsets.only(right: 12),
-                      child: Icon(Icons.check_circle_rounded,
-                          color: _filledBorder, size: 18),
+                      child: Icon(
+                        Icons.check_circle_rounded,
+                        color: _filledBorder,
+                        size: 18,
+                      ),
                     ),
                 ],
               ),
             ),
-            if (isMulti &&
-                dirtyLabels != null &&
-                dirtyLabels.isNotEmpty) ...[
+            if (isMulti && dirtyLabels != null && dirtyLabels.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(
                 spacing: 6,
@@ -4232,12 +4728,13 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                 children: List.generate(dirtyLabels.length, (index) {
                   return Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFEFF6FF),
                       borderRadius: BorderRadius.circular(999),
-                      border:
-                          Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: const Color(0xFFBFDBFE)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -4259,20 +4756,18 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                               final currentIds =
                                   (_dirty[p.id]?.editedValue is List)
                                       ? List<int>.from(
-                                          _dirty[p.id]!.editedValue
-                                              as List)
+                                        _dirty[p.id]!.editedValue as List,
+                                      )
                                       : <int>[];
                               final newIds = List<int>.from(currentIds)
                                 ..removeAt(index);
-                              final newLabels =
-                                  List<String>.from(dirtyLabels)
-                                    ..removeAt(index);
+                              final newLabels = List<String>.from(dirtyLabels)
+                                ..removeAt(index);
                               if (newIds.isEmpty) {
                                 _dirty.remove(p.id);
                                 _dirtyLookupLabels.remove(p.id);
                               } else {
-                                _dirty[p.id] =
-                                    p.copyWith(editedValue: newIds);
+                                _dirty[p.id] = p.copyWith(editedValue: newIds);
                                 _dirtyLookupLabels[p.id] = newLabels;
                               }
                             });
@@ -4281,12 +4776,14 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                             width: 16,
                             height: 16,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF3B82F6)
-                                  .withOpacity(0.2),
+                              color: const Color(0xFF3B82F6).withOpacity(0.2),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(Icons.close,
-                                size: 10, color: Color(0xFF1E40AF)),
+                            child: const Icon(
+                              Icons.close,
+                              size: 10,
+                              color: Color(0xFF1E40AF),
+                            ),
                           ),
                         ),
                       ],
@@ -4300,14 +4797,17 @@ Widget _buildCommentList(List<ObjectComment> comments) {
       }
 
       return _readOnlyFieldWithPencil(
-          label: label, value: displayText, prop: p);
+        label: label,
+        value: displayText,
+        prop: p,
+      );
     }
 
     // ── Date and timestamp fields ─────────────────────────────────────────────
     final rawCurrent = _dirty[p.id]?.editedValue ?? p.value;
     final currentText = _valueToText(rawCurrent);
 
-        // -- Boolean fields --
+    // -- Boolean fields --
     if (_isBoolean(p)) {
       bool currentBool = false;
       final raw = _dirty[p.id]?.editedValue ?? p.value;
@@ -4339,15 +4839,15 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                   ),
                 ),
                 GestureDetector(
-                  onTap: busy
-                      ? null
-                      : () => setState(() => _editingPropId = p.id),
+                  onTap:
+                      busy ? null : () => setState(() => _editingPropId = p.id),
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: busy
-                          ? Colors.grey.shade100
-                          : AppColors.primary.withOpacity(0.07),
+                      color:
+                          busy
+                              ? Colors.grey.shade100
+                              : AppColors.primary.withOpacity(0.07),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
@@ -4362,8 +4862,7 @@ Widget _buildCommentList(List<ObjectComment> comments) {
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               decoration: BoxDecoration(
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(12),
@@ -4389,9 +4888,10 @@ Widget _buildCommentList(List<ObjectComment> comments) {
         final selected = currentBool == value;
         return Expanded(
           child: GestureDetector(
-            onTap: selected
-                ? null
-                : () => setState(() {
+            onTap:
+                selected
+                    ? null
+                    : () => setState(() {
                       _dirty[p.id] = p.copyWith(editedValue: value);
                     }),
             child: AnimatedContainer(
@@ -4446,9 +4946,10 @@ Widget _buildCommentList(List<ObjectComment> comments) {
     // -- Date and timestamp fields --
     if (_isDate(p) || _isTimestamp(p)) {
       final isTimestamp = _isTimestamp(p);
-      final displayText = currentText.trim().isNotEmpty
-          ? _displayDate(currentText, includeTime: isTimestamp)
-          : '';
+      final displayText =
+          currentText.trim().isNotEmpty
+              ? _displayDate(currentText, includeTime: isTimestamp)
+              : '';
 
       if (isThisFieldEditing) {
         // Show a tappable read-only tile while in editing mode;
@@ -4462,7 +4963,10 @@ Widget _buildCommentList(List<ObjectComment> comments) {
               onTap: () => _pickDate(p, includeTime: isTimestamp),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: _filledFill,
                   borderRadius: BorderRadius.circular(12),
@@ -4486,14 +4990,18 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                         style: TextStyle(
                           fontSize: 14.5,
                           fontWeight: FontWeight.w500,
-                          color: displayText.isEmpty
-                              ? Colors.grey.shade400
-                              : const Color(0xFF111827),
+                          color:
+                              displayText.isEmpty
+                                  ? Colors.grey.shade400
+                                  : const Color(0xFF111827),
                         ),
                       ),
                     ),
-                    Icon(Icons.edit_calendar_rounded,
-                        size: 16, color: AppColors.primary.withOpacity(0.6)),
+                    Icon(
+                      Icons.edit_calendar_rounded,
+                      size: 16,
+                      color: AppColors.primary.withOpacity(0.6),
+                    ),
                   ],
                 ),
               ),
@@ -4519,28 +5027,31 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                 ),
               ),
               GestureDetector(
-                onTap: (_saving || _downloading || _changingWorkflow)
-                    ? null
-                    : () {
-                        setState(() => _editingPropId = p.id);
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          _pickDate(p, includeTime: isTimestamp);
-                        });
-                      },
+                onTap:
+                    (_saving || _downloading || _changingWorkflow)
+                        ? null
+                        : () {
+                          setState(() => _editingPropId = p.id);
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            _pickDate(p, includeTime: isTimestamp);
+                          });
+                        },
                 child: Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color: (_saving || _downloading || _changingWorkflow)
-                        ? Colors.grey.shade100
-                        : AppColors.primary.withOpacity(0.07),
+                    color:
+                        (_saving || _downloading || _changingWorkflow)
+                            ? Colors.grey.shade100
+                            : AppColors.primary.withOpacity(0.07),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
                     Icons.edit_calendar_rounded,
                     size: 14,
-                    color: (_saving || _downloading || _changingWorkflow)
-                        ? Colors.grey.shade400
-                        : AppColors.primary,
+                    color:
+                        (_saving || _downloading || _changingWorkflow)
+                            ? Colors.grey.shade400
+                            : AppColors.primary,
                   ),
                 ),
               ),
@@ -4562,9 +5073,10 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                       ? Icons.schedule_rounded
                       : Icons.calendar_today_rounded,
                   size: 15,
-                  color: displayText.isNotEmpty
-                      ? Colors.grey.shade500
-                      : Colors.grey.shade300,
+                  color:
+                      displayText.isNotEmpty
+                          ? Colors.grey.shade500
+                          : Colors.grey.shade300,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -4572,12 +5084,14 @@ Widget _buildCommentList(List<ObjectComment> comments) {
                     displayText.isNotEmpty ? displayText : '-',
                     style: TextStyle(
                       fontSize: 14.5,
-                      fontWeight: displayText.isNotEmpty
-                          ? FontWeight.w500
-                          : FontWeight.w400,
-                      color: displayText.isNotEmpty
-                          ? Colors.grey.shade700
-                          : Colors.grey.shade400,
+                      fontWeight:
+                          displayText.isNotEmpty
+                              ? FontWeight.w500
+                              : FontWeight.w400,
+                      color:
+                          displayText.isNotEmpty
+                              ? Colors.grey.shade700
+                              : Colors.grey.shade400,
                     ),
                   ),
                 ),
@@ -4588,8 +5102,44 @@ Widget _buildCommentList(List<ObjectComment> comments) {
       );
     }
 
-    return _readOnlyFieldWithPencil(
-        label: label, value: currentText, prop: p);
+    if (isThisFieldEditing) {
+      final ctrl = _fieldCtrl[p.id]!;
+      final isDirty = _dirty.containsKey(p.id);
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _fieldLabelRow(label, p, isDirty: isDirty),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: isDirty ? _filledFill : AppColors.surfaceLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDirty ? _filledBorder : Colors.grey.shade300,
+                width: isDirty ? 1.5 : 1,
+              ),
+            ),
+            child: TextField(
+              controller: ctrl,
+              maxLines: p.datatype == 'MFDatatypeMultiLineText' ? null : 1,
+              decoration: const InputDecoration(
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                border: InputBorder.none,
+              ),
+              onChanged:
+                  (v) => setState(() {
+                    _dirty[p.id] = p.copyWith(editedValue: v);
+                  }),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _readOnlyFieldWithPencil(label: label, value: currentText, prop: p);
   }
 
   Widget _fieldLabelRow(String label, _PropVm p, {required bool isDirty}) {
@@ -4613,11 +5163,14 @@ Widget _buildCommentList(List<ObjectComment> comments) {
               color: Colors.grey.shade100,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Text('Cancel',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade600)),
+            child: Text(
+              'Cancel',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade600,
+              ),
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -4625,34 +5178,35 @@ Widget _buildCommentList(List<ObjectComment> comments) {
           onTap: (isDirty && !_saving) ? () => _saveField(p) : null,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: (isDirty && !_saving)
-                  ? AppColors.primary
-                  : Colors.grey.shade200,
+              color:
+                  (isDirty && !_saving)
+                      ? AppColors.primary
+                      : Colors.grey.shade200,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: _saving && _editingPropId == p.id
-                ? const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.white),
+            child:
+                _saving && _editingPropId == p.id
+                    ? const SizedBox(
+                      width: 12,
+                      height: 12,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                    : Text(
+                      'Save',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color:
+                            (isDirty && !_saving)
+                                ? Colors.white
+                                : Colors.grey.shade400,
+                      ),
                     ),
-                  )
-                : Text(
-                    'Save',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: (isDirty && !_saving)
-                          ? Colors.white
-                          : Colors.grey.shade400,
-                    ),
-                  ),
           ),
         ),
       ],
@@ -4683,15 +5237,18 @@ Widget _buildCommentList(List<ObjectComment> comments) {
               ),
             ),
             GestureDetector(
-              onTap: busy
-                  ? null
-                  : () => _startEditingField(prop, _valueToText(prop.value)),
+              onTap:
+                  busy
+                      ? null
+                      : () =>
+                          _startEditingField(prop, _valueToText(prop.value)),
               child: Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: busy
-                      ? Colors.grey.shade100
-                      : AppColors.primary.withOpacity(0.07),
+                  color:
+                      busy
+                          ? Colors.grey.shade100
+                          : AppColors.primary.withOpacity(0.07),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
@@ -4706,8 +5263,7 @@ Widget _buildCommentList(List<ObjectComment> comments) {
         const SizedBox(height: 8),
         Container(
           width: double.infinity,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
             color: Colors.grey.shade100,
             borderRadius: BorderRadius.circular(12),
@@ -4718,8 +5274,7 @@ Widget _buildCommentList(List<ObjectComment> comments) {
             style: TextStyle(
               fontSize: 14.5,
               fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
-              color:
-                  hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
+              color: hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
             ),
           ),
         ),
@@ -4727,7 +5282,7 @@ Widget _buildCommentList(List<ObjectComment> comments) {
     );
   }
 
-    /// Renders a property that cannot be edited at all — no pencil, no tap
+  /// Renders a property that cannot be edited at all — no pencil, no tap
   /// target, just a "Read only" tag so it's visually distinct from editable
   /// fields that simply haven't been tapped yet.
   Widget _readOnlyRow(String label, String value) {
@@ -4757,8 +5312,11 @@ Widget _buildCommentList(List<ObjectComment> comments) {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.lock_outline_rounded,
-                      size: 11, color: Colors.grey.shade500),
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    size: 11,
+                    color: Colors.grey.shade500,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     'Read only',
@@ -4788,43 +5346,6 @@ Widget _buildCommentList(List<ObjectComment> comments) {
               fontSize: 14.5,
               fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
               color: hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ───────────── CHECKOUT BADGE CLASS ────────────────────────────────────────────────────────────────
-class _CheckoutBadge extends StatelessWidget {
-  final int objectId;
-  final Widget child;
-
-  const _CheckoutBadge({required this.objectId, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final isOut = context.watch<MFilesService>().isCheckedOutLocally(objectId);
-    if (!isOut) return child;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        child,
-        Positioned(
-          right: -4,
-          bottom: -4,
-          child: Container(
-            width: 16,
-            height: 16,
-            decoration: const BoxDecoration(
-              color: Color(0xFF0F766E),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.drive_file_rename_outline,
-              size: 10,
-              color: Colors.white,
             ),
           ),
         ),
@@ -4875,8 +5396,7 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
     });
   }
 
-  bool _isValidFormat(String v) =>
-      RegExp(_emailRegex).hasMatch(v.trim());
+  bool _isValidFormat(String v) => RegExp(_emailRegex).hasMatch(v.trim());
 
   /// Returns an error string for this field, or null if it's fine.
   String? _fieldError(int index) {
@@ -4923,7 +5443,9 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
   @override
   Widget build(BuildContext context) {
     final fileName =
-        widget.file.fileTitle.trim().isEmpty ? 'this file' : widget.file.fileTitle;
+        widget.file.fileTitle.trim().isEmpty
+            ? 'this file'
+            : widget.file.fileTitle;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -4969,8 +5491,11 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                             color: Colors.white.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(8),
                           ),
-                          child: const Icon(Icons.close,
-                              size: 15, color: Colors.white),
+                          child: const Icon(
+                            Icons.close,
+                            size: 15,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ],
@@ -5009,52 +5534,65 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                           color: const Color(0xFFFFF8E1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: const Color(0xFFFFCC02).withOpacity(0.4)),
+                            color: const Color(0xFFFFCC02).withOpacity(0.4),
+                          ),
                         ),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 4),
+                          horizontal: 12,
+                          vertical: 4,
+                        ),
                         child: Column(
-                          children: widget.alreadySent.map((email) {
-                            return Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(vertical: 8),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.hourglass_top_rounded,
-                                      size: 15, color: Color(0xFF92700A)),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      email,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF5C4A00),
-                                      ),
-                                    ),
+                          children:
+                              widget.alreadySent.map((email) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 8,
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8, vertical: 3),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFFCC02)
-                                          .withOpacity(0.25),
-                                      borderRadius: BorderRadius.circular(20),
-                                    ),
-                                    child: const Text(
-                                      'Pending signature',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w700,
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.hourglass_top_rounded,
+                                        size: 15,
                                         color: Color(0xFF92700A),
                                       ),
-                                    ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          email,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600,
+                                            color: Color(0xFF5C4A00),
+                                          ),
+                                        ),
+                                      ),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(
+                                            0xFFFFCC02,
+                                          ).withOpacity(0.25),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: const Text(
+                                          'Pending signature',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF92700A),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                            );
-                          }).toList(),
+                                );
+                              }).toList(),
                         ),
                       ),
                       const SizedBox(height: 18),
@@ -5089,31 +5627,42 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                 decoration: InputDecoration(
                                   hintText: 'name@example.com',
                                   hintStyle: TextStyle(
-                                      color: Colors.grey.shade400,
-                                      fontSize: 14),
-                                  prefixIcon: Icon(Icons.email_outlined,
-                                      color: Colors.grey.shade400, size: 18),
-                                  suffixIcon: isValid
-                                      ? const Icon(Icons.check_circle_rounded,
-                                          color: Color(0xFF2563EB), size: 18)
-                                      : null,
+                                    color: Colors.grey.shade400,
+                                    fontSize: 14,
+                                  ),
+                                  prefixIcon: Icon(
+                                    Icons.email_outlined,
+                                    color: Colors.grey.shade400,
+                                    size: 18,
+                                  ),
+                                  suffixIcon:
+                                      isValid
+                                          ? const Icon(
+                                            Icons.check_circle_rounded,
+                                            color: Color(0xFF2563EB),
+                                            size: 18,
+                                          )
+                                          : null,
                                   filled: true,
-                                  fillColor: isValid
-                                      ? const Color(0xFFF0F6FF)
-                                      : const Color(0xFFF8FAFC),
+                                  fillColor:
+                                      isValid
+                                          ? const Color(0xFFF0F6FF)
+                                          : const Color(0xFFF8FAFC),
                                   errorText: error,
                                   errorStyle: const TextStyle(fontSize: 11.5),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                        color: Colors.grey.shade200),
+                                      color: Colors.grey.shade200,
+                                    ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                      color: error != null
-                                          ? Colors.red.shade300
-                                          : isValid
+                                      color:
+                                          error != null
+                                              ? Colors.red.shade300
+                                              : isValid
                                               ? const Color(0xFF2563EB)
                                               : Colors.grey.shade200,
                                       width: isValid ? 1.5 : 1,
@@ -5122,14 +5671,17 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                   focusedBorder: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                      color: error != null
-                                          ? Colors.red.shade400
-                                          : AppColors.primary,
+                                      color:
+                                          error != null
+                                              ? Colors.red.shade400
+                                              : AppColors.primary,
                                       width: 2,
                                     ),
                                   ),
                                   contentPadding: const EdgeInsets.symmetric(
-                                      vertical: 13, horizontal: 14),
+                                    vertical: 13,
+                                    horizontal: 14,
+                                  ),
                                   isDense: true,
                                 ),
                               ),
@@ -5146,8 +5698,11 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                     color: Colors.red.shade50,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
-                                  child: Icon(Icons.remove,
-                                      size: 16, color: Colors.red.shade400),
+                                  child: Icon(
+                                    Icons.remove,
+                                    size: 16,
+                                    color: Colors.red.shade400,
+                                  ),
                                 ),
                               ),
                             ],
@@ -5157,16 +5712,25 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                     }),
                     TextButton.icon(
                       onPressed: _sending ? null : _addEmail,
-                      icon: const Icon(Icons.add_circle_outline,
-                          size: 16, color: AppColors.primary),
-                      label: const Text('Add another email',
-                          style: TextStyle(
-                              fontSize: 13,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.w600)),
+                      icon: const Icon(
+                        Icons.add_circle_outline,
+                        size: 16,
+                        color: AppColors.primary,
+                      ),
+                      label: const Text(
+                        'Add another email',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                       style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 4)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 4,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -5183,17 +5747,19 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed:
-                          _sending ? null : () => Navigator.pop(context),
+                      onPressed: _sending ? null : () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: Colors.grey.shade700,
                         side: BorderSide(color: Colors.grey.shade300),
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 13),
                       ),
-                      child: const Text('Cancel',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -5205,27 +5771,32 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                         foregroundColor: Colors.white,
                         disabledBackgroundColor: Colors.grey.shade200,
                         shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 13),
                         elevation: 0,
                       ),
-                      child: _sending
-                          ? const SizedBox(
-                              height: 18,
-                              width: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white),
+                      child:
+                          _sending
+                              ? const SizedBox(
+                                height: 18,
+                                width: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                              : Text(
+                                _validEmails.isEmpty
+                                    ? 'Send'
+                                    : 'Send (${_validEmails.length})',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
                               ),
-                            )
-                          : Text(
-                              _validEmails.isEmpty
-                                  ? 'Send'
-                                  : 'Send (${_validEmails.length})',
-                              style: const TextStyle(
-                                  fontSize: 14, fontWeight: FontWeight.w700),
-                            ),
                     ),
                   ),
                 ],
@@ -5271,36 +5842,45 @@ class _PropVm {
   }
 
   static _PropVm fromJsonLoose(Map<String, dynamic> m) {
-    final id = (m['id'] as num?)?.toInt() ??
+    final id =
+        (m['id'] as num?)?.toInt() ??
         (m['propId'] as num?)?.toInt() ??
         (m['propertyId'] as num?)?.toInt() ??
         0;
 
-    final name = (m['propName'] as String?) ??
+    final name =
+        (m['propName'] as String?) ??
         (m['name'] as String?) ??
         (m['propertyName'] as String?) ??
         (m['title'] as String?) ??
         'Property $id';
 
-    final rawDatatype = (m['datatype'] as String?) ??
+    final rawDatatype =
+        (m['datatype'] as String?) ??
         (m['dataType'] as String?) ??
         (m['propertytype'] as String?) ??
         'MFDatatypeText';
 
     final datatype = rawDatatype.replaceAll('MFDataType', 'MFDatatype');
-    final value = m.containsKey('value')
-        ? m['value']
-        : (m['displayValue'] ?? '');
+    final value =
+        m.containsKey('value') ? m['value'] : (m['displayValue'] ?? '');
 
     // Same read-only signal used by TemplateFormScreen: automatic fields,
     // or fields where the server says we can't edit them.
     final isAutomatic = (m['isAutomatic'] as bool?) ?? false;
-    final canEdit = (m['userPermission'] is Map)
-        ? ((m['userPermission'] as Map)['editPermission'] as bool?) ?? true
-        : true;
+    final canEdit =
+        (m['userPermission'] is Map)
+            ? ((m['userPermission'] as Map)['editPermission'] as bool?) ?? true
+            : true;
     final isReadOnly = isAutomatic || !canEdit;
 
-    return _PropVm(id: id, name: name, datatype: datatype, value: value, isReadOnly: isReadOnly,);
+    return _PropVm(
+      id: id,
+      name: name,
+      datatype: datatype,
+      value: value,
+      isReadOnly: isReadOnly,
+    );
   }
 }
 
@@ -5325,9 +5905,10 @@ class _ESignFabState extends State<_ESignFab>
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     )..repeat(reverse: true);
-    _scale = Tween<double>(begin: 1.0, end: 1.06).animate(
-      CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
-    );
+    _scale = Tween<double>(
+      begin: 1.0,
+      end: 1.06,
+    ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
   }
 
   @override
@@ -5342,21 +5923,53 @@ class _ESignFabState extends State<_ESignFab>
       scale: _scale,
       child: FloatingActionButton.extended(
         onPressed: widget.isBusy ? null : widget.onTap,
-        backgroundColor: widget.isBusy ? Colors.grey.shade400 : AppColors.primary,
+        backgroundColor:
+            widget.isBusy ? Colors.grey.shade400 : AppColors.primary,
         foregroundColor: Colors.white,
         elevation: 4,
-        icon: widget.isBusy
-            ? const SizedBox(
-                width: 18, height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              )
-            : const Icon(Icons.draw_outlined, size: 20),
+        icon:
+            widget.isBusy
+                ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+                : const Icon(Icons.draw_outlined, size: 20),
         label: const Text(
           'e-Sign',
           style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+        ),
+      ),
+    );
+  }
+}
+
+//
+class _PreparingCopyLoader extends StatelessWidget {
+  const _PreparingCopyLoader();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text(
+              'Preparing your copy…',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
         ),
       ),
     );

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
+import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/widgets/batch_actions_menu.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
 import 'package:mfiles_app/widgets/object_info_dropdown.dart';
@@ -27,6 +28,7 @@ import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/utils/error_messages.dart';
 import 'package:mfiles_app/widgets/loading_overlay.dart';
 import 'package:mfiles_app/widgets/link_create_sheet.dart';
+import 'package:mfiles_app/widgets/checkout_badge.dart';
 
 class ViewItemsScreen extends StatefulWidget {
   final String title;
@@ -168,14 +170,17 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     });
   }
 
+  // Batch checkout selected objects
   Future<void> _batchCheckout() async {
     if (_selectedObjects.isEmpty) return;
 
     _setProcessing(true, "Checking out documents...");
+
     try {
       final service = context.read<MFilesService>();
 
       int success = 0;
+      int failed = 0;
 
       for (final obj in _selectedObjects.values) {
         final checkedOut = await service.checkoutObject(
@@ -185,30 +190,51 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
         if (checkedOut) {
           success++;
+        } else {
+          failed++;
         }
       }
 
-      _clearSelection();
-
       if (!mounted) return;
 
-      SnackbarHelper.showSuccess(
-        context,
-        success == 1 ? '1 object checked out' : '$success objects checked out',
-      );
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1
+              ? '1 object checked out'
+              : '$success objects checked out',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked out, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked out'
+              : '$failed objects could not be checked out',
+        );
+      }
+
+      _clearSelection();
     } finally {
       _setProcessing(false);
     }
   }
 
+  // Batch undo checkout selected objects
   Future<void> _batchUndoCheckout() async {
     if (_selectedObjects.isEmpty) return;
 
     _setProcessing(true, "Checking in documents...");
+
     try {
       final service = context.read<MFilesService>();
 
       int success = 0;
+      int failed = 0;
 
       for (final obj in _selectedObjects.values) {
         final checkedIn = await service.undoCheckoutObject(
@@ -218,59 +244,105 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
         if (checkedIn) {
           success++;
+        } else {
+          failed++;
         }
       }
 
-      _clearSelection();
-
       if (!mounted) return;
 
-      SnackbarHelper.showSuccess(
-        context,
-        success == 1 ? '1 object checked in' : '$success objects checked in',
-      );
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1 ? '1 object checked in' : '$success objects checked in',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked in, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked in'
+              : '$failed objects could not be checked in',
+        );
+      }
+
+      _clearSelection();
     } finally {
       _setProcessing(false);
     }
   }
 
+  // Batch delete selected objects
   Future<void> _batchDelete() async {
-    if (_selectedObjects.isEmpty) return;
+    if (_selectedIds.isEmpty) return;
+
+    final confirmed = await showBatchDeleteConfirmDialog(
+      context,
+      count: _selectedIds.length,
+    );
+
+    if (confirmed != true || !mounted) return;
 
     _setProcessing(true, "Deleting objects...");
+
     try {
-      final confirmed = await showBatchDeleteConfirmDialog(
-        context,
-        count: _selectedIds.length,
-      );
+      final service = context.read<MFilesService>();
 
-      if (confirmed != true || !mounted) return;
+      final selectedObjects = _selectedObjects.values.toList();
 
-      final svc = context.read<MFilesService>();
+      debugPrint('Selected IDs: $_selectedIds');
+      debugPrint('Matched objects: ${selectedObjects.length}');
 
       int success = 0;
+      int failed = 0;
 
-      for (final obj in _selectedObjects.values) {
-        final ok = await svc.deleteObject(
-          objectId: obj.id,
-          classId: obj.classId,
+      for (final obj in selectedObjects) {
+        debugPrint(
+          'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
         );
 
-        if (ok) success++;
+        final deleted = await service.deleteObject(
+          objectId: obj.id,
+          classId: obj.classId,
+          isCheckedOut: obj.isCheckedOut,
+        );
+
+        debugPrint('Delete result: $deleted');
+        debugPrint('Service error: ${service.error}');
+
+        if (deleted) {
+          success++;
+        } else {
+          failed++;
+        }
       }
-
-      setState(() {
-        _items.removeWhere((e) => _selectedIds.contains(e.id));
-      });
-
-      _clearSelection();
 
       if (!mounted) return;
 
-      SnackbarHelper.showSuccess(
-        context,
-        success == 1 ? '1 object deleted' : '$success objects deleted',
-      );
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1 ? '1 object deleted' : '$success objects deleted',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects deleted, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be deleted'
+              : '$failed objects could not be deleted',
+        );
+      }
+
+      _clearSelection();
     } finally {
       _setProcessing(false);
     }
@@ -371,12 +443,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       if (!mounted) return;
 
       if (files.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No files attached to this document.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.showWarning(context, 'No files attached to this document.');
         return;
       }
 
@@ -402,13 +469,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load preview: $e'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      SnackbarHelper.showError(context, 'Failed to load preview: ${humanizeError(e.toString())}');
     } finally {
       if (mounted) setState(() => _previewLoading.remove(item.id));
     }
@@ -531,319 +592,324 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   }
 
   Widget _buildRow(ViewContentItem item, bool isLast) {
-    final subtitle = _subtitleLabel(item);
-    final svc = context.watch<MFilesService>();
+  final subtitle = _subtitleLabel(item);
+  final svc = context.watch<MFilesService>();
 
-    final bool isObject = item.isObject && item.id > 0;
-    final bool hasRelationships = isObject && item.classId > 0;
+  final bool isObject = item.isObject && item.id > 0;
+  final bool hasRelationships = isObject && item.classId > 0;
+  final bool isDocument = isObject && svc.isDocumentContentItem(item);
 
-    // ─── NEW: only show the eye icon for document-type objects ──────────
-    final bool isDocument = isObject && svc.isDocumentContentItem(item);
-    // ────────────────────────────────────────────────────────────────────
+  if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        svc.ensureRelationshipsPresenceForObject(
+          objectId: item.id,
+          objectTypeId: item.objectTypeId,
+          classId: item.classId,
+          versionId: item.versionId,
+          notify: true,
+        );
+      }
+    });
+  }
 
-    if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          svc.ensureRelationshipsPresenceForObject(
-            objectId: item.id,
-            objectTypeId: item.objectTypeId,
-            classId: item.classId,
-            versionId: item.versionId,
-            notify: true,
-          );
-        }
-      });
-    }
+  final bool infoExpanded = _expandedInfoItemId == item.id;
+  final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
+  final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
 
-    final bool infoExpanded = _expandedInfoItemId == item.id;
-    final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
+  final BorderRadius radius =
+      isLast
+          ? const BorderRadius.vertical(bottom: Radius.circular(12))
+          : BorderRadius.zero;
 
-    final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+  final ViewObject asViewObj = ViewObject(
+    id: item.id,
+    title: item.title,
+    objectTypeId: item.objectTypeId,
+    classId: item.classId,
+    versionId: item.versionId,
+    objectTypeName: item.objectTypeName ?? '',
+    classTypeName: item.classTypeName ?? '',
+    displayId: item.displayId ?? '',
+    createdUtc: item.createdUtc,
+    lastModifiedUtc: item.lastModifiedUtc,
+    isSingleFile: item.isSingleFile,
+    isCheckedOut: item.isCheckedOut,
+    checkoutUserId: item.checkoutUserId,
+    checkoutUsername: item.checkoutUsername,
+  );
 
-    final BorderRadius radius =
-        isLast
-            ? const BorderRadius.vertical(bottom: Radius.circular(12))
-            : BorderRadius.zero;
+  return Column(
+    children: [
+      AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: isDimmed ? 0.45 : 1.0,
+        child: Material(
+          color:
+              _isSelected(item.id)
+                  ? AppColors.primary.withValues(alpha: 0.12)
+                  : infoExpanded
+                  ? AppColors.primary.withValues(alpha: 0.03)
+                  : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side:
+                infoExpanded
+                    ? const BorderSide(color: AppColors.primary, width: 1.5)
+                    : BorderSide.none,
+          ),
+          clipBehavior: Clip.antiAlias,
+          elevation: 0,
+          child: InkWell(
+            borderRadius: radius,
+            onLongPress: () {
+              _toggleSelection(asViewObj);
+            },
+            onTap: () {
+              final now = DateTime.now();
+              if (_suppressRowTap) return;
+              if (_lastIconTap != null &&
+                  now.difference(_lastIconTap!) <
+                      const Duration(milliseconds: 350))
+                return;
 
-    final ViewObject asViewObj = ViewObject(
-      id: item.id,
-      title: item.title,
-      objectTypeId: item.objectTypeId,
-      classId: item.classId,
-      versionId: item.versionId,
-      objectTypeName: item.objectTypeName ?? '',
-      classTypeName: item.classTypeName ?? '',
-      displayId: item.displayId ?? '',
-      createdUtc: item.createdUtc,
-      lastModifiedUtc: item.lastModifiedUtc,
-      isSingleFile: item.isSingleFile,
-      isCheckedOut: item.isCheckedOut,
-      checkoutUserId: item.checkoutUserId,
-      checkoutUsername: item.checkoutUsername,
-    );
+              if (isDimmed) {
+                setState(() {
+                  _expandedInfoItemId = null;
+                  _expandedRelationshipsItemId = null;
+                });
+                return;
+              }
 
-    // ✅ TapRegion removed — see ViewDetailsScreen for full explanation.
-    return Column(
-      children: [
-        AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: isDimmed ? 0.45 : 1.0,
-          child: Material(
-            color:
-                _isSelected(item.id)
-                    ? AppColors.primary.withValues(alpha: 0.12)
-                    : infoExpanded
-                    ? AppColors.primary.withValues(alpha: 0.03)
-                    : Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side:
-                  infoExpanded
-                      ? const BorderSide(color: AppColors.primary, width: 1.5)
-                      : BorderSide.none,
-            ),
-            clipBehavior: Clip.antiAlias,
-            elevation: 0,
-            child: InkWell(
-              borderRadius: radius,
-              onLongPress: () {
+              if (_selectionMode) {
                 _toggleSelection(asViewObj);
-              },
-              onTap: () {
-                // ✅ Guard: reject if an icon tap was just claimed.
-                final now = DateTime.now();
-                if (_suppressRowTap) return;
-                if (_lastIconTap != null &&
-                    now.difference(_lastIconTap!) <
-                        const Duration(milliseconds: 350))
-                  return;
+                return;
+              }
 
-                if (isDimmed) {
-                  setState(() {
-                    _expandedInfoItemId = null;
-                    _expandedRelationshipsItemId = null;
-                  });
-                  return;
-                }
-
-                if (_selectionMode) {
-                  _toggleSelection(asViewObj);
-                  return;
-                }
-
-                _handleTap(item);
-              },
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        // ✅ Relationships chevron
-                        if (hasRelationships &&
-                            svc.cachedHasRelationships(item.id) == true) ...[
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              if (!_tryClaimIconTap()) return;
-                              _toggleRelationships(item.id);
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                relationshipsExpanded
-                                    ? Icons.expand_more
-                                    : Icons.chevron_right,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
+              _handleTap(item);
+            },
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  child: Row(
+                    children: [
+                      // Relationships chevron
+                      if (hasRelationships &&
+                          svc.cachedHasRelationships(item.id) == true) ...[
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (!_tryClaimIconTap()) return;
+                            _toggleRelationships(item.id);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              relationshipsExpanded
+                                  ? Icons.expand_more
+                                  : Icons.chevron_right,
+                              size: 18,
+                              color: AppColors.primary,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                        ] else
-                          const SizedBox(width: 4),
+                        ),
+                        const SizedBox(width: 6),
+                      ] else
+                        const SizedBox(width: 4),
 
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child:
-                              _isSelected(item.id)
-                                  ? Container(
-                                    width: 38,
-                                    height: 38,
-                                    decoration: const BoxDecoration(
-                                      color: AppColors.primary,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.check,
-                                      color: Colors.white,
-                                      size: 22,
-                                    ),
-                                  )
-                                  : _CheckoutBadge(
-                                    objectId: item.id,
-                                    child:
-                                        (item.isObject &&
-                                                svc.isDocumentContentItem(item))
-                                            ? FileTypeBadge(
-                                              extension:
-                                                  svc.cachedExtensionForObject(
-                                                    item.id,
-                                                  ) ??
-                                                  '',
-                                              size: 40,
-                                            )
-                                            : Container(
-                                              width: 38,
-                                              height: 38,
-                                              child: Icon(
-                                                isObject
-                                                    ? svc.iconForViewObject(
-                                                      asViewObj,
-                                                    )
-                                                    : Icons.folder_rounded,
-                                                color: AppColors.primary,
-                                                size: 28,
-                                              ),
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        child:
+                            _isSelected(item.id)
+                                ? Container(
+                                  width: 38,
+                                  height: 38,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 22,
+                                  ),
+                                )
+                                : CheckoutBadge(
+                                  isCheckedOut:
+                                      svc.isCheckedOutLocally(item.id) ||
+                                      item.isCheckedOut,
+                                  checkoutUserId:
+                                      svc.checkoutOwnerId(item.id) ??
+                                      item.checkoutUserId,
+                                  child:
+                                      (item.isObject &&
+                                              svc.isDocumentContentItem(item))
+                                          ? FileTypeBadge(
+                                            extension:
+                                                svc.cachedExtensionForObject(
+                                                  item.id,
+                                                ) ??
+                                                '',
+                                            size: 40,
+                                          )
+                                          : Container(
+                                            width: 38,
+                                            height: 38,
+                                            child: Icon(
+                                              isObject
+                                                  ? svc.iconForViewObject(
+                                                    asViewObj,
+                                                  )
+                                                  : Icons.folder_rounded,
+                                              color: AppColors.primary,
+                                              size: 28,
                                             ),
-                                  ),
-                        ),
+                                          ),
+                                ),
+                      ),
 
-                        const SizedBox(width: 10),
+                      const SizedBox(width: 12),
 
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.title,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.1,
+                                height: 1.2,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                            ),
+                            if (subtitle != null &&
+                                subtitle.trim().isNotEmpty) ...[
+                              const SizedBox(height: 3),
                               Text(
-                                item.title,
-                                maxLines: 3,
+                                subtitle,
+                                maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.2,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.grey.shade500,
+                                  letterSpacing: -0.05,
                                 ),
                               ),
-                              if (subtitle != null &&
-                                  subtitle.trim().isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  subtitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
                             ],
+                          ],
+                        ),
+                      ),
+
+                      // Eye / preview icon
+                      if (isDocument) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _openPreview(item),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.withOpacity(0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child:
+                                _previewLoading.contains(item.id)
+                                    ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              Colors.blueGrey.shade400,
+                                            ),
+                                      ),
+                                    )
+                                    : Icon(
+                                      Icons.remove_red_eye_outlined,
+                                      size: 18,
+                                      color: Colors.blueGrey.shade400,
+                                    ),
                           ),
                         ),
-
-                        // ─── NEW: Eye / preview icon (documents only) ────────────
-                        if (isDocument) ...[
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _openPreview(item),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.blueGrey.withOpacity(0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child:
-                                  _previewLoading.contains(
-                                        item.id,
-                                      ) // ← add spinner
-                                      ? SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                Colors.blueGrey.shade400,
-                                              ),
-                                        ),
-                                      )
-                                      : Icon(
-                                        Icons.remove_red_eye_outlined,
-                                        size: 18,
-                                        color: Colors.blueGrey.shade400,
-                                      ),
-                            ),
-                          ),
-                        ],
-                        // ─────────────────────────────────────────────────────────
-
-                        // ✅ Info icon
-                        if (isObject) ...[
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              if (!_tryClaimIconTap()) return;
-                              _toggleInfo(item.id);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color:
-                                    infoExpanded
-                                        ? AppColors.primary.withOpacity(0.15)
-                                        : AppColors.primary.withOpacity(0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                infoExpanded
-                                    ? Icons.keyboard_arrow_up_rounded
-                                    : Icons.info_outline,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        ] else
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            size: 18,
-                            color: Colors.grey.shade400,
-                          ),
                       ],
+
+                      // Info icon
+                      if (isObject) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (!_tryClaimIconTap()) return;
+                            _toggleInfo(item.id);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color:
+                                  infoExpanded
+                                      ? AppColors.primary.withOpacity(0.15)
+                                      : AppColors.primary.withOpacity(0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              infoExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.info_outline,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ] else
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: Colors.grey.shade300,
+                        ),
+                    ],
+                  ),
+                ),
+
+                if (infoExpanded && isObject) ...[
+                  Divider(height: 1, color: Colors.grey.shade200),
+                  ObjectInfoDropdown(obj: asViewObj),
+                ],
+
+                if (relationshipsExpanded && hasRelationships) ...[
+                  Divider(height: 1, color: Colors.grey.shade200),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: RelationshipsDropdown(
+                      key: ValueKey('rel_${item.id}'),
+                      obj: asViewObj,
                     ),
                   ),
-
-                  if (infoExpanded && isObject) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
-                    ObjectInfoDropdown(obj: asViewObj),
-                  ],
-
-                  if (relationshipsExpanded && hasRelationships) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      child: RelationshipsDropdown(
-                        key: ValueKey('rel_${item.id}'),
-                        obj: asViewObj,
-                      ),
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
           ),
         ),
-        if (!isLast)
-          Divider(height: 0.5, thickness: 0.5, color: Colors.grey.shade100),
-      ],
-    );
-  }
+      ),
+      if (!isLast)
+        Divider(
+          height: 0.5,
+          thickness: 0.5,
+          indent: 64,
+          color: Colors.black.withOpacity(0.06),
+        ),
+    ],
+  );
+}
 
   Future<void> _handleTap(ViewContentItem item) async {
     if (item.isObject) {
@@ -902,11 +968,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       ).hasMatch(key);
 
       if (key.isEmpty || dtype.isEmpty || looksLikeGuid) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('This grouping level cannot be opened.'),
-          ),
-        );
+        SnackbarHelper.showWarning(context, 'This grouping level cannot be opened.');
         return;
       }
 
@@ -974,9 +1036,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Unsupported item type')));
+    SnackbarHelper.showWarning(context, 'Unsupported item type');
   }
 
   PreferredSizeWidget _buildAppBar() {
@@ -1087,23 +1147,101 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             icon: const Icon(Icons.lock),
             onPressed: _batchUndoCheckout,
           ),
-        IconButton(
-          tooltip: 'Delete',
-          icon: const Icon(Icons.delete_outline),
-          onPressed: _batchDelete,
-        ),
+
+        if (allNotCheckedOut)
+          IconButton(
+            tooltip: 'Delete',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _batchDelete,
+          ),
         BatchActionsMenu(
+          disabledValues: () {
+            final svc = context.read<MFilesService>();
+            final single = _selectedObjects.length == 1;
+            return <String>{
+              if (!single) 'copy',
+              if (!single ||
+                  svc.isCheckedOutLocally(_selectedObjects.values.first.id))
+                'history',
+            };
+          }(),
           onSelected: (value) async {
             switch (value) {
               case 'history':
                 if (_selectedObjects.length == 1) {
                   final obj = _selectedObjects.values.first;
+                  final svc = context.read<MFilesService>();
+                  if (svc.isCheckedOutLocally(obj.id)) {
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Check in this item to view its version history.',
+                    );
+                    break;
+                  }
                   _clearSelection();
                   showVersionHistorySheet(
                     context,
                     obj: obj,
                     onRolledBack: () {},
                   );
+                }
+                break;
+
+              case 'copy':
+                if (_selectedObjects.length == 1) {
+                  final src = _selectedObjects.values.first;
+                  _clearSelection();
+
+                  final svc = context.read<MFilesService>();
+                  final objectType = svc.objectTypes
+                      .where((t) => t.id == src.objectTypeId)
+                      .firstOrNull;
+
+                  if (objectType == null) {
+                    if (!mounted) break;
+                    SnackbarHelper.showWarning(context, 'Object type unavailable — please refresh');
+                    break;
+                  }
+
+                  setState(() {
+                    _navLoading = true;
+                    _navMessage = 'Preparing copy...';
+                  });
+
+                  try {
+                    await svc.fetchClassProperties(src.objectTypeId, src.classId);
+
+                    List<Map<String, dynamic>>? srcProps;
+                    try {
+                      final displayIdInt = int.tryParse(src.displayId) ?? src.id;
+                      srcProps = await svc.fetchObjectViewProps(
+                        objectId: displayIdInt,
+                        objectTypeId: src.objectTypeId,
+                      );
+                    } catch (e) {
+                      debugPrint('⚠️ Make-a-copy: could not preload source props: $e');
+                    }
+
+                    if (!mounted) break;
+
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => DynamicFormScreen(
+                          objectType: objectType,
+                          copyFrom: src,
+                          copyFromPrefetchedProps: srcProps,
+                        ),
+                      ),
+                    );
+                  } finally {
+                    if (mounted) {
+                      setState(() {
+                        _navLoading = false;
+                        _navMessage = null;
+                      });
+                    }
+                  }
                 }
                 break;
 
@@ -1325,10 +1463,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                         boxShadow: [
                                           BoxShadow(
                                             color: Colors.black.withOpacity(
-                                              0.04,
+                                              0.03,
                                             ),
-                                            blurRadius: 12,
-                                            offset: const Offset(0, 2),
+                                            blurRadius: 10,
+                                            offset: const Offset(0, 1),
                                           ),
                                         ],
                                       ),
@@ -1799,43 +1937,6 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           ),
         ),
       ),
-    );
-  }
-}
-
-// ───────────────────── CHECKOUT BADGE CLASS ─────────────────────────────────────────────────────────
-class _CheckoutBadge extends StatelessWidget {
-  final int objectId;
-  final Widget child;
-
-  const _CheckoutBadge({required this.objectId, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final isOut = context.watch<MFilesService>().isCheckedOutLocally(objectId);
-    if (!isOut) return child;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        child,
-        Positioned(
-          right: -4,
-          bottom: -4,
-          child: Container(
-            width: 16,
-            height: 16,
-            decoration: const BoxDecoration(
-              color: Color(0xFF0F766E),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.drive_file_rename_outline,
-              size: 10,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

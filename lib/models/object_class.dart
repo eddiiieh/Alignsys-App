@@ -1,12 +1,32 @@
+class ClassWorkflowRef {
+  final int id;
+  final String? alias;
+
+  ClassWorkflowRef({required this.id, this.alias});
+
+  factory ClassWorkflowRef.fromJson(Map<String, dynamic>? json) {
+    if (json == null) return ClassWorkflowRef(id: 0, alias: null);
+    return ClassWorkflowRef(
+      id: (json['id'] as num?)?.toInt() ?? 0,
+      alias: json['alias'] as String?,
+    );
+  }
+}
 class ObjectClass {
   final int id;
   final String name;
   final int objectTypeId;
+  final String alias; // ← add: the class's own alias
+  final ClassWorkflowRef defaultWorkflow; // ← add: the class's assigned workflow
+  final ClassWorkflowRef defaultState;
 
   ObjectClass({
     required this.id,
     required this.name,
     required this.objectTypeId,
+    required this.alias,
+    required this.defaultWorkflow,
+    required this.defaultState,
   });
 
   factory ObjectClass.fromJson(Map<String, dynamic> json, int objectTypeId) {
@@ -14,6 +34,13 @@ class ObjectClass {
       id: (json['classId'] as num?)?.toInt() ?? 0,
       name: json['className'] ?? 'Unnamed Class',
       objectTypeId: objectTypeId,
+      alias: (json['alias'] as String?) ?? '',
+      defaultWorkflow: ClassWorkflowRef.fromJson(
+        json['defaultwf'] as Map<String, dynamic>?,
+      ),
+      defaultState: ClassWorkflowRef.fromJson(
+        json['state'] as Map<String, dynamic>?,
+      ),
     );
   }
 
@@ -23,6 +50,9 @@ class ObjectClass {
         'classId': id,
         'className': name,
         'objectTypeId': objectTypeId,
+        'alias': alias,
+        'defaultwf': {'id': defaultWorkflow.id, 'alias': defaultWorkflow.alias},
+        'state': {'id': defaultState.id, 'alias': defaultState.alias},
       };
 }
 

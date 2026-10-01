@@ -40,14 +40,11 @@ class DocumentPreviewScreen extends StatefulWidget {
   State<DocumentPreviewScreen> createState() => _DocumentPreviewScreenState();
 }
 
-// CHANGED: mixin WidgetsBindingObserver so we can detect app-resume after
-// the user returns from the external viewer app.
 class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     with WidgetsBindingObserver {
   late Future<File> _fileFuture;
   bool _downloading = false;
 
-  // CHANGED: controller powers custom jump-to-page + in-doc search
   final PdfViewerController _pdfController = PdfViewerController();
   int _totalPages = 0;
 
@@ -56,18 +53,13 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
   final FocusNode _searchFieldFocus = FocusNode();
   PdfTextSearchResult? _searchResult;
 
-  // CHANGED: tracks whether we have already handed the file off to an
-  // external app.  When true, _buildPreview shows a "Opened externally"
-  // card instead of the stuck spinner.
   bool _openedExternally = false;
 
   @override
   void initState() {
     super.initState();
     _fileFuture = _downloadFile();
-    // CHANGED: register for app lifecycle events
     WidgetsBinding.instance.addObserver(this);
-    // CHANGED: rebuild so the pill border can react to focus state
     _searchFieldFocus.addListener(() {
       if (mounted) setState(() {});
     });
@@ -76,25 +68,18 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    // CHANGED: release search highlights + controllers
     _searchResult?.clear();
     _searchInputController.dispose();
     _searchFieldFocus.dispose();
     super.dispose();
   }
 
-  // CHANGED: when the user comes back from the external app the OS resumes
-  // our Flutter app.  We reset _openedExternally so the screen no longer
-  // looks "stuck" — it now shows the confirmation card with an "Open again"
-  // button instead of the spinner.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && _openedExternally) {
       if (mounted) {
         setState(() {
           // Keep _openedExternally = true so the card stays visible.
-          // The card has an "Open again" button, which is better UX than
-          // silently reverting to a spinner.
         });
       }
     }
@@ -106,8 +91,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
   Future<File> _downloadFile() async {
     final svc = context.read<MFilesService>();
 
-    // ── Version-specific preview: bypass cache. fileId is stable across
-    // versions, so caching by fileId alone would serve the wrong version. ──
     if (widget.versionId != null) {
       debugPrint('📥 Fetching version ${widget.versionId} for fileId=${widget.fileId}');
 
@@ -115,8 +98,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
         displayObjectId: widget.displayObjectId,
         versionId: widget.versionId!,
         fileId: widget.fileId,
-        objectTypeId: widget.objectTypeId, // CHANGED: use object type instead of class
-        classId: widget.classId, // document object type
+        objectTypeId: widget.objectTypeId,
+        classId: widget.classId,
       );
 
       final extToUse = _cleanExt(widget.extension);
@@ -129,7 +112,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
       return file;
     }
 
-    // ── Cache hit: return immediately ────────────────────────────────
     final cached = svc.cachedFile(widget.fileId);
     if (cached != null && await cached.exists()) {
       debugPrint('📦 File cache hit for fileId=${widget.fileId}');
@@ -155,7 +137,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     final file = File(filePath);
     await file.writeAsBytes(result.bytes, flush: true);
 
-    // ── Store in cache ────────────────────────────────────────────────
     svc.cacheFile(widget.fileId, file);
 
     return file;
@@ -203,15 +184,12 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     }
   }
 
-  // CHANGED: _openExternally now sets _openedExternally = true on success,
-  // which replaces the spinner with the confirmation card immediately.
   Future<void> _openExternally(File file) async {
     try {
       final result = await OpenFilex.open(file.path);
       if (result.type != ResultType.done) {
         throw Exception(result.message);
       }
-      // CHANGED: mark as handed off — triggers rebuild to show the card
       if (mounted) {
         setState(() => _openedExternally = true);
       }
@@ -226,7 +204,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     }
   }
 
-  // CHANGED: toggles the inline search bar; clears highlights on close.
   void _toggleSearch() {
     setState(() {
       _searchActive = !_searchActive;
@@ -238,7 +215,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     });
   }
 
-  // CHANGED: filled blue circular nav button; light grey + muted icon when disabled.
   Widget _buildSearchNavButton({
     required IconData icon,
     required String tooltip,
@@ -267,8 +243,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     );
   }
 
-  // CHANGED: runs a text search against the loaded PDF and listens for
-  // async completion so the match counter updates once Syncfusion finishes.
   void _runSearch(String query) {
     if (query.trim().isEmpty) {
       setState(() {
@@ -284,8 +258,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     setState(() => _searchResult = result);
   }
 
-  // CHANGED: custom "go to page" bottom sheet, styled to match the vault
-  // switcher's header treatment — teal icon block, title/subtitle, pill OK.
   void _showJumpToPageSheet() {
     if (_totalPages <= 0) return;
     final controller = TextEditingController();
@@ -309,7 +281,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Drag handle
                 Container(
                   width: 40,
                   height: 4,
@@ -320,7 +291,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                 ),
                 const SizedBox(height: 14),
 
-                // ── Teal header, matching vault switcher ──
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
@@ -375,7 +345,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
                 const SizedBox(height: 20),
 
-                // ── Page input ──
                 TextField(
                   controller: controller,
                   focusNode: focusNode,
@@ -410,7 +379,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
                 const SizedBox(height: 20),
 
-                // ── Actions ──
                 Row(
                   children: [
                     Expanded(
@@ -471,8 +439,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     Navigator.pop(sheetContext);
   }
 
-  // CHANGED: new widget shown after a file has been successfully handed off
-  // to an external app.  Replaces the stuck "Opening file…" spinner.
   Widget _buildOpenedExternallyCard(File file) {
     final ext = _cleanExt(file.path.split('.').last).toUpperCase();
     return Center(
@@ -516,7 +482,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
               ),
             ),
             const SizedBox(height: 24),
-            // "Open again" — re-triggers the external app
             TextButton.icon(
               onPressed: () => _openExternally(file),
               icon: const Icon(Icons.open_in_new_rounded, size: 16),
@@ -529,7 +494,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
               ),
             ),
             const SizedBox(height: 12),
-            // "Go back" — clean exit
             TextButton.icon(
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.arrow_back_rounded, size: 16),
@@ -547,8 +511,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
   }
 
   Widget _buildPreview(File file) {
-    // CHANGED: if we've already handed off to an external app, show the
-    // confirmation card immediately — no more stuck spinner on back-nav.
     if (_openedExternally) {
       return _buildOpenedExternallyCard(file);
     }
@@ -560,10 +522,9 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
         file,
         controller: _pdfController,
         canShowScrollHead: true,
-        canShowScrollStatus: false, // CHANGED: replaced by custom sheet
+        canShowScrollStatus: false,
         enableDoubleTapZooming: true,
         onDocumentLoaded: (details) {
-          // CHANGED: capture page count for the jump-to-page sheet
           if (mounted) {
             setState(() => _totalPages = details.document.pages.count);
           }
@@ -612,11 +573,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
       );
     }
 
-    // CHANGED: unsupported format — hand off to OS.
-    // The postFrameCallback triggers _openExternally, which will flip
-    // _openedExternally = true and cause a rebuild to show the card.
-    // The spinner shown here is therefore only ever visible for the brief
-    // moment before the external app picker/launcher appears.
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _openExternally(file));
     return Center(
@@ -630,8 +586,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
             style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 8),
-          // CHANGED: small hint so the user isn't confused if the OS picker
-          // takes a moment to appear
           Text(
             'Launching external app',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
@@ -660,14 +614,12 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          // CHANGED: custom go-to-page entry point (PDF only)
           if (_cleanExt(widget.extension) == 'pdf' && _totalPages > 0)
             IconButton(
               onPressed: _showJumpToPageSheet,
               icon: const Icon(Icons.keyboard_double_arrow_right_rounded),
               tooltip: 'Go to page',
             ),
-          // CHANGED: inline text search toggle (PDF only)
           if (_cleanExt(widget.extension) == 'pdf')
             IconButton(
               onPressed: _toggleSearch,
@@ -696,7 +648,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
       body: NetworkBanner(
         child: Column(
           children: [
-            // ── File info banner ───────────────────────────────────────
             FutureBuilder<File>(
               future: _fileFuture,
               builder: (context, snap) {
@@ -726,9 +677,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                       Tooltip(
                         message: 'Open externally',
                         child: InkWell(
-                          // CHANGED: when already opened externally, tapping
-                          // "Open" again re-triggers the external app rather
-                          // than doing nothing.
                           onTap: fileReady
                               ? () => _openExternally(snap.data!)
                               : null,
@@ -775,8 +723,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
             ),
             const Divider(height: 1),
 
-            // CHANGED: inline search bar — full pill field with focus-reactive
-            // border, filled blue nav buttons, plain-text match counter.
             if (_searchActive)
               Container(
                 width: double.infinity,
@@ -789,7 +735,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                         height: 44,
                         decoration: BoxDecoration(
                           color: AppColors.surfaceLight,
-                          borderRadius: BorderRadius.circular(22), // CHANGED: full pill
+                          borderRadius: BorderRadius.circular(22),
                           border: Border.all(
                             color: _searchFieldFocus.hasFocus
                                 ? AppColors.primary
@@ -830,7 +776,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                     ),
                     const SizedBox(width: 10),
 
-                    // ── Match counter — plain text, no fill ──
                     if (_searchResult != null && _searchResult!.hasResult)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -858,7 +803,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
                     const SizedBox(width: 8),
 
-                    // ── Prev / next — filled blue, white icon ──
                     _buildSearchNavButton(
                       icon: Icons.keyboard_arrow_up,
                       tooltip: 'Previous match',
@@ -876,7 +820,6 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                 ),
               ),
 
-            // ── Preview area ───────────────────────────────────────────
             Expanded(
               child: FutureBuilder<File>(
                 future: _fileFuture,
@@ -890,43 +833,65 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                     final svc = context.read<MFilesService>();
                     final isTrashed = svc.isObjectDeleted(widget.displayObjectId);
                     final errStr = snap.error.toString().toLowerCase();
+
+                    // ── Existing error classifications ──
                     final isCommitError = errStr.contains('not been committed') ||
                         errStr.contains('not committed');
+
+                    // ── NEW: checked-out detection ──
+                    // M-Files error text for a checked-out file typically
+                    // contains "checked out" or "is checked out".
+                    final isCheckedOut = errStr.contains('checked out') ||
+                        errStr.contains('checkedout') ||
+                        errStr.contains('check out');
+
                     final isCorruptError = errStr.contains('could not find') ||
                         errStr.contains('file signature') ||
                         errStr.contains('corrupted');
 
+                    // ── Icon ──
                     final icon = isTrashed
                         ? Icons.delete_outline_rounded
-                        : isCommitError
-                            ? Icons.lock_clock_outlined
-                            : isCorruptError
-                                ? Icons.broken_image_outlined
-                                : Icons.cloud_off_rounded;
+                        : isCheckedOut
+                            ? Icons.lock_open_rounded
+                            : isCommitError
+                                ? Icons.lock_clock_outlined
+                                : isCorruptError
+                                    ? Icons.broken_image_outlined
+                                    : Icons.cloud_off_rounded;
 
+                    // ── Color ──
                     final color = isTrashed
                         ? Colors.red.shade400
-                        : isCommitError
-                            ? Colors.orange.shade400
-                            : isCorruptError
-                                ? Colors.purple.shade300
-                                : Colors.grey.shade400;
+                        : isCheckedOut
+                            ? Colors.blue.shade400
+                            : isCommitError
+                                ? Colors.orange.shade400
+                                : isCorruptError
+                                    ? Colors.purple.shade300
+                                    : Colors.grey.shade400;
 
+                    // ── Title ──
                     final title = isTrashed
                         ? 'Document has been trashed'
-                        : isCommitError
-                            ? 'File not checked in'
-                            : isCorruptError
-                                ? 'File may be corrupted'
-                                : 'Could not load file';
+                        : isCheckedOut
+                            ? 'File is checked out'
+                            : isCommitError
+                                ? 'File not checked in'
+                                : isCorruptError
+                                    ? 'File may be corrupted'
+                                    : 'Could not load file';
 
+                    // ── Message ──
                     final message = isTrashed
                         ? 'This document was moved to trash. Restore it in the Trash tab to preview it again.'
-                        : isCommitError
-                            ? 'This file has not been checked in to M-Files yet. Ask the owner to check it in and try again.'
-                            : isCorruptError
-                                ? 'The file could not be read. It may be damaged or in an unsupported format.'
-                                : 'The file could not be downloaded. The file could be checked out/trashed.';
+                        : isCheckedOut
+                            ? 'This file is currently checked out by another user. Ask them to check it in, then try again.'
+                            : isCommitError
+                                ? 'This file has not been checked in to M-Files yet. Ask the owner to check it in and try again.'
+                                : isCorruptError
+                                    ? 'The file could not be read. It may be damaged or in an unsupported format.'
+                                    : 'The file could not be downloaded. The file could be checked out/trashed.';
 
                     return Center(
                       child: Padding(

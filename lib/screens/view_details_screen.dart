@@ -5,6 +5,7 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/group_filter.dart';
+import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/view_items_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
@@ -29,6 +30,7 @@ import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/widgets/loading_overlay.dart';
 import 'package:mfiles_app/widgets/link_create_sheet.dart';
+import 'package:mfiles_app/widgets/checkout_badge.dart';
 
 enum _SortField {
   name,
@@ -40,12 +42,9 @@ enum _SortField {
   id,
   versionId,
 }
+
 class ViewDetailsScreen extends StatefulWidget {
-  const ViewDetailsScreen({
-    super.key,
-    required this.view,
-    this.parentSection,
-  });
+  const ViewDetailsScreen({super.key, required this.view, this.parentSection});
 
   final ViewItem view;
   final String? parentSection;
@@ -102,27 +101,29 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     setState(() {
       _selectedIds.addAll(items.map((item) => item.id));
       _selectedObjects.addEntries(
-        items.where((item) => item.id > 0).map(
-          (item) => MapEntry(
-            item.id,
-            ViewObject(
-              id: item.id,
-              title: item.title,
-              objectTypeId: item.objectTypeId,
-              classId: item.classId,
-              versionId: item.versionId,
-              objectTypeName: item.objectTypeName ?? '',
-              classTypeName: item.classTypeName ?? '',
-              displayId: item.displayId ?? '',
-              createdUtc: item.createdUtc,
-              lastModifiedUtc: item.lastModifiedUtc,
-              isSingleFile: item.isSingleFile,
-              isCheckedOut: item.isCheckedOut,
-              checkoutUserId: item.checkoutUserId,
-              checkoutUsername: item.checkoutUsername,
+        items
+            .where((item) => item.id > 0)
+            .map(
+              (item) => MapEntry(
+                item.id,
+                ViewObject(
+                  id: item.id,
+                  title: item.title,
+                  objectTypeId: item.objectTypeId,
+                  classId: item.classId,
+                  versionId: item.versionId,
+                  objectTypeName: item.objectTypeName ?? '',
+                  classTypeName: item.classTypeName ?? '',
+                  displayId: item.displayId ?? '',
+                  createdUtc: item.createdUtc,
+                  lastModifiedUtc: item.lastModifiedUtc,
+                  isSingleFile: item.isSingleFile,
+                  isCheckedOut: item.isCheckedOut,
+                  checkoutUserId: item.checkoutUserId,
+                  checkoutUsername: item.checkoutUsername,
+                ),
+              ),
             ),
-          ),
-        ),
       );
     });
   }
@@ -182,12 +183,15 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     super.didChangeDependencies();
     if (!_dataLoaded) {
       _dataLoaded = true;
-      _future = context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
-        final svc = context.read<MFilesService>();
-        svc.warmExtensionsForItems(items);
-        svc.syncCheckoutStateForItems(items);   // ← ADD
-        return items;
-      });
+      _future = context
+          .read<MFilesService>()
+          .fetchObjectsInViewRaw(widget.view.id)
+          .then((items) {
+            final svc = context.read<MFilesService>();
+            svc.warmExtensionsForItems(items);
+            svc.syncCheckoutStateForItems(items); // ← ADD
+            return items;
+          });
     }
   }
 
@@ -213,13 +217,15 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       _dataLoaded = false;
       _expandedInfoItemId = null;
       _expandedRelationshipsItemId = null;
-      _future =
-          context.read<MFilesService>().fetchObjectsInViewRaw(widget.view.id).then((items) {
-        final svc = context.read<MFilesService>();
-        svc.warmExtensionsForItems(items);
-        svc.syncCheckoutStateForItems(items);
-        return items;
-      });
+      _future = context
+          .read<MFilesService>()
+          .fetchObjectsInViewRaw(widget.view.id)
+          .then((items) {
+            final svc = context.read<MFilesService>();
+            svc.warmExtensionsForItems(items);
+            svc.syncCheckoutStateForItems(items);
+            return items;
+          });
     });
   }
 
@@ -247,44 +253,74 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   // Batch delete selected objects
   Future<void> _batchDelete() async {
-  if (_selectedObjects.isEmpty) return;
+    if (_selectedIds.isEmpty) return;
 
-  final confirmed = await showBatchDeleteConfirmDialog(
-    context,
-    count: _selectedIds.length,
-  );
-
-  if (confirmed != true || !mounted) return;
-
-  _setProcessing(true, "Deleting objects...");
-  try {
-  final svc = context.read<MFilesService>();
-
-  int success = 0;
-
-  for (final obj in _selectedObjects.values) {
-    final ok = await svc.deleteObject(
-      objectId: obj.id,
-      classId: obj.classId,
-    );
-
-    if (ok) success++;
-  }
-
-    _clearSelection();
-    _refreshThisView();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
+    final confirmed = await showBatchDeleteConfirmDialog(
       context,
-      success == 1
-          ? '1 object deleted'
-          : '$success objects deleted',
+      count: _selectedIds.length,
     );
-  } finally {
-    _setProcessing(false);
-  }
+
+    if (confirmed != true || !mounted) return;
+
+    _setProcessing(true, "Deleting objects...");
+
+    try {
+      final service = context.read<MFilesService>();
+
+      final selectedObjects = _selectedObjects.values.toList();
+
+      debugPrint('Selected IDs: $_selectedIds');
+      debugPrint('Matched objects: ${selectedObjects.length}');
+
+      int success = 0;
+      int failed = 0;
+
+      for (final obj in selectedObjects) {
+        debugPrint(
+          'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+        );
+
+        final deleted = await service.deleteObject(
+          objectId: obj.id,
+          classId: obj.classId,
+          isCheckedOut: obj.isCheckedOut,
+        );
+
+        debugPrint('Delete result: $deleted');
+        debugPrint('Service error: ${service.error}');
+
+        if (deleted) {
+          success++;
+        } else {
+          failed++;
+        }
+      }
+
+      if (!mounted) return;
+
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1 ? '1 object deleted' : '$success objects deleted',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects deleted, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be deleted'
+              : '$failed objects could not be deleted',
+        );
+      }
+
+      _clearSelection();
+    } finally {
+      _setProcessing(false);
+    }
   }
 
   // Batch checkout selected objects
@@ -292,35 +328,53 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     if (_selectedObjects.isEmpty) return;
 
     _setProcessing(true, "Checking out documents...");
+
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    int success = 0;
+      int success = 0;
+      int failed = 0;
 
-    for (final obj in _selectedObjects.values) {
-      final checkedOut = await service.checkoutObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-      );
+      for (final obj in _selectedObjects.values) {
+        final checkedOut = await service.checkoutObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+        );
 
-      if (checkedOut) {
-        success++;
+        if (checkedOut) {
+          success++;
+        } else {
+          failed++;
+        }
       }
+
+      if (!mounted) return;
+
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1
+              ? '1 object checked out'
+              : '$success objects checked out',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked out, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked out'
+              : '$failed objects could not be checked out',
+        );
+      }
+
+      _clearSelection();
+    } finally {
+      _setProcessing(false);
     }
-
-    _clearSelection();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object checked out'
-          : '$success objects checked out',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   // Batch undo checkout selected objects
@@ -328,35 +382,51 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     if (_selectedObjects.isEmpty) return;
 
     _setProcessing(true, "Checking in documents...");
+
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    int success = 0;
+      int success = 0;
+      int failed = 0;
 
-    for (final obj in _selectedObjects.values) {
-      final checkedIn = await service.undoCheckoutObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-      );
+      for (final obj in _selectedObjects.values) {
+        final checkedIn = await service.undoCheckoutObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+        );
 
-      if (checkedIn) {
-        success++;
+        if (checkedIn) {
+          success++;
+        } else {
+          failed++;
+        }
       }
+
+      if (!mounted) return;
+
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1 ? '1 object checked in' : '$success objects checked in',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked in, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked in'
+              : '$failed objects could not be checked in',
+        );
+      }
+
+      _clearSelection();
+    } finally {
+      _setProcessing(false);
     }
-    
-    _clearSelection();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object checked in'
-          : '$success objects checked in',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   // ── Fetch files first, then push DocumentPreviewScreen ────────────────────
@@ -389,16 +459,17 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => DocumentPreviewScreen(
-            displayObjectId: item.id,
-            classId: item.classId,
-            fileId: f.fileId,
-            fileTitle: f.fileTitle,
-            extension: f.extension,
-            reportGuid: f.reportGuid,
-            objectTypeId: item.objectTypeId,
-            canDownload: true,
-          ),
+          builder:
+              (_) => DocumentPreviewScreen(
+                displayObjectId: item.id,
+                classId: item.classId,
+                fileId: f.fileId,
+                fileTitle: f.fileTitle,
+                extension: f.extension,
+                reportGuid: f.reportGuid,
+                objectTypeId: item.objectTypeId,
+                canDownload: true,
+              ),
         ),
       );
     } catch (e) {
@@ -417,9 +488,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   String? _subtitleLabel(ViewContentItem item) {
     if (item.isObject) {
-      final idPart = (item.displayId ?? '').trim().isNotEmpty
-          ? item.displayId!.trim()
-          : '${item.id}';
+      final idPart =
+          (item.displayId ?? '').trim().isNotEmpty
+              ? item.displayId!.trim()
+              : '${item.id}';
       final t = (item.objectTypeName ?? '').trim();
       if (t.isNotEmpty) return '$t • ID $idPart';
       final c = (item.classTypeName ?? '').trim();
@@ -440,10 +512,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   List<ViewContentItem> _applySort(List<ViewContentItem> items) {
-    final folders = items
-        .where((i) => i.isViewFolder || i.isGroupFolder)
-        .toList()
-      ..sort((a, b) => _alphaCompare(a.title, b.title));
+    final folders =
+        items.where((i) => i.isViewFolder || i.isGroupFolder).toList()
+          ..sort((a, b) => _alphaCompare(a.title, b.title));
 
     final objects =
         items.where((i) => !i.isViewFolder && !i.isGroupFolder).toList();
@@ -456,8 +527,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           return _compareDates(a.createdUtc, b.createdUtc);
         case _SortField.lastModified:
           return _compareDates(a.lastModifiedUtc, b.lastModifiedUtc);
-          case _SortField.classType:
-        return _compareStrings(a.classTypeName, b.classTypeName);
+        case _SortField.classType:
+          return _compareStrings(a.classTypeName, b.classTypeName);
         case _SortField.displayId:
           return _compareStrings(a.displayId, b.displayId);
         case _SortField.id:
@@ -494,12 +565,14 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   int _alphaCompare(String a, String b) {
     int category(String s) {
-      if (s.isEmpty) return 1; // treat empty as digit-tier, arbitrary but consistent
+      if (s.isEmpty)
+        return 1; // treat empty as digit-tier, arbitrary but consistent
       final ch = s[0];
       if (RegExp(r'[a-zA-Z]').hasMatch(ch)) return 2;
       if (RegExp(r'[0-9]').hasMatch(ch)) return 1;
       return 0; // symbols/punctuation
     }
+
     final catA = category(a);
     final catB = category(b);
     if (catA != catB) return catA.compareTo(catB);
@@ -507,14 +580,16 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildBreadcrumbs() {
-    return BreadcrumbBar(segments: [
-      BreadcrumbSegment(
-        label: 'Home',
-        icon: Icons.home_rounded,
-        onTap: () => Navigator.popUntil(context, (route) => route.isFirst),
-      ),
-      BreadcrumbSegment(label: widget.view.name),
-    ]);
+    return BreadcrumbBar(
+      segments: [
+        BreadcrumbSegment(
+          label: 'Home',
+          icon: Icons.home_rounded,
+          onTap: () => Navigator.popUntil(context, (route) => route.isFirst),
+        ),
+        BreadcrumbSegment(label: widget.view.name),
+      ],
+    );
   }
 
   Widget _buildInViewSearchBar() {
@@ -580,21 +655,22 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   color: AppColors.primary.withOpacity(0.6),
                   size: 20,
                 ),
-                suffixIcon: _filter.isNotEmpty
-                    ? IconButton(
-                        icon: Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: Colors.grey.shade400,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _filter = '';
-                            _searchController.clear();
-                          });
-                        },
-                      )
-                    : null,
+                suffixIcon:
+                    _filter.isNotEmpty
+                        ? IconButton(
+                          icon: Icon(
+                            Icons.close_rounded,
+                            size: 18,
+                            color: Colors.grey.shade400,
+                          ),
+                          onPressed: () {
+                            setState(() {
+                              _filter = '';
+                              _searchController.clear();
+                            });
+                          },
+                        )
+                        : null,
               ),
               onChanged: (v) => setState(() => _filter = v),
             ),
@@ -605,20 +681,21 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildRow(ViewContentItem item, bool isLast) {
-    final subtitle = _subtitleLabel(item);
-    final svc = context.watch<MFilesService>();
+  final subtitle = _subtitleLabel(item);
+  final svc = context.watch<MFilesService>();
 
-    final bool isObject = item.isObject && item.id > 0;
-    final bool hasRelationships = isObject && item.classId > 0;
-    final bool canDelete = isObject;
-    final bool isDocument = isObject && svc.isDocumentContentItem(item);
+  final bool isObject = item.isObject && item.id > 0;
+  final bool hasRelationships = isObject && item.classId > 0;
+  final bool canDelete = isObject;
+  final bool isDocument = isObject && svc.isDocumentContentItem(item);
 
-    final bool infoExpanded = _expandedInfoItemId == item.id;
-    final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
-    final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+  final bool infoExpanded = _expandedInfoItemId == item.id;
+  final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
+  final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
 
-    final ViewObject? asViewObj = canDelete
-        ? ViewObject(
+  final ViewObject? asViewObj =
+      canDelete
+          ? ViewObject(
             id: item.id,
             title: item.title,
             objectTypeId: item.objectTypeId,
@@ -634,111 +711,118 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             checkoutUserId: item.checkoutUserId,
             checkoutUsername: item.checkoutUsername,
           )
-        : null;
+          : null;
 
-    if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          svc.ensureRelationshipsPresenceForObject(
-            objectId: item.id,
-            objectTypeId: item.objectTypeId,
-            classId: item.classId,
-            versionId: item.versionId,
-            notify: true,
-          );
-        }
-      });
-    }
+  if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        svc.ensureRelationshipsPresenceForObject(
+          objectId: item.id,
+          objectTypeId: item.objectTypeId,
+          classId: item.classId,
+          versionId: item.versionId,
+          notify: true,
+        );
+      }
+    });
+  }
 
-    final BorderRadius radius = isLast
-        ? const BorderRadius.vertical(bottom: Radius.circular(12))
-        : BorderRadius.zero;
+  final BorderRadius radius =
+      isLast
+          ? const BorderRadius.vertical(bottom: Radius.circular(12))
+          : BorderRadius.zero;
 
-    return Column(
-      children: [
-        AnimatedOpacity(
-          duration: const Duration(milliseconds: 200),
-          opacity: isDimmed ? 0.45 : 1.0,
-          child: Material(
-            color: _isSelected(item.id)
-            ? AppColors.primary.withOpacity(0.12)
-            : infoExpanded
-                ? AppColors.primary.withOpacity(0.03)
-                : Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: radius,
-              side: infoExpanded
-                  ? const BorderSide(color: AppColors.primary, width: 1.5)
-                  : BorderSide.none,
-            ),
-            clipBehavior: Clip.antiAlias,
-            elevation: 0,
-            child: InkWell(
-              borderRadius: radius,
-              onTap: () {
-                final now = DateTime.now();
-                if (_suppressRowTap) return;
-                if (_lastIconTap != null &&
-                    now.difference(_lastIconTap!) <
-                        const Duration(milliseconds: 350)) return;
-                if (isDimmed) {
-                  setState(() {
-                    _expandedInfoItemId = null;
-                    _expandedRelationshipsItemId = null;
-                  });
-                  return;
-                }
-                if (_selectionMode && asViewObj != null) {
-                  _toggleSelection(asViewObj);
-                  return;
-                }
-
-                _handleTap(item);
-              },
-              onLongPress: canDelete
-                ? () {
-                  debugPrint("LONG PRESS: ${item.title}");
-                    if (asViewObj != null) {
-                      _toggleSelection(asViewObj);
+  return Column(
+    children: [
+      AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: isDimmed ? 0.45 : 1.0,
+        child: Material(
+          color:
+              _isSelected(item.id)
+                  ? AppColors.primary.withOpacity(0.12)
+                  : infoExpanded
+                  ? AppColors.primary.withOpacity(0.03)
+                  : Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: radius,
+            side:
+                infoExpanded
+                    ? const BorderSide(color: AppColors.primary, width: 1.5)
+                    : BorderSide.none,
+          ),
+          clipBehavior: Clip.antiAlias,
+          elevation: 0,
+          child: InkWell(
+            borderRadius: radius,
+            onTap: () {
+              final now = DateTime.now();
+              if (_suppressRowTap) return;
+              if (_lastIconTap != null &&
+                  now.difference(_lastIconTap!) <
+                      const Duration(milliseconds: 350))
+                return;
+              if (isDimmed) {
+                setState(() {
+                  _expandedInfoItemId = null;
+                  _expandedRelationshipsItemId = null;
+                });
+                return;
+              }
+              if (_selectionMode && asViewObj != null) {
+                _toggleSelection(asViewObj);
+                return;
+              }
+              _handleTap(item);
+            },
+            onLongPress:
+                canDelete
+                    ? () {
+                      debugPrint("LONG PRESS: ${item.title}");
+                      if (asViewObj != null) {
+                        _toggleSelection(asViewObj);
+                      }
                     }
-                  }
-                : null,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    child: Row(
-                      children: [
-                        // Relationships chevron
-                        if (hasRelationships &&
-                            svc.cachedHasRelationships(item.id) == true) ...[
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              if (!_tryClaimIconTap()) return;
-                              _toggleRelationships(item.id);
-                            },
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                relationshipsExpanded
-                                    ? Icons.expand_more
-                                    : Icons.chevron_right,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
+                    : null,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 11,
+                  ),
+                  child: Row(
+                    children: [
+                      // Relationships chevron
+                      if (hasRelationships &&
+                          svc.cachedHasRelationships(item.id) == true) ...[
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (!_tryClaimIconTap()) return;
+                            _toggleRelationships(item.id);
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              relationshipsExpanded
+                                  ? Icons.expand_more
+                                  : Icons.chevron_right,
+                              size: 18,
+                              color: AppColors.primary,
                             ),
                           ),
-                          const SizedBox(width: 6),
-                        ] else
-                          const SizedBox(width: 4),
+                        ),
+                        const SizedBox(width: 6),
+                      ] else
+                        const SizedBox(width: 4),
 
-                        // Badge / folder
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 180),
-                          child: _isSelected(item.id)
-                              ? Container(
+                      // Badge / folder
+                      AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 180),
+                        child:
+                            _isSelected(item.id)
+                                ? Container(
                                   key: const ValueKey('selected'),
                                   width: 38,
                                   height: 38,
@@ -752,147 +836,178 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                     size: 22,
                                   ),
                                 )
-                              : _CheckoutBadge(
-                                  objectId: item.id,
-                                  child: (item.isObject && svc.isDocumentContentItem(item))
-                                      ? FileTypeBadge(
-                                          extension: svc.cachedExtensionForObject(item.id) ?? '',
-                                          size: 40,
-                                        )
-                                      : Container(
-                                          width: 38,
-                                          height: 38,
-                                          child: Icon(
-                                            isObject ? svc.iconForViewObject(asViewObj!) : Icons.folder_rounded,
-                                            color: AppColors.primary,
-                                            size: 28,
+                                : CheckoutBadge(
+                                  isCheckedOut:
+                                      svc.isCheckedOutLocally(item.id) ||
+                                      item.isCheckedOut,
+                                  checkoutUserId:
+                                      svc.checkoutOwnerId(item.id) ??
+                                      item.checkoutUserId,
+                                  child:
+                                      (item.isObject &&
+                                              svc.isDocumentContentItem(item))
+                                          ? FileTypeBadge(
+                                            extension:
+                                                svc.cachedExtensionForObject(
+                                                  item.id,
+                                                ) ??
+                                                '',
+                                            size: 40,
+                                          )
+                                          : Container(
+                                            width: 38,
+                                            height: 38,
+                                            child: Icon(
+                                              isObject
+                                                  ? svc.iconForViewObject(
+                                                    asViewObj!,
+                                                  )
+                                                  : Icons.folder_rounded,
+                                              color: AppColors.primary,
+                                              size: 28,
+                                            ),
                                           ),
-                                        ),
                                 ),
-                        ),
+                      ),
 
-                        const SizedBox(width: 10),
+                      const SizedBox(width: 12),
 
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              item.title,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                                letterSpacing: -0.1,
+                                height: 1.2,
+                                color: Color(0xFF1A1A1A),
+                              ),
+                            ),
+                            if (subtitle != null &&
+                                subtitle.trim().isNotEmpty) ...[
+                              const SizedBox(height: 3),
                               Text(
-                                item.title,
-                                maxLines: 3,
+                                subtitle,
+                                maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w600,
-                                    height: 1.2,
-                                  ),
-                              ),
-                              if (subtitle != null &&
-                                  subtitle.trim().isNotEmpty) ...[
-                                const SizedBox(height: 2),
-                                Text(
-                                  subtitle,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade600),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  color: Colors.grey.shade500,
+                                  letterSpacing: -0.05,
                                 ),
-                              ],
-                            ],
-                          ),
-                        ),
-
-                        // ── Eye icon (documents only) ──────────────────
-                        if (isDocument) ...[
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _openPreview(item),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.blueGrey.withOpacity(0.08),
-                                shape: BoxShape.circle,
                               ),
-                              child: _previewLoading.contains(item.id)
-                                  ? SizedBox(
+                            ],
+                          ],
+                        ),
+                      ),
+
+                      // Eye icon (documents only)
+                      if (isDocument) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _openPreview(item),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: Colors.blueGrey.withOpacity(0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child:
+                                _previewLoading.contains(item.id)
+                                    ? SizedBox(
                                       width: 18,
                                       height: 18,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                         valueColor:
                                             AlwaysStoppedAnimation<Color>(
-                                                Colors.blueGrey.shade400),
+                                              Colors.blueGrey.shade400,
+                                            ),
                                       ),
                                     )
-                                  : Icon(
+                                    : Icon(
                                       Icons.remove_red_eye_outlined,
                                       size: 18,
                                       color: Colors.blueGrey.shade400,
                                     ),
-                            ),
                           ),
-                        ],
-
-                        // Info icon
-                        if (isObject) ...[
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () {
-                              if (!_tryClaimIconTap()) return;
-                              _toggleInfo(item.id);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: infoExpanded
-                                    ? AppColors.primary.withOpacity(0.15)
-                                    : AppColors.primary.withOpacity(0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                infoExpanded
-                                    ? Icons.keyboard_arrow_up_rounded
-                                    : Icons.info_outline,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                          ),
-                        ] else
-                          Icon(Icons.chevron_right_rounded,
-                              size: 18, color: Colors.grey.shade400),
+                        ),
                       ],
+
+                      // Info icon
+                      if (isObject) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () {
+                            if (!_tryClaimIconTap()) return;
+                            _toggleInfo(item.id);
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color:
+                                  infoExpanded
+                                      ? AppColors.primary.withOpacity(0.15)
+                                      : AppColors.primary.withOpacity(0.08),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              infoExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.info_outline,
+                              size: 18,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      ] else
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 18,
+                          color: Colors.grey.shade300,
+                        ),
+                    ],
+                  ),
+                ),
+
+                if (infoExpanded && isObject) ...[
+                  Divider(height: 1, color: Colors.grey.shade200),
+                  ObjectInfoDropdown(obj: asViewObj!),
+                ],
+
+                if (relationshipsExpanded && hasRelationships) ...[
+                  Divider(height: 1, color: Colors.grey.shade200),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    child: RelationshipsDropdown(
+                      key: ValueKey('rel_${item.id}'),
+                      obj: asViewObj!,
                     ),
                   ),
-
-                  if (infoExpanded && isObject) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
-                    ObjectInfoDropdown(obj: asViewObj!),
-                  ],
-
-                  if (relationshipsExpanded && hasRelationships) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                      child: RelationshipsDropdown(
-                        key: ValueKey('rel_${item.id}'),
-                        obj: asViewObj!,
-                      ),
-                    ),
-                  ],
                 ],
-              ),
+              ],
             ),
           ),
         ),
-        if (!isLast)
-          Divider(height: 0.5, thickness: 0.5, color: Colors.grey.shade100),
-      ],
-    );
-  }
+      ),
+      if (!isLast)
+        Divider(
+          height: 0.5,
+          thickness: 0.5,
+          indent: 64,
+          color: Colors.black.withOpacity(0.06),
+        ),
+    ],
+  );
+}
 
   Future<void> _handleTap(ViewContentItem item) async {
     if (!item.isObject) {
@@ -900,10 +1015,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => ViewDetailsScreen(
-              view: ViewItem(id: item.id, name: item.title, count: 0),
-              parentSection: widget.parentSection,
-            ),
+            builder:
+                (_) => ViewDetailsScreen(
+                  view: ViewItem(id: item.id, name: item.title, count: 0),
+                  parentSection: widget.parentSection,
+                ),
           ),
         );
         return;
@@ -913,7 +1029,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         final propId = item.propId;
         final propDatatype = item.propDatatype;
 
-        final looksLikeGuid = propId != null &&
+        final looksLikeGuid =
+            propId != null &&
             RegExp(
               r'^\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}?$',
             ).hasMatch(propId.trim());
@@ -925,7 +1042,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             looksLikeGuid) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-                content: Text('This grouping level cannot be opened.')),
+              content: Text('This grouping level cannot be opened.'),
+            ),
           );
           return;
         }
@@ -941,9 +1059,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         try {
           final items = await svc.fetchViewPropItems(
             viewId: vid,
-            filters: [
-              GroupFilter(propId: propId, propDatatype: propDatatype)
-            ],
+            filters: [GroupFilter(propId: propId, propDatatype: propDatatype)],
           );
 
           if (mounted) {
@@ -957,16 +1073,17 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => ViewItemsScreen(
-                title: item.title,
-                items: items,
-                parentViewId: vid,
-                filters: [
-                  GroupFilter(propId: propId, propDatatype: propDatatype)
-                ],
-                parentViewName: widget.view.name,
-                parentSection: widget.parentSection,
-              ),
+              builder:
+                  (_) => ViewItemsScreen(
+                    title: item.title,
+                    items: items,
+                    parentViewId: vid,
+                    filters: [
+                      GroupFilter(propId: propId, propDatatype: propDatatype),
+                    ],
+                    parentViewName: widget.view.name,
+                    parentSection: widget.parentSection,
+                  ),
             ),
           );
         } catch (e) {
@@ -978,15 +1095,16 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           }
 
           if (!context.mounted) return;
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(humanizeError(e.toString()))));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(humanizeError(e.toString()))));
         }
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unsupported item type')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Unsupported item type')));
       return;
     }
 
@@ -1010,11 +1128,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     final deleted = await Navigator.push<bool>(
       context,
       MaterialPageRoute(
-        builder: (_) => ObjectDetailsScreen(
-          obj: obj,
-          parentViewName: widget.view.name,
-          parentSection: widget.parentSection,
-        ),
+        builder:
+            (_) => ObjectDetailsScreen(
+              obj: obj,
+              parentViewName: widget.view.name,
+              parentSection: widget.parentSection,
+            ),
       ),
     );
 
@@ -1035,16 +1154,20 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       foregroundColor: Colors.white,
       elevation: 0,
       titleSpacing: 12,
-      title: Text(widget.view.name,
-          maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: Text(
+        widget.view.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
       actions: [
         IconButton(
           tooltip: 'Sort',
           icon: Icon(
             Icons.sort_rounded,
-            color: (_sortField != _SortField.name || !_sortAscending)
-                ? Colors.white
-                : Colors.white,
+            color:
+                (_sortField != _SortField.name || !_sortAscending)
+                    ? Colors.white
+                    : Colors.white,
           ),
           onPressed: _showSortSheet,
         ),
@@ -1059,12 +1182,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   PreferredSizeWidget _buildSelectionAppBar() {
     final svc = context.watch<MFilesService>();
-    final allCheckedOut = _selectedObjects.isNotEmpty &&
-        _selectedObjects.values.every(
-          (obj) => svc.isCheckedOutLocally(obj.id),
-        );
+    final allCheckedOut =
+        _selectedObjects.isNotEmpty &&
+        _selectedObjects.values.every((obj) => svc.isCheckedOutLocally(obj.id));
 
-    final allNotCheckedOut = _selectedObjects.isNotEmpty &&
+    final allNotCheckedOut =
+        _selectedObjects.isNotEmpty &&
         _selectedObjects.values.every(
           (obj) => !svc.isCheckedOutLocally(obj.id),
         );
@@ -1090,9 +1213,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       ),
       title: Text(
         '${_selectedIds.length} selected',
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w600),
       ),
       actions: [
         IconButton(
@@ -1105,25 +1226,26 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           },
         ),
 
-                if (_selectedObjects.length == 1)
+        if (_selectedObjects.length == 1)
           IconButton(
             tooltip: 'Create & Link',
             icon: const Icon(Icons.add_link_rounded),
-            onPressed: () => showLinkCreateSheet(
-              context,
-              target: _selectedObjects.values.first,
-              onLinked: () {
-                _clearSelection();
-                _refreshThisView();
-              },
-              onScanStatusChange: (message) {
-                if (!mounted) return;
-                setState(() {
-                  _navLoading = message != null;
-                  _navMessage = message;
-                });
-              },
-            ),
+            onPressed:
+                () => showLinkCreateSheet(
+                  context,
+                  target: _selectedObjects.values.first,
+                  onLinked: () {
+                    _clearSelection();
+                    _refreshThisView();
+                  },
+                  onScanStatusChange: (message) {
+                    if (!mounted) return;
+                    setState(() {
+                      _navLoading = message != null;
+                      _navMessage = message;
+                    });
+                  },
+                ),
           ),
 
         if (allNotCheckedOut)
@@ -1138,27 +1260,79 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             icon: const Icon(Icons.lock),
             onPressed: _batchUndoCheckout,
           ),
-        IconButton(
-          tooltip: 'Delete',
-          icon: const Icon(Icons.delete_outline),
-          onPressed: _batchDelete,
-        ),
+
+        if (allNotCheckedOut)
+          IconButton(
+            tooltip: 'Delete',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _batchDelete,
+          ),
         BatchActionsMenu(
+          disabledValues: () {
+            final svc = context.read<MFilesService>();
+            final single = _selectedObjects.length == 1;
+            return <String>{
+              if (!single) 'copy',
+              if (!single ||
+                  svc.isCheckedOutLocally(_selectedObjects.values.first.id))
+                'history',
+            };
+          }(),
           onSelected: (value) async {
             switch (value) {
               case 'history':
                 if (_selectedObjects.length == 1) {
                   final obj = _selectedObjects.values.first;
+                  final svc = context.read<MFilesService>();
+                  if (svc.isCheckedOutLocally(obj.id)) {
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Check in this item to view its version history.',
+                    );
+                    break;
+                  }
                   _clearSelection();
                   showVersionHistorySheet(
                     context,
                     obj: obj,
-                    onRolledBack: () {
-                    },
+                    onRolledBack: () {},
                   );
                 }
                 break;
-                
+
+              case 'copy':
+                if (_selectedObjects.length == 1) {
+                  final src = _selectedObjects.values.first;
+                  _clearSelection();
+
+                  final svc = context.read<MFilesService>();
+                  final objectType =
+                      svc.objectTypes
+                          .where((t) => t.id == src.objectTypeId)
+                          .firstOrNull;
+
+                  if (objectType == null) {
+                    if (!mounted) break;
+                    SnackbarHelper.showWarning(context, 'Object type unavailable — please refresh');
+                    break;
+                  }
+
+                  await svc.fetchClassProperties(src.objectTypeId, src.classId);
+                  if (!mounted) break;
+
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder:
+                          (_) => DynamicFormScreen(
+                            objectType: objectType,
+                            copyFrom: src,
+                          ),
+                    ),
+                  );
+                }
+                break;
+
               case 'download':
                 _setProcessing(true, "Downloading files...");
                 try {
@@ -1196,15 +1370,24 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   if (!mounted) return;
 
                   if (success == 1 && lastPath != null) {
-                    SnackbarHelper.showSuccess(context, 'Downloaded to: $lastPath');
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded to: $lastPath',
+                    );
                   } else if (success > 1 && lastPath != null) {
-                    final folder = lastPath.substring(0, lastPath.lastIndexOf('/'));
+                    final folder = lastPath.substring(
+                      0,
+                      lastPath.lastIndexOf('/'),
+                    );
                     SnackbarHelper.showSuccess(
                       context,
                       'Downloaded $success files to: $folder',
                     );
                   } else {
-                    SnackbarHelper.showSuccess(context, 'Downloaded $success files');
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded $success files',
+                    );
                   }
 
                   _clearSelection();
@@ -1272,10 +1455,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           InkWell(
             onTap: () => _toggleSelectAll(items),
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   AnimatedSwitcher(
@@ -1304,11 +1484,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               ),
             ),
           ),
-          Divider(
-            height: 1,
-            thickness: 1,
-            color: Colors.grey.shade200,
-          ),
+          Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
         ],
       ),
     );
@@ -1324,133 +1500,143 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       child: Stack(
         children: [
           PopScope(
-          canPop: !_selectionMode,
-          onPopInvokedWithResult: (didPop, result) {
-            if (didPop) return;
+            canPop: !_selectionMode,
+            onPopInvokedWithResult: (didPop, result) {
+              if (didPop) return;
 
-            if (_selectionMode) {
-              _clearSelection();
-            }
-          },
-          child: Scaffold(
-          backgroundColor: AppColors.surfaceLight,
-          appBar: _buildAppBar(),
-          body: NetworkBanner(
-            child: Column(
-              children: [
-                _buildBreadcrumbs(),
-                Expanded(
-                  child: FutureBuilder<List<ViewContentItem>>(
-                    future: _future,
-                    builder: (context, snap) {
-                      if (snap.connectionState == ConnectionState.waiting) {
-                        return const Center(
-                            child: CircularProgressIndicator());
-                      }
+              if (_selectionMode) {
+                _clearSelection();
+              }
+            },
+            child: Scaffold(
+              backgroundColor: AppColors.surfaceLight,
+              appBar: _buildAppBar(),
+              body: NetworkBanner(
+                child: Column(
+                  children: [
+                    _buildBreadcrumbs(),
+                    Expanded(
+                      child: FutureBuilder<List<ViewContentItem>>(
+                        future: _future,
+                        builder: (context, snap) {
+                          if (snap.connectionState == ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
+                          }
 
-                  if (snap.hasError) {
-                    final error = snap.error.toString();
-                    final isEmpty = error.contains('400') ||
-                        error.contains(
-                            'cannot be used to define a grouping level') ||
-                        error.contains('Unspecified error') ||
-                        error.contains('No items') ||
-                        error.contains('empty');
-                    return isEmpty
-                        ? _buildEmptyState()
-                        : _buildErrorState(error);
-                  }
+                          if (snap.hasError) {
+                            final error = snap.error.toString();
+                            final isEmpty =
+                                error.contains('400') ||
+                                error.contains(
+                                  'cannot be used to define a grouping level',
+                                ) ||
+                                error.contains('Unspecified error') ||
+                                error.contains('No items') ||
+                                error.contains('empty');
+                            return isEmpty
+                                ? _buildEmptyState()
+                                : _buildErrorState(error);
+                          }
 
-                  final items = snap.data ?? [];
-                  final filtered = _applySort(_applyFilter(items));
+                          final items = snap.data ?? [];
+                          final filtered = _applySort(_applyFilter(items));
 
-                  if (items.isEmpty) return _buildEmptyState();
-                  if (filtered.isEmpty) return _buildNoMatchesState();
+                          if (items.isEmpty) return _buildEmptyState();
+                          if (filtered.isEmpty) return _buildNoMatchesState();
 
-                  return Column(
-                    children: [
-                      if (_selectionMode) ...[
-                        _buildSelectAllBar(items),
-                        const SizedBox(height: 2),
-                      ],
-                      if ((!_selectionMode && _showSearch) || (_selectionMode && _searchWhileSelecting))
-                        _buildInViewSearchBar(),
-                      Expanded(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: () {
-                            if (_expandedInfoItemId != null ||
-                                _expandedRelationshipsItemId != null) {
-                        setState(() {
-                          _expandedInfoItemId = null;
-                          _expandedRelationshipsItemId = null;
-                        });
-                      }
-                    },
-                    child: RefreshIndicator(
-                      onRefresh: () async {
-                        _refreshThisView();
-                        await _future;
-                      },
-                      child: Scrollbar(
-                        controller: _viewScroll,
-                        interactive: true,
-                        thickness: 6,
-                        radius: const Radius.circular(8),
-                        child: ListView(
-                          controller: _viewScroll,
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.all(8),
-                          children: [
-                            Container(
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(color: Colors.grey.shade100, width: 0.5),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.04),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 2),
+                          return Column(
+                            children: [
+                              if (_selectionMode) ...[
+                                _buildSelectAllBar(items),
+                                const SizedBox(height: 2),
+                              ],
+                              if ((!_selectionMode && _showSearch) ||
+                                  (_selectionMode && _searchWhileSelecting))
+                                _buildInViewSearchBar(),
+                              Expanded(
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.translucent,
+                                  onTap: () {
+                                    if (_expandedInfoItemId != null ||
+                                        _expandedRelationshipsItemId != null) {
+                                      setState(() {
+                                        _expandedInfoItemId = null;
+                                        _expandedRelationshipsItemId = null;
+                                      });
+                                    }
+                                  },
+                                  child: RefreshIndicator(
+                                    onRefresh: () async {
+                                      _refreshThisView();
+                                      await _future;
+                                    },
+                                    child: Scrollbar(
+                                      controller: _viewScroll,
+                                      interactive: true,
+                                      thickness: 6,
+                                      radius: const Radius.circular(8),
+                                      child: ListView(
+                                        controller: _viewScroll,
+                                        physics:
+                                            const AlwaysScrollableScrollPhysics(),
+                                        padding: const EdgeInsets.all(8),
+                                        children: [
+                                          Container(
+                                            decoration: BoxDecoration(
+                                              color: Colors.white,
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              border: Border.all(
+                                                color: Colors.grey.shade100,
+                                                width: 0.5,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color: Colors.black
+                                                      .withOpacity(0.03),
+                                                  blurRadius: 10,
+                                                  offset: const Offset(0, 1),
+                                                ),
+                                              ],
+                                            ),
+                                            child: Column(
+                                              children: List.generate(
+                                                filtered.length,
+                                                (i) => _buildRow(
+                                                  filtered[i],
+                                                  i == filtered.length - 1,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ],
-                              ),
-                              child: Column(
-                                children: List.generate(
-                                  filtered.length,
-                                  (i) => _buildRow(filtered[i],
-                                      i == filtered.length - 1),
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
+                            ],
+                          );
+                        },
                       ),
                     ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-      ),
-        ),
-        if (_isProcessing)
-          Positioned.fill(
-            child: ColoredBox(
-              color: Colors.black45,
-              child: Center(
-                child: ProcessingDialog(
-                  operation: _processingText,
+                  ],
                 ),
               ),
             ),
           ),
-      ],
+          if (_isProcessing)
+            Positioned.fill(
+              child: ColoredBox(
+                color: Colors.black45,
+                child: Center(
+                  child: ProcessingDialog(operation: _processingText),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -1465,21 +1651,30 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                  color: Colors.grey.shade100, shape: BoxShape.circle),
-              child: Icon(Icons.inbox_outlined,
-                  size: 64, color: Colors.grey.shade400),
+                color: Colors.grey.shade100,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.inbox_outlined,
+                size: 64,
+                color: Colors.grey.shade400,
+              ),
             ),
             const SizedBox(height: 24),
-            Text('No Items Found',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade800)),
+            Text(
+              'No Items Found',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('This view is currently empty',
-                style: TextStyle(
-                    fontSize: 14, color: Colors.grey.shade600),
-                textAlign: TextAlign.center),
+            Text(
+              'This view is currently empty',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
             const SizedBox(height: 24),
             OutlinedButton.icon(
               onPressed: _refreshThisView,
@@ -1487,12 +1682,14 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               label: const Text('Refresh'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppColors.primary,
-                side: BorderSide(
-                    color: AppColors.primary.withOpacity(0.3)),
+                side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 24, vertical: 12),
+                  horizontal: 24,
+                  vertical: 12,
+                ),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
             ),
           ],
@@ -1542,10 +1739,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
-                    colors: [
-                      Colors.orange.shade100,
-                      Colors.orange.shade50,
-                    ],
+                    colors: [Colors.orange.shade100, Colors.orange.shade50],
                   ),
                 ),
                 child: Icon(
@@ -1601,8 +1795,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 height: 46,
                 child: TextButton.icon(
                   onPressed: () => Navigator.pop(context),
-                  icon: Icon(Icons.arrow_back_rounded,
-                      size: 18, color: Colors.grey.shade600),
+                  icon: Icon(
+                    Icons.arrow_back_rounded,
+                    size: 18,
+                    color: Colors.grey.shade600,
+                  ),
                   label: Text(
                     'Go Back',
                     style: TextStyle(
@@ -1634,32 +1831,44 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                  color: Colors.blue.shade50, shape: BoxShape.circle),
-              child: Icon(Icons.search_off_rounded,
-                  size: 56, color: Colors.blue.shade300),
+                color: Colors.blue.shade50,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.search_off_rounded,
+                size: 56,
+                color: Colors.blue.shade300,
+              ),
             ),
             const SizedBox(height: 20),
-            Text('No Matches Found',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade800)),
+            Text(
+              'No Matches Found',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade800,
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('Try adjusting your search',
-                style: TextStyle(
-                    fontSize: 14, color: Colors.grey.shade600)),
+            Text(
+              'Try adjusting your search',
+              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            ),
             const SizedBox(height: 20),
             TextButton.icon(
-              onPressed: () => setState(() {
-                _filter = '';
-                _searchController.clear();
-              }),
+              onPressed:
+                  () => setState(() {
+                    _filter = '';
+                    _searchController.clear();
+                  }),
               icon: const Icon(Icons.clear_rounded, size: 18),
               label: const Text('Clear Search'),
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.primary,
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 12),
+                  horizontal: 20,
+                  vertical: 12,
+                ),
               ),
             ),
           ],
@@ -1674,8 +1883,18 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     // direction selected — used to auto-expand the active group on open.
     final groups = <_SortGroup>[
       _SortGroup('Name', _SortField.name, 'A–Z', 'Z–A'),
-      _SortGroup('Date Created', _SortField.dateCreated, 'Oldest first', 'Newest first'),
-      _SortGroup('Last Modified', _SortField.lastModified, 'Oldest first', 'Newest first'),
+      _SortGroup(
+        'Date Created',
+        _SortField.dateCreated,
+        'Oldest first',
+        'Newest first',
+      ),
+      _SortGroup(
+        'Last Modified',
+        _SortField.lastModified,
+        'Oldest first',
+        'Newest first',
+      ),
       _SortGroup('Class Type', _SortField.classType, 'A–Z', 'Z–A'),
       _SortGroup('Display ID', _SortField.displayId, 'A–Z', 'Z–A'),
       _SortGroup('ID', _SortField.id, 'Low–High', 'High–Low'),
@@ -1708,8 +1927,13 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 final sheetWidth = screenWidth > 480 ? 480.0 : screenWidth;
 
                 // Find the display label for the currently active sort, for the subtitle.
-                final activeGroup = groups.firstWhere((g) => g.field == _sortField);
-                final activeLabel = _sortAscending ? activeGroup.ascLabel : activeGroup.descLabel;
+                final activeGroup = groups.firstWhere(
+                  (g) => g.field == _sortField,
+                );
+                final activeLabel =
+                    _sortAscending
+                        ? activeGroup.ascLabel
+                        : activeGroup.descLabel;
 
                 return Center(
                   child: SizedBox(
@@ -1717,7 +1941,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     child: Container(
                       decoration: const BoxDecoration(
                         color: Colors.white,
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(20),
+                        ),
                       ),
                       child: Column(
                         children: [
@@ -1758,7 +1984,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       const Text(
                                         'Sort By',
@@ -1780,7 +2007,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                   ),
                                 ),
                                 IconButton(
-                                  icon: const Icon(Icons.close, color: Colors.white70),
+                                  icon: const Icon(
+                                    Icons.close,
+                                    color: Colors.white70,
+                                  ),
                                   onPressed: () => Navigator.pop(ctx),
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
@@ -1794,64 +2024,89 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                           Expanded(
                             child: ListView(
                               controller: scrollController,
-                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                              padding: const EdgeInsets.fromLTRB(
+                                20,
+                                12,
+                                20,
+                                16,
+                              ),
                               children: [
                                 for (int gi = 0; gi < groups.length; gi++) ...[
                                   _buildSortSectionHeader(
                                     group: groups[gi],
                                     isActive: groups[gi].field == _sortField,
-                                    activeLabel: groups[gi].field == _sortField ? activeLabel : null,
+                                    activeLabel:
+                                        groups[gi].field == _sortField
+                                            ? activeLabel
+                                            : null,
                                     expanded: expanded[groups[gi].field]!,
-                                    onToggle: () => setSheet(
-                                      () => expanded[groups[gi].field] =
-                                          !expanded[groups[gi].field]!,
-                                    ),
+                                    onToggle:
+                                        () => setSheet(
+                                          () =>
+                                              expanded[groups[gi].field] =
+                                                  !expanded[groups[gi].field]!,
+                                        ),
                                   ),
                                   const SizedBox(height: 6),
                                   AnimatedSize(
                                     duration: const Duration(milliseconds: 200),
                                     curve: Curves.easeInOut,
                                     alignment: Alignment.topCenter,
-                                    child: expanded[groups[gi].field]!
-                                        ? Container(
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey.shade50,
-                                              borderRadius: BorderRadius.circular(14),
-                                              border: Border.all(color: Colors.grey.shade200),
-                                            ),
-                                            child: Column(
-                                              children: [
-                                                _buildSortRow(
-                                                  label: groups[gi].ascLabel,
-                                                  selected: _sortField == groups[gi].field &&
-                                                      _sortAscending == true,
-                                                  onTap: () {
-                                                    setState(() {
-                                                      _sortField = groups[gi].field;
-                                                      _sortAscending = true;
-                                                    });
-                                                    Navigator.pop(ctx);
-                                                  },
+                                    child:
+                                        expanded[groups[gi].field]!
+                                            ? Container(
+                                              decoration: BoxDecoration(
+                                                color: Colors.grey.shade50,
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                                border: Border.all(
+                                                  color: Colors.grey.shade200,
                                                 ),
-                                                Divider(height: 1, color: Colors.grey.shade200, indent: 16),
-                                                _buildSortRow(
-                                                  label: groups[gi].descLabel,
-                                                  selected: _sortField == groups[gi].field &&
-                                                      _sortAscending == false,
-                                                  onTap: () {
-                                                    setState(() {
-                                                      _sortField = groups[gi].field;
-                                                      _sortAscending = false;
-                                                    });
-                                                    Navigator.pop(ctx);
-                                                  },
-                                                ),
-                                              ],
-                                            ),
-                                          )
-                                        : const SizedBox.shrink(),
+                                              ),
+                                              child: Column(
+                                                children: [
+                                                  _buildSortRow(
+                                                    label: groups[gi].ascLabel,
+                                                    selected:
+                                                        _sortField ==
+                                                            groups[gi].field &&
+                                                        _sortAscending == true,
+                                                    onTap: () {
+                                                      setState(() {
+                                                        _sortField =
+                                                            groups[gi].field;
+                                                        _sortAscending = true;
+                                                      });
+                                                      Navigator.pop(ctx);
+                                                    },
+                                                  ),
+                                                  Divider(
+                                                    height: 1,
+                                                    color: Colors.grey.shade200,
+                                                    indent: 16,
+                                                  ),
+                                                  _buildSortRow(
+                                                    label: groups[gi].descLabel,
+                                                    selected:
+                                                        _sortField ==
+                                                            groups[gi].field &&
+                                                        _sortAscending == false,
+                                                    onTap: () {
+                                                      setState(() {
+                                                        _sortField =
+                                                            groups[gi].field;
+                                                        _sortAscending = false;
+                                                      });
+                                                      Navigator.pop(ctx);
+                                                    },
+                                                  ),
+                                                ],
+                                              ),
+                                            )
+                                            : const SizedBox.shrink(),
                                   ),
-                                  if (gi != groups.length - 1) const SizedBox(height: 16),
+                                  if (gi != groups.length - 1)
+                                    const SizedBox(height: 16),
                                 ],
                               ],
                             ),
@@ -1897,7 +2152,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               if (isActive) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: AppColors.primary.withOpacity(0.12),
                     borderRadius: BorderRadius.circular(10),
@@ -1914,7 +2172,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               ],
               const Spacer(),
               Icon(
-                expanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                expanded
+                    ? Icons.keyboard_arrow_up_rounded
+                    : Icons.keyboard_arrow_down_rounded,
                 size: 20,
                 color: Colors.grey.shade500,
               ),
@@ -1946,55 +2206,23 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? AppColors.primary : const Color(0xFF1E293B),
+                    color:
+                        selected ? AppColors.primary : const Color(0xFF1E293B),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               selected
-                  ? const Icon(Icons.check_rounded, size: 20, color: AppColors.primary)
+                  ? const Icon(
+                    Icons.check_rounded,
+                    size: 20,
+                    color: AppColors.primary,
+                  )
                   : const SizedBox(width: 20),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-// ───────────────────── CHECKOUT BADGE CLASS ─────────────────────────────────────────────────────────
-class _CheckoutBadge extends StatelessWidget {
-  final int objectId;
-  final Widget child;
-
-  const _CheckoutBadge({required this.objectId, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final isOut = context.watch<MFilesService>().isCheckedOutLocally(objectId);
-    if (!isOut) return child;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        child,
-        Positioned(
-          right: -4,
-          bottom: -4,
-          child: Container(
-            width: 16,
-            height: 16,
-            decoration: const BoxDecoration(
-              color: Color(0xFF0F766E),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.drive_file_rename_outline,
-              size: 10,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

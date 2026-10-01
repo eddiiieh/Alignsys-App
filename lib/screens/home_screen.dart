@@ -9,6 +9,7 @@ import 'package:mfiles_app/screens/template_form_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/widgets/flashing_dots.dart';
+import 'package:mfiles_app/widgets/grouped_picker_sheet.dart';
 import 'package:mfiles_app/widgets/network_banner.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
@@ -34,6 +35,8 @@ import 'package:mfiles_app/services/shortcut_router.dart';
 import 'package:mfiles_app/widgets/loading_overlay.dart';
 import 'package:mfiles_app/utils/app_dialogs.dart';
 import 'package:mfiles_app/widgets/link_create_sheet.dart';
+import 'package:mfiles_app/widgets/checkout_badge.dart';
+import 'package:flutter/services.dart';
 
 enum _MoreSubTab { trash, reports }
 
@@ -79,7 +82,7 @@ class _HomeScreenState extends State<HomeScreen>
   StreamSubscription<String>? _liveShortcutSub;
 
   final TextEditingController _selectionFilterController =
-    TextEditingController();
+      TextEditingController();
 
   String _selectionFilter = '';
 
@@ -110,7 +113,6 @@ class _HomeScreenState extends State<HomeScreen>
   bool _scanLoading = false;
   String? _scanMessage;
 
-  
   void _setProcessing(bool value, [String text = '']) {
     if (!mounted) return;
 
@@ -183,9 +185,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       _selectedObjects
         ..clear()
-        ..addEntries(
-          _visibleObjects.map((o) => MapEntry(o.id, o)),
-        );
+        ..addEntries(_visibleObjects.map((o) => MapEntry(o.id, o)));
     });
   }
 
@@ -213,55 +213,66 @@ class _HomeScreenState extends State<HomeScreen>
     if (confirmed != true || !mounted) return;
 
     _setProcessing(true, "Deleting objects...");
+
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    final allObjects = <ViewObject>[
-      ...service.recentObjects,
-      ...service.assignedObjects,
-      ...service.reportObjects,
-      ...service.searchResults,
-    ];
+      final selectedObjects = _selectedObjects.values.toList();
 
-    final selectedObjects =
-        allObjects.where((o) => _selectedIds.contains(o.id)).toList();
+      debugPrint('Selected IDs: $_selectedIds');
+      debugPrint('Matched objects: ${selectedObjects.length}');
 
-        debugPrint('Selected IDs: $_selectedIds');
-        debugPrint('Matched objects: ${selectedObjects.length}');
+      int success = 0;
+      int failed = 0;
 
-    int success = 0;
+      for (final obj in selectedObjects) {
+        debugPrint(
+          'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+        );
 
-    for (final obj in selectedObjects) {
-      debugPrint(
-        'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
-      );
+        final deleted = await service.deleteObject(
+          objectId: obj.id,
+          classId: obj.classId,
+          isCheckedOut: obj.isCheckedOut,
+        );
 
-      final deleted = await service.deleteObject(
-        objectId: obj.id,
-        classId: obj.classId,
-      );
+        debugPrint('Delete result: $deleted');
+        debugPrint('Service error: ${service.error}');
 
-      debugPrint('Delete result: $deleted');
-      debugPrint('Service error: ${service.error}');
+        if (deleted) {
+          success++;
+        } else {
+          failed++;
+        }
+      }
 
-      if (deleted) success++;
+      await _refreshActiveTab();
+
+      if (!mounted) return;
+
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1 ? '1 object deleted' : '$success objects deleted',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects deleted, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be deleted'
+              : '$failed objects could not be deleted',
+        );
+      }
+
+      _clearSelection();
+    } finally {
+      _setProcessing(false);
     }
-
-    _clearSelection();
-
-    await _refreshActiveTab();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object deleted'
-          : '$success objects deleted',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   // Batch checkout selected objects
@@ -270,35 +281,53 @@ class _HomeScreenState extends State<HomeScreen>
 
     _setProcessing(true, "Checking out documents...");
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    int success = 0;
+      int success = 0;
+      int failed = 0;
 
-    for (final obj in _selectedObjects.values) {
-      final checkedOut = await service.checkoutObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-      );
+      for (final obj in _selectedObjects.values) {
+        final checkedOut = await service.checkoutObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+        );
 
-      if (checkedOut) {
-        success++;
+        if (checkedOut) {
+          success++;
+        } else {
+          failed++;
+        }
       }
+
+      await _refreshActiveTab();
+
+      if (!mounted) return;
+
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1
+              ? '1 object checked out'
+              : '$success objects checked out',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked out, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked out'
+              : '$failed objects could not be checked out',
+        );
+      }
+
+      _clearSelection();
+    } finally {
+      _setProcessing(false);
     }
-
-    await _refreshActiveTab();
-    _clearSelection();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object checked out'
-          : '$success objects checked out',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   // Batch undo checkout selected objects
@@ -306,36 +335,53 @@ class _HomeScreenState extends State<HomeScreen>
     if (_selectedObjects.isEmpty) return;
 
     _setProcessing(true, "Checking in documents...");
+
     try {
-    final service = context.read<MFilesService>();
+      final service = context.read<MFilesService>();
 
-    int success = 0;
+      int success = 0;
+      int failed = 0;
 
-    for (final obj in _selectedObjects.values) {
-      final checkedIn = await service.undoCheckoutObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-      );
+      for (final obj in _selectedObjects.values) {
+        final checkedIn = await service.undoCheckoutObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+        );
 
-      if (checkedIn) {
-        success++;
+        if (checkedIn) {
+          success++;
+        } else {
+          failed++;
+        }
       }
+
+      await _refreshActiveTab();
+
+      if (!mounted) return;
+
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1 ? '1 object checked in' : '$success objects checked in',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked in, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked in'
+              : '$failed objects could not be checked in',
+        );
+      }
+
+      _clearSelection();
+    } finally {
+      _setProcessing(false);
     }
-
-    await _refreshActiveTab();
-    _clearSelection();
-
-    if (!mounted) return;
-
-    SnackbarHelper.showSuccess(
-      context,
-      success == 1
-          ? '1 object checked in'
-          : '$success objects checked in',
-    );
-  } finally {
-    _setProcessing(false);
-  }
   }
 
   @override
@@ -366,7 +412,12 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildDocumentBadge(MFilesService svc, ViewObject obj) {
     final isTrashed = svc.isObjectDeleted(obj.id);
-    final isCheckedOut = obj.isCheckedOut;
+    final isCheckedOut = svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut;
+    final ownerId = svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId;
+    final badgeColor =
+        (ownerId == null || ownerId == svc.mfilesUserId)
+            ? const Color(0xFF0F766E)
+            : const Color(0xFFDC2626);
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -406,8 +457,8 @@ class _HomeScreenState extends State<HomeScreen>
             child: Container(
               width: 15,
               height: 15,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F766E),
+              decoration: BoxDecoration(
+                color: badgeColor,
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -423,46 +474,40 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildMultiFileBadge(MFilesService svc, ViewObject obj) {
     final isTrashed = svc.isObjectDeleted(obj.id);
-    final isCheckedOut = obj.isCheckedOut;
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Opacity(
-          opacity: isTrashed ? 0.55 : 1.0,
-          child: Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: const Icon(
-              Icons.folder_copy_rounded,
-              size: 22,
-              color: AppColors.primary,
-            ),
+    return Opacity(
+      opacity: isTrashed ? 0.55 : 1.0,
+      child: CheckoutBadge(
+        isCheckedOut: svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+        checkoutUserId: svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
+        child: Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: AppColors.primary.withOpacity(0.10),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(
+            Icons.folder_copy_rounded,
+            size: 22,
+            color: AppColors.primary,
           ),
         ),
-        if (isCheckedOut)
-          Positioned(
-            bottom: -3,
-            right: -5,
-            child: Container(
-              width: 15,
-              height: 15,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0F766E),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.drive_file_rename_outline,
-                size: 9,
-                color: Colors.white,
-              ),
-            ),
-          ),
-      ],
+      ),
     );
+  }
+
+  // Syncs the checkout state of a list of objects with the M-Files service.
+  void _syncCheckoutStateForObjects(
+    MFilesService svc,
+    List<ViewObject> objects,
+  ) {
+    for (final obj in objects) {
+      svc.syncCheckoutStateFromServer(
+        obj.id,
+        obj.isCheckedOut,
+        ownerId: obj.checkoutUserId,
+      );
+    }
   }
 
   Future<void> _loadInitialData() async {
@@ -481,6 +526,11 @@ class _HomeScreenState extends State<HomeScreen>
         service.fetchDeletedObjects(),
       ]);
       await service.fetchReportObjects();
+
+      _syncCheckoutStateForObjects(service, service.recentObjects);
+      _syncCheckoutStateForObjects(service, service.assignedObjects);
+      _syncCheckoutStateForObjects(service, service.deletedObjects);
+      _syncCheckoutStateForObjects(service, service.reportObjects);
 
       final pending = await ShortcutRouter.consume();
       if (mounted) _handlePendingAction(pending);
@@ -508,9 +558,11 @@ class _HomeScreenState extends State<HomeScreen>
     switch (tab) {
       case 'Recent':
         service.fetchRecentObjects(background: true);
+        _syncCheckoutStateForObjects(service, service.recentObjects);
         break;
       case 'Assigned':
         service.fetchAssignedObjects(background: true);
+        _syncCheckoutStateForObjects(service, service.assignedObjects);
         break;
       case 'More':
         _refreshMoreSubTab(service);
@@ -523,8 +575,10 @@ class _HomeScreenState extends State<HomeScreen>
   void _refreshMoreSubTab(MFilesService service, {bool background = true}) {
     if (_moreSubTab == _MoreSubTab.trash) {
       service.fetchDeletedObjects(background: background);
+      _syncCheckoutStateForObjects(service, service.deletedObjects);
     } else {
       service.fetchReportObjects();
+      _syncCheckoutStateForObjects(service, service.reportObjects);
     }
   }
 
@@ -534,15 +588,19 @@ class _HomeScreenState extends State<HomeScreen>
     switch (tab) {
       case 'Recent':
         await service.fetchRecentObjects();
+        _syncCheckoutStateForObjects(service, service.recentObjects);
         break;
       case 'Assigned':
         await service.fetchAssignedObjects();
+        _syncCheckoutStateForObjects(service, service.assignedObjects);
         break;
       case 'More':
         if (_moreSubTab == _MoreSubTab.trash) {
           await service.fetchDeletedObjects();
+          _syncCheckoutStateForObjects(service, service.deletedObjects);
         } else {
           await service.fetchReportObjects();
+          _syncCheckoutStateForObjects(service, service.reportObjects);
         }
         break;
       default:
@@ -608,7 +666,8 @@ class _HomeScreenState extends State<HomeScreen>
       await showAppInfoDialog(
         context,
         title: 'Preview Failed',
-        message: 'Something went wrong loading this document. Please try again.',
+        message:
+            'Something went wrong loading this document. Please try again.',
         icon: Icons.error_outline_rounded,
         iconColor: Colors.red.shade600,
       );
@@ -619,76 +678,75 @@ class _HomeScreenState extends State<HomeScreen>
 
   PreferredSizeWidget _buildHomeAppBar() {
     return AppBar(
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        toolbarHeight: 64,
-        titleSpacing: 12,
-        title: GestureDetector(
-          onTap: () async {
-            final uri = Uri.parse('https://alignsys.tech');
-            final launched = await launchUrl(
-              uri,
-              mode: LaunchMode.externalApplication,
+      backgroundColor: AppColors.primary,
+      elevation: 0,
+      toolbarHeight: 64,
+      titleSpacing: 12,
+      title: GestureDetector(
+        onTap: () async {
+          final uri = Uri.parse('https://alignsys.tech');
+          final launched = await launchUrl(
+            uri,
+            mode: LaunchMode.externalApplication,
+          );
+          if (!launched && context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Could not open Alignsys website')),
             );
-            if (!launched && context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Could not open Alignsys website'),
-                ),
-              );
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: Image.asset(
-                'assets/alignsysnew.png',
-                height: 36,
-                fit: BoxFit.cover,
-              ),
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: Image.asset(
+              'assets/alignsysnew.png',
+              height: 36,
+              fit: BoxFit.cover,
             ),
           ),
         ),
-        actions: [
-          Builder(
-            builder:
-                (ctx) => TextButton.icon(
-                  onPressed: () => _showCreateBottomSheet(ctx),
-                  icon: const Icon(Icons.add, size: 20, color: Colors.white),
-                  label: const Text(
-                    'Create',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-          ),
-          const SizedBox(width: 4),
-          Builder(
-            builder:
-                (ctx) => IconButton(
-                  icon: const Icon(
-                    Icons.person_rounded,
-                    size: 20,
+      ),
+      actions: [
+        Builder(
+          builder:
+              (ctx) => TextButton.icon(
+                onPressed: () => _showCreateBottomSheet(ctx),
+                icon: const Icon(Icons.add, size: 20, color: Colors.white),
+                label: const Text(
+                  'Create',
+                  style: TextStyle(
+                    fontSize: 14,
                     color: Colors.white,
+                    fontWeight: FontWeight.w600,
                   ),
-                  onPressed: () => _showProfileMenu(ctx),
                 ),
-          ),
-          const SizedBox(width: 4),
-        ],
-      );
+              ),
+        ),
+        const SizedBox(width: 4),
+        Builder(
+          builder:
+              (ctx) => IconButton(
+                icon: const Icon(
+                  Icons.person_rounded,
+                  size: 20,
+                  color: Colors.white,
+                ),
+                onPressed: () => _showProfileMenu(ctx),
+              ),
+        ),
+        const SizedBox(width: 4),
+      ],
+    );
   }
 
   PreferredSizeWidget _buildSelectionAppBar() {
-    final allCheckedOut =
-    _selectedObjects.values.every((o) => o.isCheckedOut);
+    final allCheckedOut = _selectedObjects.values.every((o) => o.isCheckedOut);
 
-    final allNotCheckedOut =
-        _selectedObjects.values.every((o) => !o.isCheckedOut);
+    final allNotCheckedOut = _selectedObjects.values.every(
+      (o) => !o.isCheckedOut,
+    );
+
     return AppBar(
       backgroundColor: AppColors.primary,
       foregroundColor: Colors.white,
@@ -702,9 +760,7 @@ class _HomeScreenState extends State<HomeScreen>
 
       title: Text(
         '${_selectedIds.length} selected',
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-        ),
+        style: const TextStyle(fontWeight: FontWeight.w600),
       ),
 
       actions: [
@@ -712,9 +768,13 @@ class _HomeScreenState extends State<HomeScreen>
           IconButton(
             tooltip: 'Create & Link',
             icon: const Icon(Icons.add_link_rounded),
-            onPressed: () => _showLinkCreateSheet(context, _selectedObjects.values.first),
+            onPressed:
+                () => _showLinkCreateSheet(
+                  context,
+                  _selectedObjects.values.first,
+                ),
           ),
-          
+
         if (allNotCheckedOut)
           IconButton(
             tooltip: 'Checkout',
@@ -729,17 +789,38 @@ class _HomeScreenState extends State<HomeScreen>
             onPressed: _batchUndoCheckout,
           ),
 
-        IconButton(
-          tooltip: 'Delete',
-          icon: const Icon(Icons.delete_outline),
-          onPressed: _batchDelete,
-        ),
+        // Delete is available ONLY when none of the selected
+        // objects are checked out.
+        if (allNotCheckedOut)
+          IconButton(
+            tooltip: 'Delete',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _batchDelete,
+          ),
         BatchActionsMenu(
+          disabledValues: () {
+            final svc = context.read<MFilesService>();
+            final single = _selectedObjects.length == 1;
+            return <String>{
+              if (!single) 'copy',
+              if (!single ||
+                  svc.isCheckedOutLocally(_selectedObjects.values.first.id))
+                'history',
+            };
+          }(),
           onSelected: (value) async {
             switch (value) {
               case 'history':
                 if (_selectedObjects.length == 1) {
                   final obj = _selectedObjects.values.first;
+                  final svc = context.read<MFilesService>();
+                  if (svc.isCheckedOutLocally(obj.id)) {
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Check in this item to view its version history.',
+                    );
+                    break;
+                  }
                   _clearSelection();
                   showVersionHistorySheet(
                     context,
@@ -750,7 +831,43 @@ class _HomeScreenState extends State<HomeScreen>
                   );
                 }
                 break;
-                
+
+              case 'copy':
+                if (_selectedObjects.length == 1) {
+                  final src = _selectedObjects.values.first;
+                  _clearSelection();
+
+                  final svc = context.read<MFilesService>();
+                  final objectType =
+                      svc.objectTypes
+                          .where((t) => t.id == src.objectTypeId)
+                          .firstOrNull;
+
+                  if (objectType == null) {
+                    if (!mounted) break;
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Object type unavailable — please refresh',
+                    );
+                    break;
+                  }
+
+                  await svc.fetchClassProperties(src.objectTypeId, src.classId);
+                  if (!mounted) break;
+
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder:
+                          (_) => DynamicFormScreen(
+                            objectType: objectType,
+                            copyFrom: src,
+                          ),
+                    ),
+                  );
+                }
+                break;
+
               case 'download':
                 _setProcessing(true, "Downloading files...");
                 try {
@@ -788,15 +905,24 @@ class _HomeScreenState extends State<HomeScreen>
                   if (!mounted) return;
 
                   if (success == 1 && lastPath != null) {
-                    SnackbarHelper.showSuccess(context, 'Downloaded to: $lastPath');
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded to: $lastPath',
+                    );
                   } else if (success > 1 && lastPath != null) {
-                    final folder = lastPath.substring(0, lastPath.lastIndexOf('/'));
+                    final folder = lastPath.substring(
+                      0,
+                      lastPath.lastIndexOf('/'),
+                    );
                     SnackbarHelper.showSuccess(
                       context,
                       'Downloaded $success files to: $folder',
                     );
                   } else {
-                    SnackbarHelper.showSuccess(context, 'Downloaded $success files');
+                    SnackbarHelper.showSuccess(
+                      context,
+                      'Downloaded $success files',
+                    );
                   }
 
                   _clearSelection();
@@ -857,109 +983,108 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   @override
-Widget build(BuildContext context) {
-  return LoadingOverlay(
-    isLoading: _scanLoading,
-    message: _scanMessage,
-    child: SafeArea(
-      top: false,
-      child: Stack(
-        children: [
-          Scaffold(
-            backgroundColor: AppColors.surfaceLight,
-            appBar: _selectionMode
-              ? _buildSelectionAppBar()
-              : _buildHomeAppBar(),
-            floatingActionButton: !_selectionMode && _tabController.index == 0
-                ? FloatingActionButton.extended(
-                  onPressed: _startDocumentScan,
-                  label: const Text('Scan'),
-                  icon: const Icon(Icons.document_scanner_rounded),
-                  backgroundColor: AppColors.primary,
-                  foregroundColor: Colors.white,
-                )
-                : null,
-            floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-            body: NetworkBanner(
-              child: Column(
-                children: [
-                  if (_selectionMode) ...[
-                    _buildSelectAllBar(),
-                    const SizedBox(height: 2),
-                  ],
+  Widget build(BuildContext context) {
+    return LoadingOverlay(
+      isLoading: _scanLoading,
+      message: _scanMessage,
+      child: SafeArea(
+        top: false,
+        child: Stack(
+          children: [
+            Scaffold(
+              backgroundColor: AppColors.surfaceLight,
+              appBar:
+                  _selectionMode ? _buildSelectionAppBar() : _buildHomeAppBar(),
+              floatingActionButton:
+                  !_selectionMode && _tabController.index == 0
+                      ? FloatingActionButton.extended(
+                        onPressed: _startDocumentScan,
+                        label: const Text('Scan'),
+                        icon: const Icon(Icons.document_scanner_rounded),
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                      )
+                      : null,
+              floatingActionButtonLocation:
+                  FloatingActionButtonLocation.endFloat,
+              body: NetworkBanner(
+                child: Column(
+                  children: [
+                    if (_selectionMode) ...[
+                      _buildSelectAllBar(),
+                      const SizedBox(height: 2),
+                    ],
 
                     _selectionMode
-                    ? _buildSelectionSearchBar()
-                    : _buildSearchBar(),
-                  const SizedBox(height: _sectionSpacing),
-                  
-                  if (!_selectionMode) ...[
-                    _buildTabBar(),
+                        ? _buildSelectionSearchBar()
+                        : _buildSearchBar(),
                     const SizedBox(height: _sectionSpacing),
-                  ],
-                
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      physics: const ClampingScrollPhysics(),
-                      children: [
-                        _buildHomeTab(),
-                        _buildRecentTab(),
-                        _buildAssignedTab(),
-                        _buildMoreTab(),
-                      ],
+
+                    if (!_selectionMode) ...[
+                      _buildTabBar(),
+                      const SizedBox(height: _sectionSpacing),
+                    ],
+
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        physics: const ClampingScrollPhysics(),
+                        children: [
+                          _buildHomeTab(),
+                          _buildRecentTab(),
+                          _buildAssignedTab(),
+                          _buildMoreTab(),
+                        ],
+                      ),
                     ),
+                  ],
+                ),
+              ),
+            ),
+            // ── Vault-switching overlay ──────────────────────────────────────
+            if (_switchingVault)
+              Positioned.fill(
+                child: Container(
+                  color: AppColors.primary,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.asset(
+                          'assets/alignsysnew.png',
+                          height: 70,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      const SizedBox(height: 40),
+                      const FlashingDots(),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Switching to $_switchingVaultName',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.none,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ),
-          // ── Vault-switching overlay ──────────────────────────────────────
-          if (_switchingVault)
-            Positioned.fill(
-              child: Container(
-                color: AppColors.primary,
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.asset(
-                        'assets/alignsysnew.png',
-                        height: 70,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    const FlashingDots(),
-                    const SizedBox(height: 24),
-                    Text(
-                      'Switching to $_switchingVaultName',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                        decoration: TextDecoration.none,
-                      ),
-                    ),
-                  ],
                 ),
               ),
-            ),
-          if (_isProcessing)
-          Positioned.fill(
-            child: ColoredBox(
-              color: Colors.black45,
-              child: Center(
-                child: ProcessingDialog(
-                  operation: _processingText,
+            if (_isProcessing)
+              Positioned.fill(
+                child: ColoredBox(
+                  color: Colors.black45,
+                  child: Center(
+                    child: ProcessingDialog(operation: _processingText),
+                  ),
                 ),
               ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
     );
   }
 
@@ -1095,25 +1220,20 @@ Widget build(BuildContext context) {
               vertical: 14,
               horizontal: 16,
             ),
-            prefixIcon: Icon(
-              Icons.search,
-              color: Colors.grey.shade400,
-            ),
-            suffixIcon: hasText
-                ? IconButton(
-                    icon: Icon(
-                      Icons.close,
-                      color: Colors.grey.shade400,
-                    ),
-                    onPressed: () {
-                      _selectionFilterController.clear();
+            prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
+            suffixIcon:
+                hasText
+                    ? IconButton(
+                      icon: Icon(Icons.close, color: Colors.grey.shade400),
+                      onPressed: () {
+                        _selectionFilterController.clear();
 
-                      setState(() {
-                        _selectionFilter = '';
-                      });
-                    },
-                  )
-                : null,
+                        setState(() {
+                          _selectionFilter = '';
+                        });
+                      },
+                    )
+                    : null,
           ),
           onChanged: (value) {
             setState(() {
@@ -1134,10 +1254,7 @@ Widget build(BuildContext context) {
           InkWell(
             onTap: _toggleSelectAll,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 14,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               child: Row(
                 children: [
                   AnimatedSwitcher(
@@ -1166,11 +1283,7 @@ Widget build(BuildContext context) {
               ),
             ),
           ),
-          Divider(
-            height: 1,
-            thickness: 1,
-            color: Colors.grey.shade200,
-          ),
+          Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
         ],
       ),
     );
@@ -1262,12 +1375,18 @@ Widget build(BuildContext context) {
                           top: -6,
                           right: -8,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
                             constraints: const BoxConstraints(minWidth: 16),
                             decoration: BoxDecoration(
                               color: Colors.red,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.white, width: 1.2),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 1.2,
+                              ),
                             ),
                             child: Text(
                               count > 99 ? '99+' : '$count',
@@ -1542,11 +1661,12 @@ Widget build(BuildContext context) {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
           child: Row(
             children: [
+              // Original blue rounded-square icon container
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(8),
@@ -1564,38 +1684,30 @@ Widget build(BuildContext context) {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w400,
+                    letterSpacing: -0.1,
                     color: Color(0xFF1A1A1A),
                   ),
                 ),
               ),
               if (view.count > 0) ...[
                 const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${view.count}',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
-                    ),
+                Text(
+                  '${view.count}',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w400,
+                    color: Colors.grey.shade400,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ],
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Icon(
                 Icons.chevron_right_rounded,
-                size: 20,
-                color: Colors.grey.shade400,
+                size: 16,
+                color: Colors.grey.shade300,
               ),
             ],
           ),
@@ -1751,7 +1863,9 @@ Widget build(BuildContext context) {
         );
         break;
       case PendingShortcutAction.scan:
-        WidgetsBinding.instance.addPostFrameCallback((_) => _startDocumentScan());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _startDocumentScan(),
+        );
         break;
       case PendingShortcutAction.search:
         _tabController.animateTo(0); // Home tab, where the search bar lives
@@ -1849,15 +1963,15 @@ Widget build(BuildContext context) {
         final objects = selector(service);
 
         final visibleObjects =
-          _selectionMode && _selectionFilter.isNotEmpty
-              ? objects.where((obj) {
+            _selectionMode && _selectionFilter.isNotEmpty
+                ? objects.where((obj) {
                   final q = _selectionFilter.toLowerCase();
 
                   return obj.title.toLowerCase().contains(q) ||
                       obj.objectTypeName.toLowerCase().contains(q) ||
                       obj.displayId.toLowerCase().contains(q);
                 }).toList()
-              : objects;
+                : objects;
 
         errorSelector?.call(service);
         if (service.isLoading && objects.isEmpty) {
@@ -1893,8 +2007,10 @@ Widget build(BuildContext context) {
               padding: const EdgeInsets.all(10),
               itemCount: visibleObjects.length,
               itemBuilder:
-                  (context, index) =>
-                      _buildCompactObjectRow(visibleObjects[index], onLongPress),
+                  (context, index) => _buildCompactObjectRow(
+                    visibleObjects[index],
+                    onLongPress,
+                  ),
             ),
           ),
         );
@@ -1951,9 +2067,10 @@ Widget build(BuildContext context) {
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
-          color: _isSelected(obj.id)
-          ? AppColors.primary.withOpacity(0.12)
-          : Colors.white,
+          color:
+              _isSelected(obj.id)
+                  ? AppColors.primary.withOpacity(0.12)
+                  : Colors.white,
           borderRadius: BorderRadius.circular(12),
           border:
               infoExpanded
@@ -1992,13 +2109,13 @@ Widget build(BuildContext context) {
                     setState(() => _expandedInfoItemId = null);
                     return;
                   }
-                  final deleted = await Navigator.push<bool>(
+                  await Navigator.push<bool>(
                     context,
                     MaterialPageRoute(
                       builder: (_) => ObjectDetailsScreen(obj: obj),
                     ),
                   );
-                  if (deleted == true) {
+                  if (mounted) {
                     await context.read<MFilesService>().fetchRecentObjects();
                   }
                 },
@@ -2048,38 +2165,49 @@ Widget build(BuildContext context) {
                       // Badge / icon
                       AnimatedSwitcher(
                         duration: const Duration(milliseconds: 180),
-                        child: _isSelected(obj.id)
-                            ? Container(
-                                key: const ValueKey('selected'),
-                                width: 42,
-                                height: 42,
-                                decoration: const BoxDecoration(
-                                  color: AppColors.primary,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: const Icon(
-                                  Icons.check,
-                                  color: Colors.white,
-                                  size: 24,
-                                ),
-                              )
-                            : Container(
-                                key: const ValueKey('normal'),
-                                child: isDocument
-                                    ? _buildDocumentBadge(svc, obj)
-                                    : isMultiFileObj
-                                        ? _buildMultiFileBadge(svc, obj)
-                                        : Container(
-                                            width: 28,
-                                            height: 28,
-                                            
-                                            child: Icon(
-                                              objIcon,
-                                              size: 28,
-                                              color: AppColors.primary,
+                        child:
+                            _isSelected(obj.id)
+                                ? Container(
+                                  key: const ValueKey('selected'),
+                                  width: 42,
+                                  height: 42,
+                                  decoration: const BoxDecoration(
+                                    color: AppColors.primary,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.check,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                )
+                                : Container(
+                                  key: const ValueKey('normal'),
+                                  child:
+                                      isDocument
+                                          ? _buildDocumentBadge(svc, obj)
+                                          : isMultiFileObj
+                                          ? _buildMultiFileBadge(svc, obj)
+                                          : CheckoutBadge(
+                                            isCheckedOut:
+                                                svc.isCheckedOutLocally(
+                                                  obj.id,
+                                                ) ||
+                                                obj.isCheckedOut,
+                                            checkoutUserId:
+                                                svc.checkoutOwnerId(obj.id) ??
+                                                obj.checkoutUserId,
+                                            child: Container(
+                                              width: 28,
+                                              height: 28,
+                                              child: Icon(
+                                                objIcon,
+                                                size: 28,
+                                                color: AppColors.primary,
+                                              ),
                                             ),
                                           ),
-                            ),
+                                ),
                       ),
 
                       const SizedBox(width: 12),
@@ -2260,11 +2388,11 @@ Widget build(BuildContext context) {
   // ── Empty / error states ──────────────────────────────────────────────────
 
   Widget _buildEmptyState(
-    IconData icon, 
-    String text, 
+    IconData icon,
+    String text,
     String subtext, {
     VoidCallback? onRetry,
-    }) {
+  }) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -2304,8 +2432,13 @@ Widget build(BuildContext context) {
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.primary,
                   side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 24,
+                    vertical: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
               ),
             ],
@@ -2402,10 +2535,9 @@ Widget build(BuildContext context) {
 
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) => DynamicFormScreen(
-            objectType: docType,
-            scannedFile: pdfFile,
-          ),
+          builder:
+              (_) =>
+                  DynamicFormScreen(objectType: docType, scannedFile: pdfFile),
         ),
       );
     } catch (e, st) {
@@ -2430,7 +2562,8 @@ Widget build(BuildContext context) {
       showAppInfoDialog(
         context,
         title: 'Still Loading, check your internet connection',
-        message: 'Object types haven\'t finished loading yet. Please wait a moment and try again.',
+        message:
+            'Object types haven\'t finished loading yet. Please wait a moment and try again.',
         icon: Icons.hourglass_empty_rounded,
         iconColor: Colors.orange.shade700,
       );
@@ -2739,7 +2872,9 @@ Widget build(BuildContext context) {
                                           onTap: () async {
                                             Navigator.pop(ctx);
 
-                                            await Future.delayed(const Duration(milliseconds: 300));
+                                            await Future.delayed(
+                                              const Duration(milliseconds: 300),
+                                            );
 
                                             if (!mounted) return;
 
@@ -2818,7 +2953,9 @@ Widget build(BuildContext context) {
                                           child: Icon(
                                             ot.isDocument
                                                 ? Icons.description_rounded
-                                                : svc.iconForObjectTypeId(ot.id),
+                                                : svc.iconForObjectTypeId(
+                                                  ot.id,
+                                                ),
                                             size: 20,
                                             color: AppColors.primary,
                                           ),
@@ -2859,7 +2996,7 @@ Widget build(BuildContext context) {
   }
 
   // ── Create & Link bottom sheet ────────────────────────────────────────────
-    void _showLinkCreateSheet(BuildContext context, ViewObject target) {
+  void _showLinkCreateSheet(BuildContext context, ViewObject target) {
     showLinkCreateSheet(
       context,
       target: target,
@@ -2882,20 +3019,8 @@ Widget build(BuildContext context) {
   void _showTemplateClassPicker() => _loadClassesWithTemplates();
 
   List<ObjectClass> _collectAllClasses(MFilesService service) {
-    final seen = <int>{};
-    final result = <ObjectClass>[];
-    for (final ot in service.objectTypes) {
-      for (final group in service.getClassGroupsForType(ot.id)) {
-        for (final cls in group.members) {
-          if (seen.add(cls.id)) result.add(cls);
-        }
-      }
-    }
-    if (result.isEmpty) {
-      for (final cls in service.objectClasses) {
-        if (seen.add(cls.id)) result.add(cls);
-      }
-    }
+    final result = service.getAllClasses();
+    if (result.isEmpty) result.addAll(service.objectClasses);
     result.sort(
       (a, b) =>
           a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
@@ -2932,7 +3057,8 @@ Widget build(BuildContext context) {
         await showAppInfoDialog(
           context,
           title: 'No Templates Found',
-          message: "This repository doesn't have any templates set up yet. "
+          message:
+              "This repository doesn't have any templates set up yet. "
               "You can still create the document from scratch, or ask your "
               "vault admin to add one.",
           icon: Icons.dashboard_customize_rounded,
@@ -2959,10 +3085,20 @@ Widget build(BuildContext context) {
         await showAppInfoDialog(
           context,
           title: 'No Templates Found',
-          message: "This repository doesn't have any templates set up yet. "
+          message:
+              "This repository doesn't have any templates set up yet. "
               "You can still create the document from scratch, or ask your "
               "vault admin to add one.",
           icon: Icons.dashboard_customize_rounded,
+        );
+        return;
+      }
+
+      if (classesWithTemplates.length == 1) {
+        final cls = classesWithTemplates.first;
+        await _openTemplateDocumentSheetDirect(
+          cls,
+          templatesByClass[cls.id] ?? [],
         );
         return;
       }
@@ -2977,314 +3113,101 @@ Widget build(BuildContext context) {
       await showAppInfoDialog(
         context,
         title: 'Couldn\'t Load Templates',
-        message: 'Something went wrong fetching templates for this repository. Please try again.',
+        message:
+            'Something went wrong fetching templates for this repository. Please try again.',
         icon: Icons.error_outline_rounded,
         iconColor: Colors.red.shade600,
       );
     }
   }
 
-  void _openTemplateClassSheet(
-    List<ObjectClass> allClasses, {
+  Future<void> _openTemplateClassSheet(
+    List<ObjectClass> classes, {
     required Map<int, List<Map<String, dynamic>>> templatesByClass,
-  }) {
+  }) async {
     if (!mounted) return;
-    final searchController = TextEditingController();
-    final searchFocusNode = FocusNode();
-    List<ObjectClass> filtered = List.from(allClasses);
-    bool showSearch = false;
+    final service = context.read<MFilesService>();
+    final clsById = {for (final c in classes) c.id: c};
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder:
-          (_) => StatefulBuilder(
-            builder:
-                (ctx, setSheet) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(20),
-                    ),
-                  ),
-                  padding: EdgeInsets.only(
-                    left: 20,
-                    right: 20,
-                    top: 14,
-                    bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-                  ),
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.8,
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 40,
-                        height: 4,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(2),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.dashboard_customize_rounded,
-                              color: AppColors.primary,
-                              size: 24,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Text(
-                              'Select Template',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.search_rounded,
-                              color:
-                                  showSearch
-                                      ? AppColors.primary
-                                      : Colors.grey.shade700,
-                            ),
-                            onPressed: () {
-                              setSheet(() {
-                                showSearch = !showSearch;
-                                if (!showSearch) {
-                                  searchController.clear();
-                                  filtered = List.from(allClasses);
-                                } else {
-                                  WidgetsBinding.instance.addPostFrameCallback((
-                                    _,
-                                  ) {
-                                    searchFocusNode.requestFocus();
-                                  });
-                                }
-                              });
-                            },
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.pop(ctx),
-                          ),
-                        ],
-                      ),
-                      AnimatedSize(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeInOut,
-                        child:
-                            showSearch
-                                ? Padding(
-                                  padding: const EdgeInsets.only(top: 12),
-                                  child: TextField(
-                                    controller: searchController,
-                                    focusNode: searchFocusNode,
-                                    decoration: InputDecoration(
-                                      hintText: 'Search templates...',
-                                      hintStyle: TextStyle(
-                                        color: Colors.grey.shade400,
-                                        fontSize: 14,
-                                      ),
-                                      prefixIcon: Icon(
-                                        Icons.search,
-                                        color: Colors.grey.shade400,
-                                        size: 20,
-                                      ),
-                                      filled: true,
-                                      fillColor: AppColors.surfaceLight,
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Colors.grey.shade200,
-                                        ),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: BorderSide(
-                                          color: Colors.grey.shade200,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        borderSide: const BorderSide(
-                                          color: AppColors.primary,
-                                          width: 2,
-                                        ),
-                                      ),
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 14,
-                                            vertical: 12,
-                                          ),
-                                      isDense: true,
-                                      suffixIcon:
-                                          searchController.text.isNotEmpty
-                                              ? IconButton(
-                                                icon: Icon(
-                                                  Icons.close,
-                                                  size: 16,
-                                                  color: Colors.grey.shade400,
-                                                ),
-                                                onPressed: () {
-                                                  searchController.clear();
-                                                  setSheet(
-                                                    () =>
-                                                        filtered = List.from(
-                                                          allClasses,
-                                                        ),
-                                                  );
-                                                },
-                                              )
-                                              : null,
-                                    ),
-                                    onChanged: (q) {
-                                      setSheet(() {
-                                        filtered =
-                                            q.trim().isEmpty
-                                                ? List.from(allClasses)
-                                                : allClasses
-                                                    .where(
-                                                      (c) => c.displayName
-                                                          .toLowerCase()
-                                                          .contains(
-                                                            q.toLowerCase(),
-                                                          ),
-                                                    )
-                                                    .toList();
-                                      });
-                                    },
-                                  ),
-                                )
-                                : const SizedBox.shrink(),
-                      ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(
-                            '${filtered.length} template${filtered.length == 1 ? '' : 's'}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade500,
-                            ),
-                          ),
-                        ),
-                      ),
-                      Flexible(
-                        child:
-                            filtered.isEmpty
-                                ? Padding(
-                                  padding: const EdgeInsets.all(24),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.search_off,
-                                        size: 36,
-                                        color: Colors.grey.shade300,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        'No matches found',
-                                        style: TextStyle(
-                                          color: Colors.grey.shade500,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                                : ListView.separated(
-                                  shrinkWrap: true,
-                                  itemCount: filtered.length,
-                                  separatorBuilder:
-                                      (_, __) => Divider(
-                                        height: 1,
-                                        color: Colors.grey.shade100,
-                                      ),
-                                  itemBuilder: (_, index) {
-                                    final cls = filtered[index];
-                                    return Material(
-                                      color: Colors.transparent,
-                                      child: ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
-                                            ),
-                                        leading: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.primary
-                                                .withOpacity(0.08),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.dashboard_customize_rounded,
-                                            size: 20,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                        title: Text(
-                                          cls.displayName,
-                                          style: const TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        trailing: Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: Colors.grey.shade400,
-                                        ),
-                                        onTap: () {
-                                          Navigator.pop(ctx);
-                                          final templates =
-                                              templatesByClass[cls.id] ?? [];
-                                          _openTemplateDocumentSheetDirect(
-                                            cls,
-                                            templates,
-                                          );
-                                        },
-                                      ),
-                                    );
-                                  },
-                                ),
-                      ),
-                    ],
-                  ),
-                ),
-          ),
+    int? classIdOf(Map<String, dynamic> t) =>
+        (t['classId'] ?? t['classID'] ?? t['ClassID'] ?? t['ClassId']) as int?;
+
+    // classId → class group name (only for classes that sit in a group)
+    final groupOf = <int, String>{};
+    for (final ot in service.objectTypes) {
+      for (final g in service.getClassGroupsForType(ot.id)) {
+        for (final m in g.members) {
+          if (clsById.containsKey(m.id)) groupOf[m.id] = g.classGroupName;
+        }
+      }
+    }
+    final useGroups = groupOf.isNotEmpty;
+
+    // Bucket templates: by class group if groups exist, otherwise by class name
+    final buckets = <String, List<Map<String, dynamic>>>{};
+    for (final e in templatesByClass.entries) {
+      final cls = clsById[e.key];
+      if (cls == null) continue;
+      final key = useGroups ? (groupOf[cls.id] ?? 'General') : cls.displayName;
+      buckets.putIfAbsent(key, () => []).addAll(e.value);
+    }
+
+    final keys =
+        buckets.keys.toList()..sort((a, b) {
+          if (a == 'General') return -1;
+          if (b == 'General') return 1;
+          return a.toLowerCase().compareTo(b.toLowerCase());
+        });
+
+    String titleOf(Map<String, dynamic> t) =>
+        (t['title'] as String?) ?? 'Untitled';
+
+    final groups = [
+      for (final k in keys)
+        PickerGroup<Map<String, dynamic>>(
+          title: k,
+          icon: Icons.dashboard_customize_rounded,
+          initiallyOpen: true,
+          items:
+              buckets[k]!..sort(
+                (a, b) => titleOf(
+                  a,
+                ).toLowerCase().compareTo(titleOf(b).toLowerCase()),
+              ),
+        ),
+    ];
+
+    final picked = await showGroupedPickerSheet<Map<String, dynamic>>(
+      context,
+      title: 'Select Template',
+      headerIcon: Icons.dashboard_customize_rounded,
+      groups: groups,
+      isSame: (a, b) => a['id'] == b['id'],
+      labelOf: titleOf,
+      // When grouped by class group, show which class each template belongs to
+      subtitleOf: (t) => useGroups ? clsById[classIdOf(t)]?.displayName : null,
     );
+
+    if (picked == null || !mounted) return;
+    final cls = clsById[classIdOf(picked)];
+    if (cls == null) return;
+    // A single template goes straight to TemplateFormScreen
+    _openTemplateDocumentSheetDirect(cls, [picked]);
   }
 
   Future<void> _openTemplateDocumentSheetDirect(
     ObjectClass cls,
-    List<Map<String, dynamic>> templates,
-  ) async {
+    List<Map<String, dynamic>> templates, {
+    ViewObject? linkTarget,
+  }) async {
     if (!mounted) return;
 
     if (templates.isEmpty) {
       await showAppInfoDialog(
         context,
         title: 'No Templates for This Class',
-        message: '${cls.displayName} doesn\'t have any templates yet. '
+        message:
+            '${cls.displayName} doesn\'t have any templates yet. '
             'Try a different class or create the document from scratch.',
         icon: Icons.dashboard_customize_rounded,
       );
@@ -3307,18 +3230,20 @@ Widget build(BuildContext context) {
                 templateObjectId: t['id'] as int,
                 templateTitle: t['title'] as String? ?? 'Template',
                 objectTypeId: objectTypeId, // ← use resolved value
+                linkTarget: linkTarget,
               ),
         ),
       );
       return;
     }
-    _openTemplateDocumentSheet(cls, templates);
+    _openTemplateDocumentSheet(cls, templates, linkTarget: linkTarget);
   }
 
   void _openTemplateDocumentSheet(
     ObjectClass cls,
-    List<Map<String, dynamic>> templates,
-  ) {
+    List<Map<String, dynamic>> templates, {
+    ViewObject? linkTarget,
+  }) {
     if (!mounted) return;
     showModalBottomSheet(
       context: context,
@@ -3342,6 +3267,7 @@ Widget build(BuildContext context) {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Drag handle
                 Container(
                   width: 40,
                   height: 4,
@@ -3351,6 +3277,8 @@ Widget build(BuildContext context) {
                   ),
                 ),
                 const SizedBox(height: 20),
+
+                // Header (unchanged)
                 Row(
                   children: [
                     Container(
@@ -3394,91 +3322,122 @@ Widget build(BuildContext context) {
                   ],
                 ),
                 const SizedBox(height: 12),
+
+                // ── Card + rows — matches GroupedPickerSheet exactly ──
                 Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: templates.length,
-                    separatorBuilder:
-                        (_, __) =>
-                            Divider(height: 1, color: Colors.grey.shade100),
-                    itemBuilder: (ctx, index) {
-                      final t = templates[index];
-                      final title = t['title'] as String? ?? 'Untitled';
-                      final modified = t['lastModifiedUtc'] as String?;
-                      String? dateStr;
-                      if (modified != null) {
-                        try {
-                          final dt = DateTime.parse(modified);
-                          dateStr =
-                              '${dt.day} ${_monthName(dt.month)} ${dt.year}';
-                        } catch (_) {}
-                      }
-                      return Material(
-                        color: Colors.transparent,
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 6,
-                          ),
-                          leading: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < templates.length; i++) ...[
+                            _buildTemplateRow(
+                              ctx: context,
+                              t: templates[i],
+                              cls: cls,
+                              linkTarget: linkTarget,
                             ),
-                            child: const Icon(
-                              Icons.description_rounded,
-                              size: 20,
-                              color: Color.fromRGBO(25, 76, 129, 1),
-                            ),
-                          ),
-                          title: Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          subtitle:
-                              dateStr != null
-                                  ? Text(
-                                    dateStr,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey.shade500,
-                                    ),
-                                  )
-                                  : null,
-                          trailing: Icon(
-                            Icons.chevron_right_rounded,
-                            color: Colors.grey.shade400,
-                          ),
-                          onTap: () {
-                            Navigator.pop(ctx);
-                            final objectTypeId = cls.objectTypeId;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => TemplateFormScreen(
-                                      classId: cls.id,
-                                      className: cls.displayName,
-                                      templateObjectId: t['id'] as int,
-                                      templateTitle: title,
-                                      objectTypeId: objectTypeId,
-                                    ),
+                            if (i != templates.length - 1)
+                              Divider(
+                                height: 1,
+                                thickness: 0.5,
+                                indent: 16,
+                                color: Colors.black.withOpacity(0.06),
                               ),
-                            );
-                          },
-                        ),
-                      );
-                    },
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 8),
               ],
             ),
           ),
+    );
+  }
+
+  Widget _buildTemplateRow({
+    required BuildContext ctx,
+    required Map<String, dynamic> t,
+    required ObjectClass cls,
+    ViewObject? linkTarget,
+  }) {
+    final title = t['title'] as String? ?? 'Untitled';
+    final modified = t['lastModifiedUtc'] as String?;
+    String? dateStr;
+    if (modified != null) {
+      try {
+        final dt = DateTime.parse(modified);
+        dateStr = '${dt.day} ${_monthName(dt.month)} ${dt.year}';
+      } catch (_) {}
+    }
+
+    return InkWell(
+      onTap: () {
+        Navigator.pop(ctx);
+        final objectTypeId = cls.objectTypeId;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder:
+                (_) => TemplateFormScreen(
+                  classId: cls.id,
+                  className: cls.displayName,
+                  templateObjectId: t['id'] as int,
+                  templateTitle: title,
+                  objectTypeId: objectTypeId,
+                  linkTarget: linkTarget,
+                ),
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      height: 1.3,
+                      fontWeight: FontWeight.w500,
+                      color: Color(0xFF1E293B),
+                    ),
+                  ),
+                  if (dateStr != null) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      dateStr,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: Color(0xFF94A3B8),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3500,214 +3459,239 @@ Widget build(BuildContext context) {
       ][m];
 
   void _showVaultSwitcher(BuildContext context) {
-      final service = context.read<MFilesService>();
-      showModalBottomSheet(
-        context: context,
-        isScrollControlled: true,
-        backgroundColor: Colors.transparent,
-        builder: (_) => DraggableScrollableSheet(
-          initialChildSize: 0.6,
-          minChildSize: 0.3,
-          maxChildSize: 0.85,
-          expand: false,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 10),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
+    final service = context.read<MFilesService>();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder:
+          (_) => DraggableScrollableSheet(
+            initialChildSize: 0.6,
+            minChildSize: 0.3,
+            maxChildSize: 0.85,
+            expand: false,
+            builder: (context, scrollController) {
+              return Container(
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  // Teal header, matching splash branding
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.symmetric(horizontal: 20),
-                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(10),
+                    const SizedBox(height: 14),
+                    // Teal header, matching splash branding
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Icon(
+                              Icons.storage_rounded,
+                              color: Colors.white,
+                              size: 20,
+                            ),
                           ),
-                          child: const Icon(
-                            Icons.storage_rounded,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Switch Repository',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Switch Repository',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
                                 ),
-                              ),
-                              SizedBox(height: 2),
-                              Text(
-                                'Select a vault to work in',
-                                style: TextStyle(fontSize: 12, color: Colors.white70),
-                              ),
-                            ],
+                                SizedBox(height: 2),
+                                Text(
+                                  'Select a vault to work in',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.close, color: Colors.white70),
-                          onPressed: () => Navigator.pop(context),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        ),
-                      ],
+                          IconButton(
+                            icon: const Icon(
+                              Icons.close,
+                              color: Colors.white70,
+                            ),
+                            onPressed: () => Navigator.pop(context),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: FutureBuilder<List<Vault>>(
-                      future: service.getUserVaults(),
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState == ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          );
-                        }
-                        if (snapshot.hasError) {
-                          return Center(
-                            child: Padding(
-                              padding: const EdgeInsets.all(24),
-                              child: Text(
-                                'Error loading repositories: ${snapshot.error}',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(color: Colors.red.shade700, fontSize: 13),
-                              ),
-                            ),
-                          );
-                        }
-                        final vaults = snapshot.data ?? [];
-                        if (vaults.isEmpty) {
-                          return Center(
-                            child: Text(
-                              'No repositories available',
-                              style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
-                            ),
-                          );
-                        }
-                        final selectedGuid = service.selectedVault?.guid;
-                        return ListView.separated(
-                          controller: scrollController,
-                          padding: const EdgeInsets.symmetric(horizontal: 20),
-                          itemCount: vaults.length,
-                          separatorBuilder: (_, __) =>
-                              Divider(height: 1, color: Colors.grey.shade200),
-                          itemBuilder: (context, index) {
-                            final v = vaults[index];
-                            final isSelected = v.guid == selectedGuid;
-                            return InkWell(
-                              onTap: isSelected
-                                  ? null
-                                  : () async {
-                                      Navigator.pop(context);
-                                      setState(() {
-                                        _switchingVault = true;
-                                        _switchingVaultName = v.name;
-                                      });
-                                      try {
-                                        await service.saveSelectedVault(v);
-                                        await service.fetchMFilesUserId();
-                                        await service.fetchObjectTypes();
-                                        await service.fetchAllViews();
-                                        await Future.wait([
-                                          service.fetchRecentObjects(),
-                                          service.fetchDeletedObjects(),
-                                          service.fetchAssignedObjects(),
-                                          service.fetchReportObjects(),
-                                        ]);
-                                      } finally {
-                                        if (mounted) {
-                                          setState(() => _switchingVault = false);
-                                        }
-                                      }
-                                    },
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: FutureBuilder<List<Vault>>(
+                        future: service.getUserVaults(),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState ==
+                              ConnectionState.waiting) {
+                            return const Center(
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            );
+                          }
+                          if (snapshot.hasError) {
+                            return Center(
                               child: Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 13),
-                                child: Row(
-                                  children: [
-                                    Container(
-                                      width: 8,
-                                      height: 8,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: isSelected
-                                            ? AppColors.primary
-                                            : Colors.grey.shade300,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Text(
-                                        v.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 14.5,
-                                          fontWeight: isSelected
-                                              ? FontWeight.w700
-                                              : FontWeight.w400,
-                                          color: isSelected
-                                              ? AppColors.primary
-                                              : const Color(0xFF1E293B),
-                                        ),
-                                      ),
-                                    ),
-                                    if (isSelected)
-                                      const Icon(
-                                        Icons.check_rounded,
-                                        size: 18,
-                                        color: AppColors.primary,
-                                      )
-                                    else
-                                      Icon(
-                                        Icons.chevron_right_rounded,
-                                        size: 18,
-                                        color: Colors.grey.shade400,
-                                      ),
-                                  ],
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  humanizeError(snapshot.error.toString()),
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.red.shade700,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                             );
-                          },
-                        );
-                      },
+                          }
+                          final vaults = snapshot.data ?? [];
+                          if (vaults.isEmpty) {
+                            return Center(
+                              child: Text(
+                                'No repositories available',
+                                style: TextStyle(
+                                  color: Colors.grey.shade500,
+                                  fontSize: 13,
+                                ),
+                              ),
+                            );
+                          }
+                          final selectedGuid = service.selectedVault?.guid;
+                          return ListView.separated(
+                            controller: scrollController,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            itemCount: vaults.length,
+                            separatorBuilder:
+                                (_, __) => Divider(
+                                  height: 1,
+                                  color: Colors.grey.shade200,
+                                ),
+                            itemBuilder: (context, index) {
+                              final v = vaults[index];
+                              final isSelected = v.guid == selectedGuid;
+                              return InkWell(
+                                onTap:
+                                    isSelected
+                                        ? null
+                                        : () async {
+                                          Navigator.pop(context);
+                                          setState(() {
+                                            _switchingVault = true;
+                                            _switchingVaultName = v.name;
+                                          });
+                                          try {
+                                            await service.saveSelectedVault(v);
+                                            await service.fetchMFilesUserId();
+                                            await service.fetchObjectTypes();
+                                            await service.fetchAllViews();
+                                            await Future.wait([
+                                              service.fetchRecentObjects(),
+                                              service.fetchDeletedObjects(),
+                                              service.fetchAssignedObjects(),
+                                              service.fetchReportObjects(),
+                                            ]);
+                                          } finally {
+                                            if (mounted) {
+                                              setState(
+                                                () => _switchingVault = false,
+                                              );
+                                            }
+                                          }
+                                        },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 13,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 8,
+                                        height: 8,
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color:
+                                              isSelected
+                                                  ? AppColors.primary
+                                                  : Colors.grey.shade300,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 14),
+                                      Expanded(
+                                        child: Text(
+                                          v.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 14.5,
+                                            fontWeight:
+                                                isSelected
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w400,
+                                            color:
+                                                isSelected
+                                                    ? AppColors.primary
+                                                    : const Color(0xFF1E293B),
+                                          ),
+                                        ),
+                                      ),
+                                      if (isSelected)
+                                        const Icon(
+                                          Icons.check_rounded,
+                                          size: 18,
+                                          color: AppColors.primary,
+                                        )
+                                      else
+                                        Icon(
+                                          Icons.chevron_right_rounded,
+                                          size: 18,
+                                          color: Colors.grey.shade400,
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-            );
-          },
-        ),
-      );
-    }
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              );
+            },
+          ),
+    );
+  }
 
   // ── Profile menu ──────────────────────────────────────────────────────────
   void _showProfileMenu(BuildContext context) {
@@ -3755,7 +3739,11 @@ Widget build(BuildContext context) {
                             color: Colors.white.withOpacity(0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: const Icon(Icons.person_rounded, color: Colors.white, size: 20),
+                          child: const Icon(
+                            Icons.person_rounded,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -3773,14 +3761,21 @@ Widget build(BuildContext context) {
                               const SizedBox(height: 4),
                               Text(
                                 service.userEmail ?? 'No email on file',
-                                style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white70,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 2),
                               Text(
-                                Uri.tryParse(service.baseUrl)?.host ?? service.baseUrl,
-                                style: const TextStyle(fontSize: 11, color: Colors.white60),
+                                Uri.tryParse(service.baseUrl)?.host ??
+                                    service.baseUrl,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.white60,
+                                ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -3998,102 +3993,105 @@ Widget build(BuildContext context) {
   }
 
   void _handleLogout(BuildContext context) {
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (context) => AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              shape: BoxShape.circle,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            child: Icon(
-              Icons.logout_rounded,
-              size: 28,
-              color: Colors.red.shade500,
-            ),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            'Log Out',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Are you sure you want to log out?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            "You'll need to sign in again to access your documents.",
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
-      actions: [
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey.shade700,
-                  side: BorderSide(color: Colors.grey.shade300),
-                  padding: const EdgeInsets.symmetric(vertical: 11),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+            contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+            actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.red.shade50,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.logout_rounded,
+                    size: 28,
+                    color: Colors.red.shade500,
                   ),
                 ),
-                child: const Text(
-                  'Cancel',
-                  style: TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  context.read<MFilesService>().logout();
-                  Navigator.pushReplacementNamed(context, '/login');
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade600,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 11),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                child: const Text(
+                const SizedBox(height: 12),
+                const Text(
                   'Log Out',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-              ),
+                const SizedBox(height: 8),
+                Text(
+                  'Are you sure you want to log out?',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "You'll need to sign in again to access your documents.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                ),
+                const SizedBox(height: 4),
+              ],
             ),
-          ],
-        ),
-      ],
-    ),
-  );
-}
+            actions: [
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.grey.shade700,
+                        side: BorderSide(color: Colors.grey.shade300),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        context.read<MFilesService>().logout();
+                        Navigator.pushReplacementNamed(context, '/login');
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade600,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      child: const Text(
+                        'Log Out',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+    );
+  }
 }
 
 // ── Create entry type ─────────────────────────────────────────────────────────

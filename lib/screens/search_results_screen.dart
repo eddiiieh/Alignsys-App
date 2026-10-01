@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/screens/document_preview_screen.dart';
+import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/widgets/batch_actions_menu.dart';
@@ -19,6 +20,8 @@ import '../theme/app_colors.dart';
 import 'package:mfiles_app/utils/delete_object_helper.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/widgets/link_create_sheet.dart';
+import 'package:mfiles_app/widgets/checkout_badge.dart';
+import 'package:mfiles_app/utils/error_messages.dart';
 
 class SearchResultsScreen extends StatefulWidget {
   final String initialQuery;
@@ -249,12 +252,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       if (!mounted) return;
 
       if (files.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No files attached to this document.'),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        SnackbarHelper.showWarning(context, 'No files attached to this document.');
         return;
       }
 
@@ -277,27 +275,24 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ),
       );
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to load preview: $e'),
-          backgroundColor: Colors.red.shade600,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    } finally {
+  if (!mounted) return;
+    SnackbarHelper.showError(context, 'Failed to load preview: ${humanizeError(e.toString())}');
+  } finally {
       if (mounted) setState(() => _previewLoading.remove(obj.id));
     }
   }
 
+  // Batch checkout selected objects
   Future<void> _batchCheckout() async {
     if (_selectedObjects.isEmpty) return;
 
     _setProcessing(true, "Checking out documents...");
+
     try {
       final service = context.read<MFilesService>();
 
       int success = 0;
+      int failed = 0;
 
       for (final obj in _selectedObjects.values) {
         final checkedOut = await service.checkoutObject(
@@ -307,30 +302,51 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
         if (checkedOut) {
           success++;
+        } else {
+          failed++;
         }
       }
 
-      _clearSelection();
-
       if (!mounted) return;
 
-      SnackbarHelper.showSuccess(
-        context,
-        success == 1 ? '1 object checked out' : '$success objects checked out',
-      );
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1
+              ? '1 object checked out'
+              : '$success objects checked out',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked out, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked out'
+              : '$failed objects could not be checked out',
+        );
+      }
+
+      _clearSelection();
     } finally {
       _setProcessing(false);
     }
   }
 
+  // Batch undo checkout selected objects
   Future<void> _batchUndoCheckout() async {
     if (_selectedObjects.isEmpty) return;
 
     _setProcessing(true, "Checking in documents...");
+
     try {
       final service = context.read<MFilesService>();
 
       int success = 0;
+      int failed = 0;
 
       for (final obj in _selectedObjects.values) {
         final checkedIn = await service.undoCheckoutObject(
@@ -340,81 +356,113 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
         if (checkedIn) {
           success++;
+        } else {
+          failed++;
         }
       }
 
-      _clearSelection();
-
       if (!mounted) return;
 
-      SnackbarHelper.showSuccess(
-        context,
-        success == 1 ? '1 object checked in' : '$success objects checked in',
-      );
-    } finally {
-      _setProcessing(false);
-    }
-  }
-
-  Future<void> _batchDelete() async {
-    if (_selectedIds.isEmpty) return;
-
-    final confirmed = await showBatchDeleteConfirmDialog(
-      context,
-      count: _selectedIds.length,
-    );
-
-    if (confirmed != true || !mounted) return;
-
-    _setProcessing(true, "Deleting objects...");
-    try {
-      final service = context.read<MFilesService>();
-
-      final allObjects = <ViewObject>[
-        ...service.recentObjects,
-        ...service.assignedObjects,
-        ...service.reportObjects,
-        ...service.searchResults,
-      ];
-
-      final selectedObjects =
-          allObjects.where((o) => _selectedIds.contains(o.id)).toList();
-
-      debugPrint('Selected IDs: $_selectedIds');
-      debugPrint('Matched objects: ${selectedObjects.length}');
-
-      int success = 0;
-
-      for (final obj in selectedObjects) {
-        debugPrint(
-          'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1
+              ? '1 object checked in'
+              : '$success objects checked in',
         );
-
-        final deleted = await service.deleteObject(
-          objectId: obj.id,
-          classId: obj.classId,
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects checked in, $failed failed',
         );
-
-        debugPrint('Delete result: $deleted');
-        debugPrint('Service error: ${service.error}');
-
-        if (deleted) success++;
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be checked in'
+              : '$failed objects could not be checked in',
+        );
       }
 
-      _results.removeWhere((o) => _selectedIds.contains(o.id));
-
       _clearSelection();
-
-      if (!mounted) return;
-
-      SnackbarHelper.showSuccess(
-        context,
-        success == 1 ? '1 object deleted' : '$success objects deleted',
-      );
     } finally {
       _setProcessing(false);
     }
   }
+
+  // Batch delete selected objects
+Future<void> _batchDelete() async {
+  if (_selectedIds.isEmpty) return;
+
+  final confirmed = await showBatchDeleteConfirmDialog(
+    context,
+    count: _selectedIds.length,
+  );
+
+  if (confirmed != true || !mounted) return;
+
+  _setProcessing(true, "Deleting objects...");
+
+  try {
+    final service = context.read<MFilesService>();
+
+    final selectedObjects = _selectedObjects.values.toList();
+
+    debugPrint('Selected IDs: $_selectedIds');
+    debugPrint('Matched objects: ${selectedObjects.length}');
+
+    int success = 0;
+    int failed = 0;
+
+    for (final obj in selectedObjects) {
+      debugPrint(
+        'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+      );
+
+      final deleted = await service.deleteObject(
+        objectId: obj.id,
+        classId: obj.classId,
+        isCheckedOut: obj.isCheckedOut,
+      );
+
+      debugPrint('Delete result: $deleted');
+      debugPrint('Service error: ${service.error}');
+
+      if (deleted) {
+        success++;
+      } else {
+        failed++;
+      }
+    }
+
+    if (!mounted) return;
+
+    if (success > 0 && failed == 0) {
+      SnackbarHelper.showSuccess(
+        context,
+        success == 1
+            ? '1 object deleted'
+            : '$success objects deleted',
+      );
+    } else if (success > 0 && failed > 0) {
+      SnackbarHelper.showWarning(
+        context,
+        '$success objects deleted, $failed failed',
+      );
+    } else {
+      SnackbarHelper.showError(
+        context,
+        failed == 1
+            ? '1 object could not be deleted'
+            : '$failed objects could not be deleted',
+      );
+    }
+
+    _clearSelection();
+  } finally {
+    _setProcessing(false);
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -568,9 +616,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to load filter options: $e')),
-      );
+      SnackbarHelper.showError(context, humanizeError(e.toString()));
       return;
     }
 
@@ -1148,22 +1194,73 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             icon: const Icon(Icons.lock),
             onPressed: _batchUndoCheckout,
           ),
+        
+        if (allNotCheckedOut)
         IconButton(
           tooltip: 'Delete',
           icon: const Icon(Icons.delete_outline),
           onPressed: _batchDelete,
         ),
         BatchActionsMenu(
+          disabledValues: () {
+            final svc = context.read<MFilesService>();
+            final single = _selectedObjects.length == 1;
+            return <String>{
+              if (!single) 'copy',
+              if (!single ||
+                  svc.isCheckedOutLocally(_selectedObjects.values.first.id))
+                'history',
+            };
+          }(),
           onSelected: (value) async {
             switch (value) {
               case 'history':
                 if (_selectedObjects.length == 1) {
                   final obj = _selectedObjects.values.first;
+                  final svc = context.read<MFilesService>();
+                  if (svc.isCheckedOutLocally(obj.id)) {
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Check in this item to view its version history.',
+                    );
+                    break;
+                  }
                   _clearSelection();
                   showVersionHistorySheet(
                     context,
                     obj: obj,
                     onRolledBack: () {},
+                  );
+                }
+                break;
+
+              case 'copy':
+                if (_selectedObjects.length == 1) {
+                  final src = _selectedObjects.values.first;
+                  _clearSelection();
+
+                  final svc = context.read<MFilesService>();
+                  final objectType = svc.objectTypes
+                      .where((t) => t.id == src.objectTypeId)
+                      .firstOrNull;
+
+                  if (objectType == null) {
+                    if (!mounted) break;
+                    SnackbarHelper.showWarning(context, 'Object type unavailable — please refresh');
+                    break;
+                  }
+
+                  await svc.fetchClassProperties(src.objectTypeId, src.classId);
+                  if (!mounted) break;
+
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => DynamicFormScreen(
+                        objectType: objectType,
+                        copyFrom: src,
+                      ),
+                    ),
                   );
                 }
                 break;
@@ -1431,7 +1528,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     }
 
     if (_errorMessage != null) {
-      return _buildErrorState(_errorMessage!);
+      return _buildErrorState(humanizeError(_errorMessage!));
     }
 
     if (_results.isNotEmpty) {
@@ -1774,41 +1871,45 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                 )
                                 : Container(
                                   key: const ValueKey('normal'),
-                                  child:
-                                      isDoc
-                                          ? FileTypeBadge(
-                                            extension: ext ?? '',
-                                            size: 28,
-                                          )
-                                          : svc.isMultiFile(
-                                            objectTypeId: obj.objectTypeId,
-                                            isSingleFile: obj.isSingleFile,
-                                          )
-                                          ? Container(
-                                            width: 28,
-                                            height: 28,
-                                            decoration: BoxDecoration(
-                                              color: AppColors.primary
-                                                  .withOpacity(0.10),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: const Icon(
-                                              Icons.folder_copy_rounded,
-                                              size: 22,
-                                              color: AppColors.primary,
-                                            ),
-                                          )
-                                          : Container(
-                                            width: 28,
-                                            height: 28,
-
-                                            child: Icon(
-                                              svc.iconForViewObject(obj),
+                                  child: CheckoutBadge(
+                                    isCheckedOut: svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+                                    checkoutUserId: svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
+                                    child:
+                                        isDoc
+                                            ? FileTypeBadge(
+                                              extension: ext ?? '',
                                               size: 28,
-                                              color: AppColors.primary,
+                                            )
+                                            : svc.isMultiFile(
+                                              objectTypeId: obj.objectTypeId,
+                                              isSingleFile: obj.isSingleFile,
+                                            )
+                                            ? Container(
+                                              width: 28,
+                                              height: 28,
+                                              decoration: BoxDecoration(
+                                                color: AppColors.primary
+                                                    .withOpacity(0.10),
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: const Icon(
+                                                Icons.folder_copy_rounded,
+                                                size: 22,
+                                                color: AppColors.primary,
+                                              ),
+                                            )
+                                            : Container(
+                                              width: 28,
+                                              height: 28,
+
+                                              child: Icon(
+                                                svc.iconForViewObject(obj),
+                                                size: 28,
+                                                color: AppColors.primary,
+                                              ),
                                             ),
-                                          ),
+                                  ),
                                 ),
                       ),
 

@@ -385,7 +385,7 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: ExpansionTile(
-          tilePadding: const EdgeInsets.fromLTRB(2, 2, 6, 2),
+          tilePadding: const EdgeInsets.fromLTRB(8, 2, 6, 2),
           childrenPadding: const EdgeInsets.only(left: 6, right: 6, bottom: 6),
           enabled: true,
           trailing:

@@ -3,12 +3,14 @@ class VaultObjectType {
   final String name;
   final String displayName;
   final bool isDocument;
+  final String alias;
 
   VaultObjectType({
     required this.id,
     required this.name,
     required this.displayName,
     required this.isDocument,
+    required this.alias,
   });
 
   factory VaultObjectType.fromJson(Map<String, dynamic> json) {
@@ -17,6 +19,7 @@ class VaultObjectType {
       name: json['namesingular'] ?? 'Unnamed',
       displayName: json['nameplural'] ?? 'Unknown',
       isDocument: json['objectid'] == 0, // treat object ID 0 as 'document'
+      alias: (json['objecttypealias'] as String?) ?? '',
     );
   }
 
@@ -26,6 +29,7 @@ class VaultObjectType {
       'namesingular': name,
       'nameplural': displayName,
       'isDocument': isDocument,
+      'objecttypealias': alias,
     };
   }
 }

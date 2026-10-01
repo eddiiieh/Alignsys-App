@@ -51,12 +51,13 @@ class _DssSigningScreenState extends State<DssSigningScreen> {
             ),
             const SizedBox(height: 12),
             const Text(
-              'Leave Without Signing?',
+              'You\'re about to leave the signing page',
+              textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             Text(
-              'If you placed a signature but haven\'t pressed "Complete Signing," it won\'t be saved.',
+              'Any unsaved changes will be lost.\n Are you sure you want to exit?',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,

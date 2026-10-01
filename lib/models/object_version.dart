@@ -35,6 +35,7 @@ class ObjectVersion {
   final String displayId;
   final bool isSingleFile;
   final List<ObjectVersionFile> files;
+  final List<ObjectVersionProperty> properties;
 
   const ObjectVersion({
     required this.versionId,
@@ -47,6 +48,7 @@ class ObjectVersion {
     required this.displayId,
     required this.isSingleFile,
     required this.files,
+    required this.properties,
   });
 
   /// Convenience: first file, or null if none attached.
@@ -56,6 +58,7 @@ class ObjectVersion {
 
   factory ObjectVersion.fromJson(Map<String, dynamic> m) {
     final rawFiles = m['objectFiles'] as List? ?? [];
+    final rawProperties = m['objectprops'] as List? ?? [];
     return ObjectVersion(
       versionId: (m['versionid'] as num?)?.toInt() ?? 0,
       title: (m['title'] as String?) ?? '',
@@ -69,6 +72,10 @@ class ObjectVersion {
       files: rawFiles
           .whereType<Map<String, dynamic>>()
           .map(ObjectVersionFile.fromJson)
+          .toList(),
+      properties: rawProperties
+          .whereType<Map<String, dynamic>>()
+          .map(ObjectVersionProperty.fromJson)
           .toList(),
     );
   }
@@ -100,5 +107,40 @@ DateTime? _parseMfilesTimestamp(String raw) {
     return DateTime(year, month, day, hour, minute);
   } catch (_) {
     return null;
+  }
+}
+
+//
+class ObjectVersionProperty {
+  final int id;
+  final String value;
+  final String datatype;
+  final String? displayValue;
+  final String propName;
+
+  const ObjectVersionProperty({
+    required this.id,
+    required this.value,
+    required this.datatype,
+    this.displayValue,
+    required this.propName,
+  });
+
+  factory ObjectVersionProperty.fromJson(Map<String, dynamic> m) {
+    return ObjectVersionProperty(
+      id: (m['id'] as num?)?.toInt() ?? 0,
+      value: m['value']?.toString() ?? '',
+      datatype: m['datatype']?.toString() ?? '',
+      displayValue: m['displayValue']?.toString(),
+      propName: m['propName']?.toString() ?? '',
+    );
+  }
+
+  String get displayText {
+    if (displayValue != null && displayValue!.trim().isNotEmpty) {
+      return displayValue!;
+    }
+
+    return value;
   }
 }

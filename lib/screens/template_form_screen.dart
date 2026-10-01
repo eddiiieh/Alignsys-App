@@ -4,7 +4,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/models/view_object.dart';
+import 'package:mfiles_app/utils/error_messages.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
+import 'package:mfiles_app/widgets/scroll_jump_fab.dart';
 import '../widgets/auto_suggest_dialog.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
@@ -15,6 +18,7 @@ import '../models/lookup_item.dart';
 import '../models/vault_object_type.dart';
 import '../models/quick_create_result.dart';
 import 'dynamic_form_screen.dart';
+import '../utils/conditional_properties.dart';
 
 class TemplateFormScreen extends StatefulWidget {
   final int classId;
@@ -22,6 +26,7 @@ class TemplateFormScreen extends StatefulWidget {
   final int templateObjectId;
   final String templateTitle;
   final int objectTypeId;
+  final ViewObject? linkTarget;
 
   const TemplateFormScreen({
     super.key,
@@ -29,7 +34,8 @@ class TemplateFormScreen extends StatefulWidget {
     required this.className,
     required this.templateObjectId,
     required this.templateTitle,
-    required this.objectTypeId,
+    required this.objectTypeId, 
+    required this.linkTarget,
   });
 
   @override
@@ -62,6 +68,9 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   // Tracks whether the user has attempted to submit the form, used to trigger validation messages on required fields.
   bool _submitAttempted = false;
 
+  //
+  final ScrollController _scroll = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -71,6 +80,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   @override
   void dispose() {
     for (final c in _controllers.values) c.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -85,6 +95,15 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   bool _isVisible(Map<String, dynamic> prop) {
     return !(prop['isHidden'] as bool? ?? false);
   }
+
+  // Returns true if the property is visible based on conditional rules.
+  bool _isPropVisible(Map<String, dynamic> prop) {
+  final id = (prop['propId'] as num?)?.toInt() ?? 0;
+  return isConditionallyVisible(id, (depId) {
+    // Boolean-typed controllers live in _boolValues; everything else in _values.
+    return _boolValues.containsKey(depId) ? _boolValues[depId] : _values[depId];
+  });
+}
 
   /// Resolves the object/value-list type ID from a prop map, trying all known
   /// key variants that different endpoints may return.
@@ -327,14 +346,20 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   Future<void> _submit() async {
     setState(() => _submitAttempted = true);
+
+    // ── Required-field validation ────────────────────────────────────────
     for (final prop in _props) {
-      if (!_isVisible(prop) || _isReadOnly(prop)) continue;
+      if (!_isVisible(prop) || _isReadOnly(prop) || !_isPropVisible(prop)) {
+        continue;
+      }
       final required = prop['isRequired'] as bool? ?? false;
       if (!required) continue;
+
       final id = prop['propId'] as int;
       final type = prop['propertytype'] as String? ?? '';
       final ctrl = _controllers[id];
       final val = _values[id];
+
       bool isEmpty;
       if (ctrl != null) {
         isEmpty = ctrl.text.trim().isEmpty;
@@ -347,9 +372,12 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       } else {
         isEmpty = val == null || val.toString().trim().isEmpty;
       }
+
       if (isEmpty) {
-        _showSnack('Required field "${prop['title']}" is missing',
-            isError: true);
+        _showSnack(
+          'Required field "${prop['title']}" is missing',
+          isError: true,
+        );
         return;
       }
     }
@@ -367,6 +395,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         final isRequired = prop['isRequired'] as bool? ?? false;
 
         if (_isReadOnly(prop)) continue;
+        if (!_isPropVisible(prop)) continue;
 
         dynamic rawValue;
 
@@ -384,8 +413,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           }
         } else if (type == 'MFDatatypeMultiSelectLookup') {
           rawValue = _values[id];
-          if (rawValue == null ||
-              (rawValue is List && rawValue.isEmpty)) {
+          if (rawValue == null || (rawValue is List && rawValue.isEmpty)) {
             if (!isRequired) continue;
             rawValue = <int>[];
           }
@@ -401,21 +429,24 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           if (rawValue.toString().isEmpty && !isRequired) continue;
         }
 
-        propsPayload.add(_buildPropEntry(
-          id: id,
-          type: type,
-          rawValue: rawValue,
-          isRequired: isRequired,
-          prop: prop,
-        ));
+        propsPayload.add(
+          _buildPropEntry(
+            id: id,
+            type: type,
+            rawValue: rawValue,
+            isRequired: isRequired,
+            prop: prop,
+          ),
+        );
       }
 
       if (kDebugMode) {
         debugPrint('📤 Template payload props:');
         for (final p in propsPayload) {
           debugPrint(
-              '   ${p['title']}(${p['propertytype']}) = '
-              '${p['value']} [${p['value'].runtimeType}]');
+            '   ${p['title']}(${p['propertytype']}) = '
+            '${p['value']} [${p['value'].runtimeType}]',
+          );
         }
       }
 
@@ -428,21 +459,41 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         'mfilesCreate': true,
       };
 
-      await service.createObjectFromTemplate(payload);
-      if (mounted) {
-        unawaited(service.fetchRecentObjects());
-        _showSnack('Created successfully from template!');
-        Navigator.pop(context, true);
+      // ── Create ─────────────────────────────────────────────────────────
+      // NOTE: this expects createObjectFromTemplate to return int? (the new
+      // object ID) or null. If it still returns Future<void>, change its
+      // signature in MFilesService to `Future<int?>` and return the ID from
+      // the response body. If you can't get the ID yet, swap `newObjectId`
+      // below for `null` — the flow still works, it just skips invalidating
+      // the new object's cache.
+      final newObjectId = await service.createObjectFromTemplate(payload);
+      if (!mounted) return;
+
+      unawaited(service.fetchRecentObjects());
+
+      // Pop FIRST (this is what was tripping _debugLocked when combined with
+      // _showSnack in the same frame). The caller shows any success message.
+      if (widget.linkTarget != null) {
+        Navigator.of(context).pop(
+          LinkedCreationResult(
+            objectId: newObjectId,
+            objectTypeId: widget.objectTypeId,
+            classId: widget.classId,
+          ),
+        );
+      } else {
+        Navigator.of(context).pop(true);
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => _submitting = false);
-      if (mounted) _showSnack('Error: $e', isError: true);
+      _showSnack('Error: $e', isError: true);
     }
   }
 
   void _showSnack(String message, {bool isError = false}) {
     if (!mounted) return;
-      if (isError) {
+    if (isError) {
       SnackbarHelper.showError(context, message);
     } else {
       SnackbarHelper.showSuccess(context, message);
@@ -495,6 +546,34 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                       fontSize: 12, color: Colors.white70)),
             ]),
       ),
+      floatingActionButton: (_loading || _error != null) ? null : ScrollJumpFab(controller: _scroll),
+      bottomNavigationBar: (_loading || _error != null) ? null : Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Colors.grey.shade200)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: SizedBox(
+            width: double.infinity, height: 52,
+            child: ElevatedButton.icon(
+              onPressed: _submitting ? null : _submit,
+              icon: _submitting
+                  ? const SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.5,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
+                  : const Icon(Icons.check_circle_rounded, size: 20),
+              label: Text(_submitting ? 'Creating...' : 'Create from Template',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryBlue, foregroundColor: Colors.white, elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ),
+        ),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -505,7 +584,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   Widget _buildForm() {
     final editableProps =
-        _props.where((p) => _isVisible(p) && !_isFullyExcluded(p)).toList();
+        _props.where((p) => _isVisible(p) && !_isFullyExcluded(p) && _isPropVisible(p)).toList();
     if (editableProps.isEmpty) {
       return Center(
           child: Padding(
@@ -522,7 +601,8 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      controller: _scroll,
+      padding: EdgeInsets.fromLTRB(16, 16, 16, 16),
       keyboardDismissBehavior:
           ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
@@ -558,37 +638,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             }),
           ),
         ),
-        const SizedBox(height: 28),
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: ElevatedButton.icon(
-            onPressed: _submitting ? null : _submit,
-            icon: _submitting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2.5,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            Colors.white)))
-                : const Icon(Icons.check_circle_rounded, size: 20),
-            label: Text(
-                _submitting
-                    ? 'Creating...'
-                    : 'Create from Template',
-                style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w700)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryBlue,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: _submitting ? 0 : 2,
-            ),
-          ),
-        ),
-        const SizedBox(height: 20),
       ],
     );
   }
@@ -1151,10 +1200,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                   style: TextStyle(
                       fontSize: 16, fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
-              Text(_error!,
-                  style: TextStyle(
-                      fontSize: 13, color: Colors.grey.shade600),
-                  textAlign: TextAlign.center),
+              Text(humanizeError(_error!),
+                style: TextStyle(
+                    fontSize: 13, color: Colors.grey.shade600),
+                textAlign: TextAlign.center),
               const SizedBox(height: 20),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
@@ -1230,6 +1279,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         displayName: label,
         isDocument: false,
         name: label,
+        alias: '',
       ),
     );
 
