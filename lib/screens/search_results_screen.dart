@@ -252,7 +252,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       if (!mounted) return;
 
       if (files.isEmpty) {
-        SnackbarHelper.showWarning(context, 'No files attached to this document.');
+        SnackbarHelper.showWarning(
+          context,
+          'No files attached to this document.',
+        );
         return;
       }
 
@@ -275,9 +278,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         ),
       );
     } catch (e) {
-  if (!mounted) return;
-    SnackbarHelper.showError(context, 'Failed to load preview: ${humanizeError(e.toString())}');
-  } finally {
+      if (!mounted) return;
+      SnackbarHelper.showError(
+        context,
+        'Failed to load preview: ${humanizeError(e.toString())}',
+      );
+    } finally {
       if (mounted) setState(() => _previewLoading.remove(obj.id));
     }
   }
@@ -366,9 +372,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       if (success > 0 && failed == 0) {
         SnackbarHelper.showSuccess(
           context,
-          success == 1
-              ? '1 object checked in'
-              : '$success objects checked in',
+          success == 1 ? '1 object checked in' : '$success objects checked in',
         );
       } else if (success > 0 && failed > 0) {
         SnackbarHelper.showWarning(
@@ -391,78 +395,76 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   // Batch delete selected objects
-Future<void> _batchDelete() async {
-  if (_selectedIds.isEmpty) return;
+  Future<void> _batchDelete() async {
+    if (_selectedIds.isEmpty) return;
 
-  final confirmed = await showBatchDeleteConfirmDialog(
-    context,
-    count: _selectedIds.length,
-  );
+    final confirmed = await showBatchDeleteConfirmDialog(
+      context,
+      count: _selectedIds.length,
+    );
 
-  if (confirmed != true || !mounted) return;
+    if (confirmed != true || !mounted) return;
 
-  _setProcessing(true, "Deleting objects...");
+    _setProcessing(true, "Deleting objects...");
 
-  try {
-    final service = context.read<MFilesService>();
+    try {
+      final service = context.read<MFilesService>();
 
-    final selectedObjects = _selectedObjects.values.toList();
+      final selectedObjects = _selectedObjects.values.toList();
 
-    debugPrint('Selected IDs: $_selectedIds');
-    debugPrint('Matched objects: ${selectedObjects.length}');
+      debugPrint('Selected IDs: $_selectedIds');
+      debugPrint('Matched objects: ${selectedObjects.length}');
 
-    int success = 0;
-    int failed = 0;
+      int success = 0;
+      int failed = 0;
 
-    for (final obj in selectedObjects) {
-      debugPrint(
-        'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
-      );
+      for (final obj in selectedObjects) {
+        debugPrint(
+          'Deleting: ${obj.title} | id=${obj.id} | classId=${obj.classId}',
+        );
 
-      final deleted = await service.deleteObject(
-        objectId: obj.id,
-        classId: obj.classId,
-        isCheckedOut: obj.isCheckedOut,
-      );
+        final deleted = await service.deleteObject(
+          objectId: obj.id,
+          classId: obj.classId,
+          isCheckedOut: obj.isCheckedOut,
+        );
 
-      debugPrint('Delete result: $deleted');
-      debugPrint('Service error: ${service.error}');
+        debugPrint('Delete result: $deleted');
+        debugPrint('Service error: ${service.error}');
 
-      if (deleted) {
-        success++;
-      } else {
-        failed++;
+        if (deleted) {
+          success++;
+        } else {
+          failed++;
+        }
       }
+
+      if (!mounted) return;
+
+      if (success > 0 && failed == 0) {
+        SnackbarHelper.showSuccess(
+          context,
+          success == 1 ? '1 object deleted' : '$success objects deleted',
+        );
+      } else if (success > 0 && failed > 0) {
+        SnackbarHelper.showWarning(
+          context,
+          '$success objects deleted, $failed failed',
+        );
+      } else {
+        SnackbarHelper.showError(
+          context,
+          failed == 1
+              ? '1 object could not be deleted'
+              : '$failed objects could not be deleted',
+        );
+      }
+
+      _clearSelection();
+    } finally {
+      _setProcessing(false);
     }
-
-    if (!mounted) return;
-
-    if (success > 0 && failed == 0) {
-      SnackbarHelper.showSuccess(
-        context,
-        success == 1
-            ? '1 object deleted'
-            : '$success objects deleted',
-      );
-    } else if (success > 0 && failed > 0) {
-      SnackbarHelper.showWarning(
-        context,
-        '$success objects deleted, $failed failed',
-      );
-    } else {
-      SnackbarHelper.showError(
-        context,
-        failed == 1
-            ? '1 object could not be deleted'
-            : '$failed objects could not be deleted',
-      );
-    }
-
-    _clearSelection();
-  } finally {
-    _setProcessing(false);
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -629,17 +631,14 @@ Future<void> _batchDelete() async {
     Set<int> workingTypes = Set.from(_selectedObjectTypeIds);
     int? workingClassId = _selectedClassId;
 
-    bool objectTypeExpanded = true;
-    bool classExpanded = true;
+    bool objectTypeExpanded = false;
+    bool classExpanded = false;
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) {
-        // On short screens (e.g. landscape, older/smaller phones), reserve a
-        // larger starting fraction so the list isn't reduced to 1-2 visible rows
-        // once the fixed-height header + bottom bar are subtracted.
         final screenHeight = MediaQuery.of(context).size.height;
         final isShortScreen = screenHeight < 700;
 
@@ -654,8 +653,6 @@ Future<void> _batchDelete() async {
                 final activeCount =
                     workingTypes.length + (workingClassId != null ? 1 : 0);
 
-                // Cap sheet width on tablets/large screens so it doesn't stretch
-                // edge-to-edge; center it like Apple's sheets do on iPad.
                 final screenWidth = MediaQuery.of(ctx).size.width;
                 final sheetWidth = screenWidth > 480 ? 480.0 : screenWidth;
 
@@ -673,16 +670,16 @@ Future<void> _batchDelete() async {
                         children: [
                           const SizedBox(height: 10),
                           Container(
-                            width: 40,
-                            height: 4,
+                            width: 36,
+                            height: 5,
                             decoration: BoxDecoration(
                               color: Colors.grey.shade300,
-                              borderRadius: BorderRadius.circular(2),
+                              borderRadius: BorderRadius.circular(2.5),
                             ),
                           ),
                           const SizedBox(height: 14),
 
-                          // Teal header, matching vault switcher branding
+                          // Teal header card (kept)
                           Container(
                             width: double.infinity,
                             margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -745,15 +742,18 @@ Future<void> _batchDelete() async {
                             ),
                           ),
 
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 12),
 
+                          // Clean body — no nested containers
                           Expanded(
                             child: ListView(
                               controller: scrollController,
-                              padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 20,
+                              ),
                               children: [
                                 _buildFilterSectionHeader(
-                                  text: 'OBJECT TYPE',
+                                  title: 'Object Type',
                                   count: workingTypes.length,
                                   expanded: objectTypeExpanded,
                                   onToggle:
@@ -763,72 +763,58 @@ Future<void> _batchDelete() async {
                                                 !objectTypeExpanded,
                                       ),
                                 ),
-                                const SizedBox(height: 6),
                                 AnimatedSize(
                                   duration: const Duration(milliseconds: 200),
                                   curve: Curves.easeInOut,
                                   alignment: Alignment.topCenter,
                                   child:
                                       objectTypeExpanded
-                                          ? Container(
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              border: Border.all(
-                                                color: Colors.grey.shade200,
-                                              ),
-                                            ),
-                                            child: Column(
-                                              children: [
-                                                for (
-                                                  int i = 0;
-                                                  i < svc.objectTypes.length;
-                                                  i++
-                                                ) ...[
-                                                  _buildFilterRow(
-                                                    label:
-                                                        svc
-                                                            .objectTypes[i]
-                                                            .displayName,
-                                                    selected: workingTypes
-                                                        .contains(
-                                                          svc.objectTypes[i].id,
-                                                        ),
-                                                    multiSelect: true,
-                                                    onTap: () {
-                                                      setSheet(() {
-                                                        final id =
-                                                            svc
-                                                                .objectTypes[i]
-                                                                .id;
-                                                        if (!workingTypes
-                                                            .remove(id)) {
-                                                          workingTypes.add(id);
-                                                        }
-                                                      });
-                                                    },
+                                          ? Column(
+                                            children: [
+                                              for (
+                                                int i = 0;
+                                                i < svc.objectTypes.length;
+                                                i++
+                                              ) ...[
+                                                _buildFilterRow(
+                                                  label:
+                                                      svc
+                                                          .objectTypes[i]
+                                                          .displayName,
+                                                  selected: workingTypes
+                                                      .contains(
+                                                        svc.objectTypes[i].id,
+                                                      ),
+                                                  multiSelect: true,
+                                                  onTap: () {
+                                                    setSheet(() {
+                                                      final id =
+                                                          svc.objectTypes[i].id;
+                                                      if (!workingTypes.remove(
+                                                        id,
+                                                      )) {
+                                                        workingTypes.add(id);
+                                                      }
+                                                    });
+                                                  },
+                                                ),
+                                                if (i !=
+                                                    svc.objectTypes.length - 1)
+                                                  Divider(
+                                                    height: 1,
+                                                    color: Colors.grey.shade100,
+                                                    indent: 16,
                                                   ),
-                                                  if (i !=
-                                                      svc.objectTypes.length -
-                                                          1)
-                                                    Divider(
-                                                      height: 1,
-                                                      color:
-                                                          Colors.grey.shade200,
-                                                      indent: 16,
-                                                    ),
-                                                ],
                                               ],
-                                            ),
+                                            ],
                                           )
                                           : const SizedBox.shrink(),
                                 ),
 
-                                const SizedBox(height: 22),
+                                const SizedBox(height: 24),
 
                                 _buildFilterSectionHeader(
-                                  text: 'CLASS',
+                                  title: 'Class',
                                   count: workingClassId != null ? 1 : 0,
                                   expanded: classExpanded,
                                   onToggle:
@@ -836,65 +822,52 @@ Future<void> _batchDelete() async {
                                         () => classExpanded = !classExpanded,
                                       ),
                                 ),
-                                const SizedBox(height: 6),
                                 AnimatedSize(
                                   duration: const Duration(milliseconds: 200),
                                   curve: Curves.easeInOut,
                                   alignment: Alignment.topCenter,
                                   child:
                                       classExpanded
-                                          ? Container(
-                                            decoration: BoxDecoration(
-                                              color: Colors.grey.shade50,
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              border: Border.all(
-                                                color: Colors.grey.shade200,
+                                          ? Column(
+                                            children: [
+                                              _buildFilterRow(
+                                                label: 'Any class',
+                                                selected:
+                                                    workingClassId == null,
+                                                multiSelect: false,
+                                                onTap:
+                                                    () => setSheet(
+                                                      () =>
+                                                          workingClassId = null,
+                                                    ),
                                               ),
-                                            ),
-                                            child: Column(
-                                              children: [
+                                              for (
+                                                int i = 0;
+                                                i < allClasses.length;
+                                                i++
+                                              ) ...[
+                                                Divider(
+                                                  height: 1,
+                                                  color: Colors.grey.shade100,
+                                                  indent: 16,
+                                                ),
                                                 _buildFilterRow(
-                                                  label: 'Any class',
+                                                  label:
+                                                      allClasses[i].displayName,
                                                   selected:
-                                                      workingClassId == null,
+                                                      workingClassId ==
+                                                      allClasses[i].id,
                                                   multiSelect: false,
                                                   onTap:
                                                       () => setSheet(
                                                         () =>
                                                             workingClassId =
-                                                                null,
+                                                                allClasses[i]
+                                                                    .id,
                                                       ),
                                                 ),
-                                                for (
-                                                  int i = 0;
-                                                  i < allClasses.length;
-                                                  i++
-                                                ) ...[
-                                                  Divider(
-                                                    height: 1,
-                                                    color: Colors.grey.shade200,
-                                                    indent: 16,
-                                                  ),
-                                                  _buildFilterRow(
-                                                    label:
-                                                        allClasses[i]
-                                                            .displayName,
-                                                    selected:
-                                                        workingClassId ==
-                                                        allClasses[i].id,
-                                                    multiSelect: false,
-                                                    onTap:
-                                                        () => setSheet(
-                                                          () =>
-                                                              workingClassId =
-                                                                  allClasses[i]
-                                                                      .id,
-                                                        ),
-                                                  ),
-                                                ],
                                               ],
-                                            ),
+                                            ],
                                           )
                                           : const SizedBox.shrink(),
                                 ),
@@ -921,7 +894,7 @@ Future<void> _batchDelete() async {
                             child: Row(
                               children: [
                                 Expanded(
-                                  child: OutlinedButton(
+                                  child: TextButton(
                                     onPressed:
                                         activeCount == 0
                                             ? null
@@ -931,11 +904,8 @@ Future<void> _batchDelete() async {
                                                 workingClassId = null;
                                               });
                                             },
-                                    style: OutlinedButton.styleFrom(
+                                    style: TextButton.styleFrom(
                                       foregroundColor: Colors.grey.shade700,
-                                      side: BorderSide(
-                                        color: Colors.grey.shade300,
-                                      ),
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 14,
                                       ),
@@ -947,6 +917,7 @@ Future<void> _batchDelete() async {
                                       'Clear',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w600,
+                                        fontSize: 15,
                                       ),
                                     ),
                                   ),
@@ -984,6 +955,7 @@ Future<void> _batchDelete() async {
                                           : 'Apply ($activeCount)',
                                       style: const TextStyle(
                                         fontWeight: FontWeight.w700,
+                                        fontSize: 15,
                                       ),
                                     ),
                                   ),
@@ -1005,7 +977,7 @@ Future<void> _batchDelete() async {
   }
 
   Widget _buildFilterSectionHeader({
-    required String text,
+    required String title,
     required int count,
     required bool expanded,
     required VoidCallback onToggle,
@@ -1016,33 +988,32 @@ Future<void> _batchDelete() async {
         onTap: onToggle,
         borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           child: Row(
             children: [
               Text(
-                text,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
-                  color: Colors.grey.shade500,
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1A1A1A),
                 ),
               ),
               if (count > 0) ...[
-                const SizedBox(width: 6),
+                const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
+                    horizontal: 7,
+                    vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     '$count',
                     style: const TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: AppColors.primary,
                     ),
@@ -1050,12 +1021,14 @@ Future<void> _batchDelete() async {
                 ),
               ],
               const Spacer(),
-              Icon(
-                expanded
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                size: 20,
-                color: Colors.grey.shade500,
+              AnimatedRotation(
+                turns: expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 22,
+                  color: Colors.grey.shade400,
+                ),
               ),
             ],
           ),
@@ -1074,8 +1047,9 @@ Future<void> _batchDelete() async {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
           child: Row(
             children: [
               Expanded(
@@ -1084,8 +1058,8 @@ Future<void> _batchDelete() async {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 14.5,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    fontSize: 15,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     color:
                         selected ? AppColors.primary : const Color(0xFF1E293B),
                   ),
@@ -1102,7 +1076,7 @@ Future<void> _batchDelete() async {
                     shape: BoxShape.circle,
                     border: Border.all(
                       color:
-                          selected ? AppColors.primary : Colors.grey.shade400,
+                          selected ? AppColors.primary : Colors.grey.shade300,
                       width: 1.5,
                     ),
                   ),
@@ -1119,10 +1093,10 @@ Future<void> _batchDelete() async {
                 selected
                     ? const Icon(
                       Icons.check_rounded,
-                      size: 20,
+                      size: 22,
                       color: AppColors.primary,
                     )
-                    : const SizedBox(width: 20),
+                    : const SizedBox(width: 22),
             ],
           ),
         ),
@@ -1194,13 +1168,13 @@ Future<void> _batchDelete() async {
             icon: const Icon(Icons.lock),
             onPressed: _batchUndoCheckout,
           ),
-        
+
         if (allNotCheckedOut)
-        IconButton(
-          tooltip: 'Delete',
-          icon: const Icon(Icons.delete_outline),
-          onPressed: _batchDelete,
-        ),
+          IconButton(
+            tooltip: 'Delete',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _batchDelete,
+          ),
         BatchActionsMenu(
           disabledValues: () {
             final svc = context.read<MFilesService>();
@@ -1240,13 +1214,17 @@ Future<void> _batchDelete() async {
                   _clearSelection();
 
                   final svc = context.read<MFilesService>();
-                  final objectType = svc.objectTypes
-                      .where((t) => t.id == src.objectTypeId)
-                      .firstOrNull;
+                  final objectType =
+                      svc.objectTypes
+                          .where((t) => t.id == src.objectTypeId)
+                          .firstOrNull;
 
                   if (objectType == null) {
                     if (!mounted) break;
-                    SnackbarHelper.showWarning(context, 'Object type unavailable — please refresh');
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Object type unavailable — please refresh',
+                    );
                     break;
                   }
 
@@ -1256,10 +1234,11 @@ Future<void> _batchDelete() async {
                   await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => DynamicFormScreen(
-                        objectType: objectType,
-                        copyFrom: src,
-                      ),
+                      builder:
+                          (_) => DynamicFormScreen(
+                            objectType: objectType,
+                            copyFrom: src,
+                          ),
                     ),
                   );
                 }
@@ -1743,7 +1722,6 @@ Future<void> _batchDelete() async {
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
-        classId: obj.classId,
         versionId: obj.versionId,
         notify: false,
       );
@@ -1872,8 +1850,12 @@ Future<void> _batchDelete() async {
                                 : Container(
                                   key: const ValueKey('normal'),
                                   child: CheckoutBadge(
-                                    isCheckedOut: svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
-                                    checkoutUserId: svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
+                                    isCheckedOut:
+                                        svc.isCheckedOutLocally(obj.id) ||
+                                        obj.isCheckedOut,
+                                    checkoutUserId:
+                                        svc.checkoutOwnerId(obj.id) ??
+                                        obj.checkoutUserId,
                                     child:
                                         isDoc
                                             ? FileTypeBadge(

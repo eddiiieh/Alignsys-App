@@ -34,7 +34,7 @@ class TemplateFormScreen extends StatefulWidget {
     required this.className,
     required this.templateObjectId,
     required this.templateTitle,
-    required this.objectTypeId, 
+    required this.objectTypeId,
     required this.linkTarget,
   });
 
@@ -49,6 +49,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   String? _error;
 
   static const _systemPropIds = {20, 21, 23, 25};
+
+  // M-Files built-in: Class property
+  static const _classPropId = 100;
+
   static const _primaryBlue = AppColors.primary;
   static const _filledBorder = Color(0xFF2563EB);
   static const _filledFill = Color(0xFFF0F6FF);
@@ -87,8 +91,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   bool _isReadOnly(Map<String, dynamic> prop) {
     final id = prop['propId'] as int;
     final isAutomatic = prop['isAutomatic'] as bool? ?? false;
-    final canEdit =
-        prop['userPermission']?['editPermission'] as bool? ?? true;
+    final canEdit = prop['userPermission']?['editPermission'] as bool? ?? true;
     return isAutomatic || _systemPropIds.contains(id) || !canEdit;
   }
 
@@ -98,12 +101,14 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   // Returns true if the property is visible based on conditional rules.
   bool _isPropVisible(Map<String, dynamic> prop) {
-  final id = (prop['propId'] as num?)?.toInt() ?? 0;
-  return isConditionallyVisible(id, (depId) {
-    // Boolean-typed controllers live in _boolValues; everything else in _values.
-    return _boolValues.containsKey(depId) ? _boolValues[depId] : _values[depId];
-  });
-}
+    final id = (prop['propId'] as num?)?.toInt() ?? 0;
+    return isConditionallyVisible(id, (depId) {
+      // Boolean-typed controllers live in _boolValues; everything else in _values.
+      return _boolValues.containsKey(depId)
+          ? _boolValues[depId]
+          : _values[depId];
+    });
+  }
 
   /// Resolves the object/value-list type ID from a prop map, trying all known
   /// key variants that different endpoints may return.
@@ -111,12 +116,13 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     final id = (prop['propId'] as num?)?.toInt() ?? 0;
 
     // Primary: use pre-fetched map from fetchClassProperties
-  if (id > 0 && _propTypeIds.containsKey(id)) {
-    return _propTypeIds[id]!;
-  }
+    if (id > 0 && _propTypeIds.containsKey(id)) {
+      return _propTypeIds[id]!;
+    }
 
-  // Fallback: try all known key variants
-    final raw = prop['typeID'] ??
+    // Fallback: try all known key variants
+    final raw =
+        prop['typeID'] ??
         prop['TypeID'] ??
         prop['typeId'] ??
         prop['TypeId'] ??
@@ -125,8 +131,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         prop['valueList'] ??
         prop['ValueList'];
     if (raw == null) {
-      debugPrint('⚠️ AutoSuggest: no typeID-like key on this prop. '
-          'Available keys: ${prop.keys.toList()}');
+      debugPrint(
+        '⚠️ AutoSuggest: no typeID-like key on this prop. '
+        'Available keys: ${prop.keys.toList()}',
+      );
       return 0;
     }
     return raw is int
@@ -167,8 +175,9 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   // fields are no longer excluded here, since we want to show them.
   bool _isFullyExcluded(Map<String, dynamic> prop) {
     final id = prop['propId'] as int;
-    final canEdit =
-        prop['userPermission']?['editPermission'] as bool? ?? true;
+    final canEdit = prop['userPermission']?['editPermission'] as bool? ?? true;
+    // Hide most system props, but allow Class through so we can render it read-only
+    if (id == _classPropId) return !canEdit;
     return _systemPropIds.contains(id) || !canEdit;
   }
 
@@ -192,31 +201,34 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       );
 
       // ── Fetch class properties separately just to resolve typeId per propId ──
-    // fetchClassTemplateProps doesn't return typeID; fetchClassProperties does.
-    try {
-      await service.fetchClassProperties(
-        widget.objectTypeId,
-        widget.classId,
-      );
-      for (final cp in service.classProperties) {
-        if (cp.id > 0 && cp.typeId > 0) {
-          _propTypeIds[cp.id] = cp.typeId;
+      // fetchClassTemplateProps doesn't return typeID; fetchClassProperties does.
+      try {
+        await service.fetchClassProperties(widget.objectTypeId, widget.classId);
+        for (final cp in service.classProperties) {
+          if (cp.id > 0 && cp.typeId > 0) {
+            _propTypeIds[cp.id] = cp.typeId;
+          }
+          if (cp.id > 0) {
+            _propAllowAdding[cp.id] = cp.allowAdding;
+            _propObjectTypeVL[cp.id] = cp.objectTypeVL;
+          }
         }
-        if (cp.id > 0) {
-          _propAllowAdding[cp.id] = cp.allowAdding;
-          _propObjectTypeVL[cp.id] = cp.objectTypeVL;
-        }
+        debugPrint('🔑 Resolved typeIds: $_propTypeIds');
+      } catch (e) {
+        debugPrint('⚠️ Could not resolve typeIds from class props: $e');
       }
-      debugPrint('🔑 Resolved typeIds: $_propTypeIds');
-    } catch (e) {
-      debugPrint('⚠️ Could not resolve typeIds from class props: $e');
-    }
 
       for (final prop in data) {
         final id = prop['propId'] as int;
         final value = (prop['value'] ?? '').toString();
         final type = prop['propertytype'] as String? ?? '';
-        if (_isReadOnly(prop)) continue;
+        if (_isReadOnly(prop) && id != _classPropId) continue;
+
+        // Capture the class value even though it's read-only
+        if (id == _classPropId) {
+          _values[id] = value.isNotEmpty ? value : widget.className;
+          continue;
+        }
 
         switch (type) {
           case 'MFDatatypeText':
@@ -225,17 +237,19 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             break;
           case 'MFDatatypeInteger':
             _controllers[id] = TextEditingController(
-              text: value.isNotEmpty &&
-                      int.tryParse(value.split('.').first) != null
-                  ? value.split('.').first
-                  : '',
+              text:
+                  value.isNotEmpty &&
+                          int.tryParse(value.split('.').first) != null
+                      ? value.split('.').first
+                      : '',
             );
             break;
           case 'MFDatatypeFloating':
             _controllers[id] = TextEditingController(
-              text: value.isNotEmpty && double.tryParse(value) != null
-                  ? value
-                  : '',
+              text:
+                  value.isNotEmpty && double.tryParse(value) != null
+                      ? value
+                      : '',
             );
             break;
           case 'MFDatatypeDate':
@@ -252,6 +266,23 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             _controllers[id] = TextEditingController(text: value);
             break;
         }
+      }
+
+      // Ensure the Class property is always present, even if the template didn't return it (some templates may not include it explicitly).
+      final hasClassProp =
+          data.any((p) => (p['propId'] as num?)?.toInt() == _classPropId);
+      if (!hasClassProp) {
+        data.insert(0, {
+          'propId': _classPropId,
+          'propertytype': 'MFDatatypeText',
+          'value': widget.className,
+          'isRequired': false,
+          'isHidden': false,
+          'isAutomatic': false,
+          'title': 'Class',
+          'userPermission': {'editPermission': false},
+        });
+        _values[_classPropId] = widget.className;
       }
 
       setState(() {
@@ -306,9 +337,8 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         stringValue = rawValue.toString();
         break;
       case 'MFDatatypeLookup':
-        final intId = rawValue is int
-            ? rawValue
-            : int.tryParse(rawValue.toString()) ?? 0;
+        final intId =
+            rawValue is int ? rawValue : int.tryParse(rawValue.toString()) ?? 0;
         stringValue = intId.toString();
         break;
       case 'MFDatatypeMultiSelectLookup':
@@ -504,9 +534,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     final existing = _values[propId];
     DateTime initial;
     try {
-      initial = existing != null && existing.toString().isNotEmpty
-          ? _apiDateFmt.parse(existing.toString())
-          : DateTime.now();
+      initial =
+          existing != null && existing.toString().isNotEmpty
+              ? _apiDateFmt.parse(existing.toString())
+              : DateTime.now();
     } catch (_) {
       initial = DateTime.now();
     }
@@ -515,13 +546,15 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       initialDate: initial,
       firstDate: DateTime(1900),
       lastDate: DateTime(2200),
-      builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(
-            colorScheme: Theme.of(ctx)
-                .colorScheme
-                .copyWith(primary: _primaryBlue)),
-        child: child!,
-      ),
+      builder:
+          (ctx, child) => Theme(
+            data: Theme.of(ctx).copyWith(
+              colorScheme: Theme.of(
+                ctx,
+              ).colorScheme.copyWith(primary: _primaryBlue),
+            ),
+            child: child!,
+          ),
     );
     if (date != null) {
       setState(() => _values[propId] = _apiDateFmt.format(date));
@@ -536,47 +569,78 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(widget.templateTitle,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600)),
-              Text(widget.className,
-                  style: const TextStyle(
-                      fontSize: 12, color: Colors.white70)),
-            ]),
-      ),
-      floatingActionButton: (_loading || _error != null) ? null : ScrollJumpFab(controller: _scroll),
-      bottomNavigationBar: (_loading || _error != null) ? null : Container(
-        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Colors.grey.shade200)),
-        ),
-        child: SafeArea(
-          top: false,
-          child: SizedBox(
-            width: double.infinity, height: 52,
-            child: ElevatedButton.icon(
-              onPressed: _submitting ? null : _submit,
-              icon: _submitting
-                  ? const SizedBox(width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2.5,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
-                  : const Icon(Icons.check_circle_rounded, size: 20),
-              label: Text(_submitting ? 'Creating...' : 'Create from Template',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryBlue, foregroundColor: Colors.white, elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.templateTitle,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
-          ),
+            Text(
+              widget.className,
+              style: const TextStyle(fontSize: 12, color: Colors.white70),
+            ),
+          ],
         ),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _error != null
+      floatingActionButton:
+          (_loading || _error != null)
+              ? null
+              : ScrollJumpFab(controller: _scroll),
+      bottomNavigationBar:
+          (_loading || _error != null)
+              ? null
+              : Container(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: _submitting ? null : _submit,
+                      icon:
+                          _submitting
+                              ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                              : const Icon(
+                                Icons.check_circle_rounded,
+                                size: 20,
+                              ),
+                      label: Text(
+                        _submitting ? 'Creating...' : 'Create from Template',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primaryBlue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+      body:
+          _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
               ? _buildError()
               : _buildForm(),
     );
@@ -584,31 +648,40 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   Widget _buildForm() {
     final editableProps =
-        _props.where((p) => _isVisible(p) && !_isFullyExcluded(p) && _isPropVisible(p)).toList();
+        _props
+            .where(
+              (p) => _isVisible(p) && !_isFullyExcluded(p) && _isPropVisible(p),
+            )
+            .toList();
     if (editableProps.isEmpty) {
       return Center(
-          child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.info_outline,
-                    size: 40, color: Colors.grey.shade400),
-                const SizedBox(height: 16),
-                Text('No editable fields for this template.',
-                    style: TextStyle(
-                        fontSize: 15, color: Colors.grey.shade600),
-                    textAlign: TextAlign.center),
-              ])));
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.info_outline, size: 40, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              Text(
+                'No editable fields for this template.',
+                style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     return ListView(
       controller: _scroll,
       padding: EdgeInsets.fromLTRB(16, 16, 16, 16),
-      keyboardDismissBehavior:
-          ScrollViewKeyboardDismissBehavior.onDrag,
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
       children: [
-        _sectionHeader('Fill in Details',
-            subtitle:
-                'These fields will be reflected in the document.'),
+        _sectionHeader(
+          'Fill in Details',
+          subtitle: 'These fields will be reflected in the document.',
+        ),
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
@@ -617,22 +690,24 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             border: Border.all(color: const Color(0xFFE7EAF0)),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
-                  blurRadius: 14,
-                  offset: const Offset(0, 6))
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
             ],
           ),
           padding: const EdgeInsets.all(16),
           child: Column(
-            children: List.generate(editableProps.length * 2 - 1,
-                (i) {
+            children: List.generate(editableProps.length * 2 - 1, (i) {
               if (i.isOdd) {
                 return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 12),
-                    child: Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: Color(0xFFE2E8F0)));
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Divider(
+                    height: 1,
+                    thickness: 1,
+                    color: Color(0xFFE2E8F0),
+                  ),
+                );
               }
               return _buildEditableField(editableProps[i ~/ 2]);
             }),
@@ -644,58 +719,102 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
   // Builds a single editable field widget based on the property map. Handles automatic fields, text fields, date pickers, lookups, booleans, etc.
   Widget _buildEditableField(Map<String, dynamic> prop) {
-      final id = prop['propId'] as int;
-      final title = prop['title'] as String? ?? 'Field $id';
-      final required = prop['isRequired'] as bool? ?? false;
+    final id = prop['propId'] as int;
+    final title = prop['title'] as String? ?? 'Field $id';
+    final required = prop['isRequired'] as bool? ?? false;
 
-      if (_isAutomatic(prop)) {
-        return _automaticFieldTile(title: title, required: required);
-      }
+    // Class is always shown, always read-only (templates carry it implicitly).
+    if (id == _classPropId) {
+      final classValue = (_values[id] ?? widget.className).toString();
+      return _readOnlyClassTile(title: title, value: classValue);
+    }
 
-      final type = prop['propertytype'] as String? ?? '';
-      final typeId = _resolveTypeId(prop);
-      final allowAdding = _resolveAllowAdding(prop);
-      final objectTypeVL = _resolveObjectTypeVL(prop);
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: RichText(
-              text: TextSpan(
-                text: title,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF475569),
-                ),
-                children:
-                    required
-                        ? const [
-                          TextSpan(
-                            text: ' *',
-                            style: TextStyle(
-                              color: Colors.red,
-                              fontWeight: FontWeight.w800,
-                            ),
+    if (_isAutomatic(prop)) {
+      return _automaticFieldTile(title: title, required: required);
+    }
+
+    final type = prop['propertytype'] as String? ?? '';
+    final typeId = _resolveTypeId(prop);
+    final allowAdding = _resolveAllowAdding(prop);
+    final objectTypeVL = _resolveObjectTypeVL(prop);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: RichText(
+            text: TextSpan(
+              text: title,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF475569),
+              ),
+              children:
+                  required
+                      ? const [
+                        TextSpan(
+                          text: ' *',
+                          style: TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.w800,
                           ),
-                        ]
-                        : [],
+                        ),
+                      ]
+                      : [],
+            ),
+          ),
+        ),
+        _buildInputForType(
+          id,
+          type,
+          title,
+          required,
+          typeId,
+          allowAdding,
+          objectTypeVL,
+        ),
+      ],
+    );
+  }
+
+  //
+  Widget _readOnlyClassTile({required String title, required String value}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF475569),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF111827),
               ),
             ),
           ),
-          _buildInputForType(
-            id,
-            type,
-            title,
-            required,
-            typeId,
-            allowAdding,
-            objectTypeVL,
+          const SizedBox(width: 8),
+          const Icon(
+            Icons.lock_outline_rounded,
+            size: 15,
+            color: Color(0xFF94A3B8),
           ),
         ],
-      );
-    }
+      ),
+    );
+  }
 
   // A read-only tile for automatic fields, showing the title and a note that
   Widget _automaticFieldTile({required String title, required bool required}) {
@@ -707,15 +826,19 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           RichText(
             text: TextSpan(
               style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF475569)),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF475569),
+              ),
               children: [
                 TextSpan(text: title),
                 if (required)
                   const TextSpan(
                     text: ' *',
-                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.w800),
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 const TextSpan(text: ' :'),
               ],
@@ -739,56 +862,75 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     );
   }
 
-  Widget _buildInputForType(int id, String type, String label, bool required,
-      int typeId, bool allowAdding, bool objectTypeVL) {
+  Widget _buildInputForType(
+    int id,
+    String type,
+    String label,
+    bool required,
+    int typeId,
+    bool allowAdding,
+    bool objectTypeVL,
+  ) {
     switch (type) {
       case 'MFDatatypeText':
       case 'MFDatatypeMultiLineText':
-        final ctrl =
-            _controllers.putIfAbsent(id, () => TextEditingController());
+        final ctrl = _controllers.putIfAbsent(
+          id,
+          () => TextEditingController(),
+        );
         return TextField(
           controller: ctrl,
           maxLines: type == 'MFDatatypeMultiLineText' ? 4 : 1,
           onChanged: (_) => setState(() {}),
           decoration: _textDeco(
-              hint: 'Enter ${label.toLowerCase()}...',
-              filled: ctrl.text.trim().isNotEmpty),
+            hint: 'Enter ${label.toLowerCase()}...',
+            filled: ctrl.text.trim().isNotEmpty,
+          ),
           style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF111827)),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF111827),
+          ),
         );
 
       case 'MFDatatypeInteger':
-        final ctrl =
-            _controllers.putIfAbsent(id, () => TextEditingController());
+        final ctrl = _controllers.putIfAbsent(
+          id,
+          () => TextEditingController(),
+        );
         return TextField(
           controller: ctrl,
           keyboardType: TextInputType.number,
           onChanged: (_) => setState(() {}),
           decoration: _textDeco(
-              hint: 'Enter number...',
-              filled: ctrl.text.trim().isNotEmpty),
+            hint: 'Enter number...',
+            filled: ctrl.text.trim().isNotEmpty,
+          ),
           style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF111827)),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF111827),
+          ),
         );
 
       case 'MFDatatypeFloating':
-        final ctrl =
-            _controllers.putIfAbsent(id, () => TextEditingController());
+        final ctrl = _controllers.putIfAbsent(
+          id,
+          () => TextEditingController(),
+        );
         return TextField(
           controller: ctrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onChanged: (_) => setState(() {}),
           decoration: _textDeco(
-              hint: 'Enter amount...',
-              filled: ctrl.text.trim().isNotEmpty),
+            hint: 'Enter amount...',
+            filled: ctrl.text.trim().isNotEmpty,
+          ),
           style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: Color(0xFF111827)),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF111827),
+          ),
         );
 
       case 'MFDatatypeDate':
@@ -797,8 +939,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         String display = 'Tap to select date';
         if (has) {
           try {
-            display =
-                _uiDateFmt.format(_apiDateFmt.parse(val.toString()));
+            display = _uiDateFmt.format(_apiDateFmt.parse(val.toString()));
           } catch (_) {
             display = val.toString();
           }
@@ -807,42 +948,57 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           onTap: () => _pickDate(id),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(
-                horizontal: 14, vertical: 13),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
               color: has ? _filledFill : AppColors.surfaceLight,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                  color: has ? _filledBorder : Colors.grey.shade200,
-                  width: has ? 1.5 : 1),
+                color: has ? _filledBorder : Colors.grey.shade200,
+                width: has ? 1.5 : 1,
+              ),
             ),
-            child: Row(children: [
-              Container(
+            child: Row(
+              children: [
+                Container(
                   padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
-                      color: has
-                          ? _primaryBlue.withOpacity(0.1)
-                          : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(6)),
-                  child: Icon(Icons.calendar_today_rounded,
-                      size: 16,
-                      color: has ? _primaryBlue : Colors.grey.shade400)),
-              const SizedBox(width: 10),
-              Expanded(
-                  child: Text(display,
-                      style: TextStyle(
-                          fontSize: 14,
-                          fontWeight:
-                              has ? FontWeight.w500 : FontWeight.w400,
-                          color: has
-                              ? const Color(0xFF111827)
-                              : Colors.grey.shade400))),
-              has
-                  ? const Icon(Icons.check_circle_rounded,
-                      color: _filledBorder, size: 18)
-                  : Icon(Icons.keyboard_arrow_down,
-                      color: Colors.grey.shade400, size: 20),
-            ]),
+                    color:
+                        has
+                            ? _primaryBlue.withOpacity(0.1)
+                            : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    Icons.calendar_today_rounded,
+                    size: 16,
+                    color: has ? _primaryBlue : Colors.grey.shade400,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    display,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: has ? FontWeight.w500 : FontWeight.w400,
+                      color:
+                          has ? const Color(0xFF111827) : Colors.grey.shade400,
+                    ),
+                  ),
+                ),
+                has
+                    ? const Icon(
+                      Icons.check_circle_rounded,
+                      color: _filledBorder,
+                      size: 18,
+                    )
+                    : Icon(
+                      Icons.keyboard_arrow_down,
+                      color: Colors.grey.shade400,
+                      size: 20,
+                    ),
+              ],
+            ),
           ),
         );
 
@@ -894,16 +1050,14 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
       case 'MFDatatypeMultiSelectLookup':
         final selectedItems = _selectedLookupItems[id] ?? [];
-        final selectedIds = (_values[id] is List)
-            ? (_values[id] as List).cast<int>()
-            : <int>[];
+        final selectedIds =
+            (_values[id] is List) ? (_values[id] as List).cast<int>() : <int>[];
         return _lookupShell(
           label: label,
           required: required,
           hasValue: selectedIds.isNotEmpty,
-          selectedTexts: selectedItems
-              .map((e) => e.displayValue.toString())
-              .toList(),
+          selectedTexts:
+              selectedItems.map((e) => e.displayValue.toString()).toList(),
           selectedItems: selectedItems,
           propertyId: id,
           onCreateNew: _resolveLookupCreateCallback(
@@ -938,16 +1092,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         );
 
       default:
-        final ctrl =
-            _controllers.putIfAbsent(id, () => TextEditingController());
+        final ctrl = _controllers.putIfAbsent(
+          id,
+          () => TextEditingController(),
+        );
         return TextField(
           controller: ctrl,
           onChanged: (_) => setState(() {}),
           decoration: _textDeco(
-              hint: 'Enter value...',
-              filled: ctrl.text.trim().isNotEmpty),
-          style: const TextStyle(
-              fontSize: 14, color: Color(0xFF111827)),
+            hint: 'Enter value...',
+            filled: ctrl.text.trim().isNotEmpty,
+          ),
+          style: const TextStyle(fontSize: 14, color: Color(0xFF111827)),
         );
     }
   }
@@ -996,33 +1152,37 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     );
   }
 
-  InputDecoration _textDeco(
-      {required String hint, required bool filled}) {
+  InputDecoration _textDeco({required String hint, required bool filled}) {
     return InputDecoration(
       hintText: hint,
-      hintStyle:
-          TextStyle(color: Colors.grey.shade400, fontSize: 13),
+      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
       filled: true,
       fillColor: filled ? _filledFill : AppColors.surfaceLight,
       isDense: true,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(
-              color: filled ? _filledBorder : Colors.grey.shade200,
-              width: filled ? 1.5 : 1)),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(
+          color: filled ? _filledBorder : Colors.grey.shade200,
+          width: filled ? 1.5 : 1,
+        ),
+      ),
       border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: BorderSide(color: Colors.grey.shade200)),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.grey.shade200),
+      ),
       focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide:
-              const BorderSide(color: _primaryBlue, width: 2)),
-      suffixIcon: filled
-          ? const Icon(Icons.check_circle_rounded,
-              color: _filledBorder, size: 18)
-          : null,
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: _primaryBlue, width: 2),
+      ),
+      suffixIcon:
+          filled
+              ? const Icon(
+                Icons.check_circle_rounded,
+                color: _filledBorder,
+                size: 18,
+              )
+              : null,
     );
   }
 
@@ -1037,118 +1197,129 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     int? propertyId,
     VoidCallback? onCreateNew,
   }) {
-    final showMulti =
-        selectedTexts != null && selectedTexts.isNotEmpty;
+    final showMulti = selectedTexts != null && selectedTexts.isNotEmpty;
     return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(
-                    color:
-                        hasValue ? _filledFill : AppColors.surfaceLight,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: hasValue
-                            ? _filledBorder
-                            : Colors.grey.shade200,
-                        width: hasValue ? 1.5 : 1),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  color: hasValue ? _filledFill : AppColors.surfaceLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: hasValue ? _filledBorder : Colors.grey.shade200,
+                    width: hasValue ? 1.5 : 1,
                   ),
-                  child: Row(children: [
+                ),
+                child: Row(
+                  children: [
                     Expanded(
-                        child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12),
-                            child: field)),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: field,
+                      ),
+                    ),
                     if (hasValue)
                       const Padding(
-                          padding: EdgeInsets.only(right: 12),
-                          child: Icon(Icons.check_circle_rounded,
-                              color: _filledBorder, size: 18)),
-                  ]),
+                        padding: EdgeInsets.only(right: 12),
+                        child: Icon(
+                          Icons.check_circle_rounded,
+                          color: _filledBorder,
+                          size: 18,
+                        ),
+                      ),
+                  ],
                 ),
               ),
-              if (onCreateNew != null) ...[
-                const SizedBox(width: 8),
-                _quickCreateButton(onCreateNew),
-              ],
-            ],
-          ),
-          if (showMulti) ...[
-            const SizedBox(height: 10),
-            Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children:
-                    List.generate(selectedTexts.length, (index) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                            color: const Color(0xFFBFDBFE))),
-                    child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              selectedTexts[index],
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF1E40AF)),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            onTap: () {
-                              if (propertyId == null ||
-                                  selectedItems == null) return;
-                              setState(() {
-                                final newItems =
-                                    List<dynamic>.from(selectedItems)
-                                      ..removeAt(index);
-                                _selectedLookupItems[propertyId] =
-                                    newItems;
-                                _values[propertyId] =
-                                    newItems.map((i) => i.id).toList();
-                              });
-                            },
-                            child: Container(
-                                width: 16,
-                                height: 16,
-                                decoration: BoxDecoration(
-                                    color: const Color(0xFF3B82F6)
-                                        .withOpacity(0.2),
-                                    shape: BoxShape.circle),
-                                child: const Icon(Icons.close,
-                                    size: 10,
-                                    color: Color(0xFF1E40AF))),
-                          ),
-                        ]),
-                  );
-                })),
-          ],
-          if (_submitAttempted && required && !hasValue)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(children: [
-                Icon(Icons.error_outline,
-                    size: 14, color: Colors.red.shade600),
-                const SizedBox(width: 4),
-                Text('This field is required',
-                    style: TextStyle(
-                        color: Colors.red.shade600, fontSize: 12))
-              ]),
             ),
-        ]);
+            if (onCreateNew != null) ...[
+              const SizedBox(width: 8),
+              _quickCreateButton(onCreateNew),
+            ],
+          ],
+        ),
+        if (showMulti) ...[
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: List.generate(selectedTexts.length, (index) {
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        selectedTexts[index],
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1E40AF),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () {
+                        if (propertyId == null || selectedItems == null) return;
+                        setState(() {
+                          final newItems = List<dynamic>.from(selectedItems)
+                            ..removeAt(index);
+                          _selectedLookupItems[propertyId] = newItems;
+                          _values[propertyId] =
+                              newItems.map((i) => i.id).toList();
+                        });
+                      },
+                      child: Container(
+                        width: 16,
+                        height: 16,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3B82F6).withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.close,
+                          size: 10,
+                          color: Color(0xFF1E40AF),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ),
+        ],
+        if (_submitAttempted && required && !hasValue)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline, size: 14, color: Colors.red.shade600),
+                const SizedBox(width: 4),
+                Text(
+                  'This field is required',
+                  style: TextStyle(color: Colors.red.shade600, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 
   /// The blue "+" button rendered next to lookup fields, matching the web
@@ -1170,57 +1341,77 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   }
 
   Widget _sectionHeader(String title, {String? subtitle}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
           style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF0F172A))),
-      if (subtitle != null) ...[
-        const SizedBox(height: 3),
-        Text(subtitle,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF0F172A),
+          ),
+        ),
+        if (subtitle != null) ...[
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
             style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF64748B)))
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF64748B),
+            ),
+          ),
+        ],
       ],
-    ]);
+    );
   }
 
   Widget _buildError() {
     return Center(
-        child: Padding(
-            padding: const EdgeInsets.all(32),
-            child:
-                Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.error_outline_rounded,
-                  size: 48, color: Colors.red.shade400),
-              const SizedBox(height: 16),
-              const Text('Failed to load template',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Text(humanizeError(_error!),
-                style: TextStyle(
-                    fontSize: 13, color: Colors.grey.shade600),
-                textAlign: TextAlign.center),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryBlue,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10))),
-                onPressed: () {
-                  setState(() {
-                    _loading = true;
-                    _error = null;
-                  });
-                  _loadProps();
-                },
-                child: const Text('Retry'),
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.error_outline_rounded,
+              size: 48,
+              color: Colors.red.shade400,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Failed to load template',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              humanizeError(_error!),
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _primaryBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
-            ])));
+              onPressed: () {
+                setState(() {
+                  _loading = true;
+                  _error = null;
+                });
+                _loadProps();
+              },
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ── QUICK CREATE (inline "+" button on lookup fields) ──────────────────────
@@ -1240,18 +1431,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     if (!allowAdding) return null;
     if (objectTypeVL) {
       return () => _handleQuickCreate(
-            propId: propId,
-            label: label,
-            typeId: typeId,
-            isMulti: isMulti,
-          );
+        propId: propId,
+        label: label,
+        typeId: typeId,
+        isMulti: isMulti,
+      );
     }
     return () => _handleAddValueListItem(
-          propId: propId,
-          label: label,
-          typeId: typeId,
-          isMulti: isMulti,
-        );
+      propId: propId,
+      label: label,
+      typeId: typeId,
+      isMulti: isMulti,
+    );
   }
 
   /// Pushes a [DynamicFormScreen] scoped to [typeId] so the user can create
@@ -1274,22 +1465,22 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
     final targetType = service.objectTypes.firstWhere(
       (t) => t.id == typeId,
-      orElse: () => VaultObjectType(
-        id: typeId,
-        displayName: label,
-        isDocument: false,
-        name: label,
-        alias: '',
-      ),
+      orElse:
+          () => VaultObjectType(
+            id: typeId,
+            displayName: label,
+            isDocument: false,
+            name: label,
+            alias: '',
+          ),
     );
 
     final result = await Navigator.push<QuickCreateResult>(
       context,
       MaterialPageRoute(
-        builder: (_) => DynamicFormScreen(
-          objectType: targetType,
-          isQuickCreate: true,
-        ),
+        builder:
+            (_) =>
+                DynamicFormScreen(objectType: targetType, isQuickCreate: true),
       ),
     );
 
@@ -1300,13 +1491,16 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
       return;
     }
 
-    final newItem =
-        LookupItem(id: result.objectId!, displayValue: result.displayValue);
+    final newItem = LookupItem(
+      id: result.objectId!,
+      displayValue: result.displayValue,
+    );
 
     setState(() {
       if (isMulti) {
         final existing = List<LookupItem>.from(
-            (_selectedLookupItems[propId] ?? const []).cast<LookupItem>());
+          (_selectedLookupItems[propId] ?? const []).cast<LookupItem>(),
+        );
         if (!existing.any((i) => i.id == newItem.id)) {
           existing.add(newItem);
         }
@@ -1337,10 +1531,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     required bool isMulti,
   }) async {
     if (typeId <= 0) {
-      _showSnack(
-        'Cannot add a new $label: value list unknown',
-        isError: true,
-      );
+      _showSnack('Cannot add a new $label: value list unknown', isError: true);
       return;
     }
 
@@ -1348,79 +1539,95 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
     final name = await showDialog<String>(
       context: context,
-      builder: (dialogContext) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        insetPadding:
-            const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Add new $label',
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: controller,
-                autofocus: true,
-                decoration: InputDecoration(
-                  hintText: 'Enter ${label.toLowerCase()}',
-                  filled: true,
-                  fillColor: AppColors.surfaceLight,
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide(color: Colors.grey.shade200),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: _primaryBlue, width: 2),
-                  ),
-                ),
-                onSubmitted: (v) =>
-                    Navigator.pop(dialogContext, v.trim()),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+      builder:
+          (dialogContext) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+            insetPadding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 40,
+            ),
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext),
-                    child: Text('Cancel',
-                        style: TextStyle(color: Colors.grey.shade700)),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () => Navigator.pop(
-                        dialogContext, controller.text.trim()),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _primaryBlue,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 12),
+                  Text(
+                    'Add new $label',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF0F172A),
                     ),
-                    child: const Text('Add'),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Enter ${label.toLowerCase()}',
+                      filled: true,
+                      fillColor: AppColors.surfaceLight,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: const BorderSide(
+                          color: _primaryBlue,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                    onSubmitted: (v) => Navigator.pop(dialogContext, v.trim()),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(dialogContext),
+                        child: Text(
+                          'Cancel',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      ElevatedButton(
+                        onPressed:
+                            () => Navigator.pop(
+                              dialogContext,
+                              controller.text.trim(),
+                            ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _primaryBlue,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 12,
+                          ),
+                        ),
+                        child: const Text('Add'),
+                      ),
+                    ],
                   ),
                 ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
 
     if (name == null || name.isEmpty || !mounted) return;
@@ -1434,15 +1641,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     if (!mounted) return;
 
     if (newItem == null) {
-      _showSnack('Failed to add value: ${service.error ?? "unknown error"}',
-          isError: true);
+      _showSnack(
+        'Failed to add value: ${service.error ?? "unknown error"}',
+        isError: true,
+      );
       return;
     }
 
     setState(() {
       if (isMulti) {
         final existing = List<LookupItem>.from(
-            (_selectedLookupItems[propId] ?? const []).cast<LookupItem>());
+          (_selectedLookupItems[propId] ?? const []).cast<LookupItem>(),
+        );
         if (!existing.any((i) => i.id == newItem.id)) {
           existing.add(newItem);
         }
@@ -1462,14 +1672,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     required int selectedObjectTypeId,
     required String displayLabel,
   }) async {
-    debugPrint('🔍 AutoSuggest: objectId=$selectedObjectId typeId=$selectedObjectTypeId');
+    debugPrint(
+      '🔍 AutoSuggest: objectId=$selectedObjectId typeId=$selectedObjectTypeId',
+    );
 
     // ADDED: warn early if typeId resolved to 0 so we know to check the log
     // above for the "no typeID-like key" diagnostic from _resolveTypeId.
     if (selectedObjectTypeId == 0) {
-      debugPrint('⚠️ AutoSuggest: selectedObjectTypeId resolved to 0 — '
-          'GetObjectViewProps will likely return nothing usable. Check the '
-          '"no typeID-like key" log above for the real keys on this prop.');
+      debugPrint(
+        '⚠️ AutoSuggest: selectedObjectTypeId resolved to 0 — '
+        'GetObjectViewProps will likely return nothing usable. Check the '
+        '"no typeID-like key" log above for the real keys on this prop.',
+      );
     }
 
     final service = context.read<MFilesService>();
@@ -1492,21 +1706,26 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     if (!mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
 
-    final formPropIds = _props
-        .where((p) =>
-            !(p['isHidden'] as bool? ?? false) &&
-            !(p['isAutomatic'] as bool? ?? false))
-        .map((p) => (p['propId'] as num?)?.toInt() ?? 0)
-        .where((id) => id > 0)
-        .toSet();
+    final formPropIds =
+        _props
+            .where(
+              (p) =>
+                  !(p['isHidden'] as bool? ?? false) &&
+                  !(p['isAutomatic'] as bool? ?? false),
+            )
+            .map((p) => (p['propId'] as num?)?.toInt() ?? 0)
+            .where((id) => id > 0)
+            .toSet();
 
     final suggestions = extractSuggestions(
       fetchedProps: fetched,
       formPropertyIds: formPropIds,
     );
 
-    debugPrint('🔍 AutoSuggest: fetched ${fetched.length} props, '
-        'formPropIds=$formPropIds, suggestions=${suggestions.length}');
+    debugPrint(
+      '🔍 AutoSuggest: fetched ${fetched.length} props, '
+      'formPropIds=$formPropIds, suggestions=${suggestions.length}',
+    );
 
     if (suggestions.isEmpty || !mounted) return;
 

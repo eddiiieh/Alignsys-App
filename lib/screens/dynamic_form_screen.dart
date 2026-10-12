@@ -25,6 +25,7 @@ import '../models/lookup_item.dart';
 import '../models/quick_create_result.dart';
 import '../models/view_object.dart';
 import '../utils/conditional_properties.dart';
+import 'package:path_provider/path_provider.dart';
 
 class DynamicFormScreen extends StatefulWidget {
   const DynamicFormScreen({
@@ -657,7 +658,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
       _formValues.clear();
       _selectedLookupItems.clear();
       _fieldFilled.clear();
-      if (widget.scannedFile == null) {
+      if (widget.scannedFile == null && widget.copyFrom == null) {
         _selectedFile = null;
         _selectedFileName = null;
       }
@@ -1995,6 +1996,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
           );
         }
       }
+      await _prefillSourceFile();
     } finally {
       // Flip the pending flag regardless of how we exited — success, early
       // return, or thrown error. Never trap the user on the spinner.
@@ -2146,6 +2148,68 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
       return _coerceInt(x['id'] ?? x['itemId'] ?? x['value']);
     }
     return null;
+  }
+
+  /// Downloads the source object's first file and loads it into the form
+  /// as if the user had picked it, so the normal upload flow runs on submit.
+  Future<void> _prefillSourceFile() async {
+    final src = widget.copyFrom;
+    if (src == null) return;
+    if (!_currentObjectType.isDocument) return;
+    if (_selectedFile != null) return;
+
+    try {
+      final service = context.read<MFilesService>();
+
+      final files = await service.fetchObjectFiles(
+        objectId: src.id,
+        objectTypeId: src.objectTypeId,
+      );
+      if (files.isEmpty || !mounted) return;
+
+      final f = files.first;
+      final displayIdInt = int.tryParse(src.displayId) ?? src.id;
+
+      final result = await service.downloadFileBytesWithFallback(
+        displayObjectId: displayIdInt,
+        classId: src.classId,
+        fileId: f.fileId,
+        reportGuid: f.reportGuid,
+        expectedExtension: f.extension,
+      );
+      if (!mounted) return;
+
+      // Build a safe filename: "<title>.<ext>"
+      final ext = f.extension.trim().toLowerCase().replaceFirst('.', '');
+      var base = f.fileTitle.trim().isEmpty ? 'file_${f.fileId}' : f.fileTitle.trim();
+      base = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      final name = (ext.isEmpty || base.toLowerCase().endsWith('.$ext'))
+          ? base
+          : '$base.$ext';
+
+      final dir = await getTemporaryDirectory();
+      final path = '${dir.path}/copy_${DateTime.now().millisecondsSinceEpoch}_$name';
+      final file = File(path);
+      await file.writeAsBytes(result.bytes, flush: true);
+
+      if (!mounted) return;
+      setState(() {
+        _selectedFile = PlatformFile(
+          name: name,
+          path: path,
+          size: result.bytes.length,
+        );
+        _selectedFileName = name;
+      });
+    } catch (e) {
+      debugPrint('⚠️ Make-a-copy: could not copy source file: $e');
+      if (mounted) {
+        _showSnackBar(
+          'Could not copy the original file. Please attach one manually.',
+          isError: true,
+        );
+      }
+    }
   }
 
   // ── SUBMIT ────────────────────────────────────────────────────────────────

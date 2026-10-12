@@ -93,7 +93,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   final Map<int, String> _propNameById = {};
   final Set<int> _allowedMetaPropIds = {};
-  static const Set<int> _excludeMetaPropIds = {20, 21, 23, 25, 38, 81, 100};
+  static const Set<int> _excludeMetaPropIds = {20, 21, 23, 25, 38, 81, 97, 100};
   final Map<int, _PropVm> _dirty = {};
 
   final Map<int, List<String>> _dirtyLookupLabels = {};
@@ -158,6 +158,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       widget.obj.classId == -100 ||
       widget.obj.classTypeName.trim().toLowerCase() == 'assignment';
 
+
   @override
   void initState() {
     super.initState();
@@ -206,11 +207,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         _workflowsFuture = _loadWorkflowsForThisObject();
         _vaultWorkflowsFuture = svc.fetchVaultWorkflowDefinitions();
       });
-      svc.syncCheckoutStateFromServer(
-        widget.obj.id,
-        widget.obj.isCheckedOut,
-        ownerId: widget.obj.checkoutUserId,
-      );
     });
   }
 
@@ -288,12 +284,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       _fieldCtrl[p.id]?.dispose();
       _fieldCtrl.remove(p.id);
 
-      setState(() {
-        _editingPropId = null;
-        _future = _loadProps();
-        _filesFuture = _loadFiles();
-        _workflowFuture = _loadWorkflow();
-      });
+      await _refreshAll(); 
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -949,6 +940,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           ),
         ),
       );
+
+      await _refreshAll(clearDirty: false);
+
     } catch (e) {
       if (!mounted) return;
       final msg =
@@ -1004,6 +998,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               ],
             ),
       );
+
+      if (mounted) await _refreshAll(clearDirty: false);
+      
       return;
     }
 
@@ -1278,10 +1275,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           ),
         );
 
-        setState(() {
-          _future = _loadProps();
-          _workflowFuture = _loadWorkflow();
-        });
+        await _refreshAll();
+
       } else {
         SnackbarHelper.showError(
           context,
@@ -1959,12 +1954,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                               );
                                             }
                                             if (!mounted) return;
-                                            setState(() {
-                                              _workflowFuture = _loadWorkflow();
-                                              _future = _loadProps();
-                                              _selectedWorkflowId = null;
-                                              _selectedAssignStateId = null;
-                                            });
+
+                                            await _refreshAll();
+
                                           } catch (e) {
                                             if (!mounted) return;
                                             SnackbarHelper.showError(
@@ -2135,22 +2127,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       if (!mounted) return;
       if (ok) {
         setState(() => _assignmentCompleted = true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.check_circle, color: Colors.white, size: 18),
-                SizedBox(width: 8),
-                Text('Assignment marked as complete'),
-              ],
-            ),
-            backgroundColor: Colors.green.shade600,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
-            ),
-          ),
-        );
+        SnackbarHelper.showSuccess(context, 'Assignment marked as complete');
+        
+        // land fresh data before popping
+        await _refreshAll(); 
+        if (!mounted) return;
         Navigator.pop(context, true);
       } else {
         SnackbarHelper.showError(
@@ -2360,11 +2341,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           context,
                           obj: widget.obj,
                           onRolledBack: () {
-                            setState(() {
-                              _future = _loadProps();
-                              _filesFuture = _loadFiles();
-                              _workflowFuture = _loadWorkflow();
-                            });
+                            _refreshAll();
                           },
                         );
                         break;
@@ -2456,20 +2433,40 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   .toList();
                           return RefreshIndicator(
                             onRefresh: () async {
-                              setState(() {
-                                _future = _loadProps();
-                                _filesFuture = _loadFiles();
-                                _workflowFuture = _loadWorkflow();
-                                _commentsFuture = _loadComments();
-                                _dirty.clear();
-                                _dirtyLookupLabels.clear();
-                                _editingPropId = null;
-                                _approvedUserIds.clear();
-                                _approvingUserIds.clear();
-                                _assignedIdsSnapshot = null;
-                              });
-                              await _future;
-                            },
+                            setState(() {
+                              _future = _loadProps();
+                              _filesFuture = _loadFiles();
+                              _workflowFuture = _loadWorkflow();
+                              _commentsFuture = _loadComments();
+                              _workflowsFuture = _loadWorkflowsForThisObject();
+                              _vaultWorkflowsFuture =
+                                  context.read<MFilesService>().fetchVaultWorkflowDefinitions();
+                              _dirty.clear();
+                              _dirtyLookupLabels.clear();
+                              _editingPropId = null;
+                              _approvedUserIds.clear();
+                              _approvingUserIds.clear();
+                              _assignedIdsSnapshot = null;
+                              _selectedWorkflowId = null;
+                              _selectedAssignStateId = null;
+                              // Reset title so a renamed object picks up the new name from props.
+                              _title = widget.obj.title;
+                            });
+
+                            // Re-sync checkout state from the server FIRST, in parallel with the
+                            // other loads, so the padlock/badge update on the same refresh.
+                            await Future.wait([
+                              // _syncCheckoutState(), // Commented out as it's not needed in this context
+                              _future,
+                              _filesFuture,
+                              _workflowFuture,
+                              _commentsFuture,
+                              _workflowsFuture,
+                              _vaultWorkflowsFuture,
+                            ]);
+
+                            if (mounted) setState(() {});
+                          },
                             child: Scrollbar(
                               controller: _pageScroll,
                               thickness: 6,
@@ -3064,10 +3061,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                         return;
                                       }
                                       if (!mounted) return;
-                                      setState(() {
-                                        _workflowFuture = _loadWorkflow();
-                                        _future = _loadProps();
-                                      });
+
+                                      await _refreshAll();
+
                                     } catch (e) {
                                       if (mounted) {
                                         SnackbarHelper.showError(context, e);
@@ -3897,7 +3893,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         separateFile: separate,
       );
       if (!mounted) return;
-      setState(() => _filesFuture = _loadFiles());
+      await _refreshAll();
       SnackbarHelper.showSuccess(context, 'Converted to PDF successfully!');
     } catch (e) {
       if (!mounted) return;
@@ -3922,11 +3918,71 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         objectTypeId: widget.obj.objectTypeId,
         vaultGuid: svc.vaultGuidWithBraces,
       );
+      // ── TEMP: inspect what the server returns for web-posted comments ──
+      for (final c in items) {
+        debugPrint('COMMENT → author="${c.author}" '
+            'date=${c.modifiedDate} text="${c.text}"');
+      }
       return items;
     } catch (_) {
       return <ObjectComment>[];
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CANONICAL REFRESH — call this after ANY mutating action.
+  // ─────────────────────────────────────────────────────────────────────────────
+  Future<void> _refreshAll({bool clearDirty = true, bool resetTitle = true}) async {
+    if (!mounted) return;
+
+    final svc = context.read<MFilesService>();
+
+    // 1. Rebuild the futures FIRST so every FutureBuilder receives a new
+    //    Future instance. If we only call setState() without reassigning,
+    //    FutureBuilder keeps its old future and never re-runs.
+    setState(() {
+      _future               = _loadProps();
+      _filesFuture          = _loadFiles();
+      _workflowFuture       = _loadWorkflow();
+      _commentsFuture       = _loadComments();
+      _workflowsFuture      = _loadWorkflowsForThisObject();
+      _vaultWorkflowsFuture = svc.fetchVaultWorkflowDefinitions();
+
+      if (clearDirty) {
+        _dirty.clear();
+        _dirtyLookupLabels.clear();
+        _editingPropId = null;
+        for (final c in _fieldCtrl.values) {
+          c.dispose();
+        }
+        _fieldCtrl.clear();
+      }
+
+      if (resetTitle) {
+        _title = widget.obj.title;
+      }
+
+      // Drop per-action scratch state that's keyed to the old object state.
+      _approvedUserIds.clear();
+      _approvingUserIds.clear();
+      _assignedIdsSnapshot = null;
+      _assignedLabelsSnapshot = {};
+      _selectedWorkflowId = null;
+      _selectedAssignStateId = null;
+    });
+
+    // 2. Await them all so callers can chain off completion (e.g. dismiss
+    //    a loader only after fresh data lands).
+    await Future.wait([
+      _future,
+      _filesFuture,
+      _workflowFuture,
+      _commentsFuture,
+      _workflowsFuture,
+      _vaultWorkflowsFuture,
+    ]);
+  }
+
 
   Future<void> _submitComment() async {
     final text = _commentCtrl.text.trim();

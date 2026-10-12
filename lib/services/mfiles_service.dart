@@ -2080,11 +2080,10 @@ class MFilesService extends ChangeNotifier {
   Future<void> ensureRelationshipsPresenceForObject({
     required int objectId,
     required int objectTypeId,
-    required int classId,
     required int versionId,
     required bool notify,
   }) async {
-    if (objectId <= 0 || classId <= 0) return;
+    if (objectId <= 0 || objectTypeId <= 0) return;
     if (_hasRelationshipsCache.containsKey(objectId)) return;
     if (_relInFlight.contains(objectId)) return;
 
@@ -2100,7 +2099,7 @@ class MFilesService extends ChangeNotifier {
       final hasRel = groups.any((g) => g.items.isNotEmpty);
       _hasRelationshipsCache[objectId] = hasRel;
       _saveRelationshipToPrefs(objectId, hasRel);
-      notifyListeners();
+      if (notify) notifyListeners();
     } catch (_) {
       // Don't cache errors — allow a retry on next interaction
     } finally {
@@ -2109,14 +2108,13 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> _warmRelationshipsBatch(
-    List<({int objectId, int objectTypeId, int classId, int versionId})> items,
+    List<({int objectId, int objectTypeId, int versionId})> items,
   ) async {
     final todo =
         items
             .where(
               (it) =>
                   it.objectId > 0 &&
-                  it.classId > 0 &&
                   !_hasRelationshipsCache.containsKey(it.objectId) &&
                   !_relInFlight.contains(it.objectId),
             )
@@ -2160,13 +2158,12 @@ class MFilesService extends ChangeNotifier {
   }
 
   Future<void> warmRelationshipsForObjects(List<ViewObject> objects) async {
-    final items = objects.where((o) => o.id > 0 && o.classId > 0).toList();
+    final items = objects.where((o) => o.id > 0 && o.objectTypeId > 0).toList();
 
     final futures = items.map(
       (o) => ensureRelationshipsPresenceForObject(
         objectId: o.id,
         objectTypeId: o.objectTypeId,
-        classId: o.classId,
         versionId: o.versionId,
         notify: false,
       ),
@@ -2179,12 +2176,11 @@ class MFilesService extends ChangeNotifier {
   void warmRelationshipsForItems(List<ViewContentItem> items) {
     final batch =
         items
-            .where((it) => it.isObject && it.id > 0 && it.classId > 0)
+            .where((it) => it.isObject && it.id > 0 && it.objectTypeId > 0)
             .map(
               (it) => (
                 objectId: it.id,
                 objectTypeId: it.objectTypeId,
-                classId: it.classId,
                 versionId: it.versionId,
               ),
             )
@@ -2210,7 +2206,6 @@ class MFilesService extends ChangeNotifier {
   Future<void> refreshRelationshipsAfterLink({
     required int objectId,
     required int objectTypeId,
-    required int classId,
     required int versionId,
   }) async {
     _hasRelationshipsCache.remove(objectId);
@@ -2221,7 +2216,6 @@ class MFilesService extends ChangeNotifier {
     await ensureRelationshipsPresenceForObject(
       objectId: objectId,
       objectTypeId: objectTypeId,
-      classId: classId,
       versionId: versionId,
       notify: true,
     );

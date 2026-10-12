@@ -5,8 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/view_object.dart';
 import '../services/mfiles_service.dart';
 import '../widgets/file_type_badge.dart';
-import '../utils/object_type_icons.dart';
-
 class RelationshipsDropdown extends StatefulWidget {
   final ViewObject obj;
   final bool initiallyExpanded;
@@ -57,7 +55,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
 
     // Missing identity payload: just show a small message (no header if nested)
     final missingIdentity =
-        widget.obj.id == 0 || widget.obj.classId == 0;
+        widget.obj.id == 0;
 
     if (missingIdentity) {
       return Padding(
@@ -349,35 +347,23 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
       isSingleFile: obj.isSingleFile,
     );
 
-    // Relationship items never pass through warmExtensionsForObjects, so
-    // warm the extension cache here when needed.
-    if (isDoc && !isMultiFileObj && obj.id != 0) {
-      svc.ensureExtensionForObject(objectId: obj.id, objectTypeId: obj.objectTypeId);
-    }
-
     Widget leadingIcon;
     if (isDoc && !isMultiFileObj) {
       final ext = svc.cachedExtensionForObject(obj.id);
-      leadingIcon =
-          (ext != null && ext.isNotEmpty)
-              ? FileTypeBadge(extension: ext, size: 18)
-              : const Icon(
-                Icons.insert_drive_file_outlined,
-                size: 18,
-                color: Color.fromRGBO(25, 76, 129, 1),
-              );
+      if (ext != null && ext.isNotEmpty) {
+        leadingIcon = FileTypeBadge(extension: ext, size: 18);
+      } else {
+        // same placeholder HomeScreen uses, or kick off the fetch and rebuild
+        leadingIcon = const Icon(Icons.insert_drive_file_outlined,
+            size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+      }
     } else if (isMultiFileObj) {
-      leadingIcon = const Icon(
-        Icons.folder_copy_rounded,
-        size: 18,
-        color: Color.fromRGBO(25, 76, 129, 1),
-      );
+      leadingIcon = const Icon(Icons.folder_copy_rounded,
+          size: 18, color: Color.fromRGBO(25, 76, 129, 1));
     } else {
-      leadingIcon = Icon(
-        iconForObjectTypeName(obj.objectTypeName),
-        size: 18,
-        color: const Color.fromRGBO(25, 76, 129, 1),
-      );
+      // ← replace iconForObjectTypeName with the service method
+      leadingIcon = Icon(svc.iconForViewObject(obj),
+          size: 18, color: Color.fromRGBO(25, 76, 129, 1));
     }
 
     return Theme(

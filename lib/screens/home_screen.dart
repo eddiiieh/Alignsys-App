@@ -2055,7 +2055,6 @@ class _HomeScreenState extends State<HomeScreen>
       svc.ensureRelationshipsPresenceForObject(
         objectId: obj.id,
         objectTypeId: obj.objectTypeId,
-        classId: obj.classId,
         versionId: obj.versionId,
         notify: false,
       );
@@ -2816,182 +2815,200 @@ class _HomeScreenState extends State<HomeScreen>
                                     ],
                                   ),
                                 )
-                                : ListView.separated(
-                                  shrinkWrap: true,
-                                  itemCount: filteredEntries.length,
-                                  separatorBuilder:
-                                      // ignore: unnecessary_underscores
-                                      (_, __) => Divider(
-                                        height: 1,
-                                        color: Colors.grey.shade100,
-                                      ),
-                                  itemBuilder: (context, index) {
-                                    final entry = filteredEntries[index];
-
-                                    if (entry.isScan) {
-                                      return Material(
-                                        color: Colors.transparent,
-                                        child: ListTile(
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
-                                          leading: Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.primary
-                                                  .withOpacity(0.08),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: const Icon(
-                                              Icons.document_scanner_rounded,
-                                              size: 20,
-                                              color: AppColors.primary,
-                                            ),
-                                          ),
-                                          title: const Text(
-                                            'Scan Document',
-                                            style: TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            'Take a photo and upload as a PDF',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade500,
-                                            ),
-                                          ),
-                                          trailing: Icon(
-                                            Icons.chevron_right_rounded,
-                                            color: Colors.grey.shade400,
-                                          ),
-                                          onTap: () async {
-                                            Navigator.pop(ctx);
-
-                                            await Future.delayed(
-                                              const Duration(milliseconds: 300),
-                                            );
-
-                                            if (!mounted) return;
-
-                                            await _startDocumentScan();
-                                          },
-                                        ),
-                                      );
-                                    }
-
-                                    if (entry.isTemplate) {
-                                      return Material(
-                                        color: Colors.transparent,
-                                        child: ListTile(
-                                          contentPadding:
-                                              const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
-                                          leading: Container(
-                                            padding: const EdgeInsets.all(8),
-                                            decoration: BoxDecoration(
-                                              color: AppColors.primary
-                                                  .withOpacity(0.08),
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
-                                            ),
-                                            child: const Icon(
-                                              Icons.dashboard_customize_rounded,
-                                              size: 20,
-                                              color: AppColors.primary,
-                                            ),
-                                          ),
-                                          title: const Text(
-                                            'Templates',
-                                            style: TextStyle(
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                          ),
-                                          subtitle: Text(
-                                            'Create from a pre-defined template',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade500,
-                                            ),
-                                          ),
-                                          trailing: Icon(
-                                            Icons.chevron_right_rounded,
-                                            color: Colors.grey.shade400,
-                                          ),
-                                          onTap: () {
-                                            Navigator.pop(ctx);
-                                            _showTemplateClassPicker();
-                                          },
-                                        ),
-                                      );
-                                    }
-                                    final ot = entry.objectType!;
-                                    return Material(
-                                      color: Colors.transparent,
-                                      child: ListTile(
-                                        contentPadding:
-                                            const EdgeInsets.symmetric(
-                                              horizontal: 8,
-                                              vertical: 4,
-                                            ),
-                                        leading: Container(
-                                          padding: const EdgeInsets.all(8),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.primary
-                                                .withOpacity(0.08),
-                                            borderRadius: BorderRadius.circular(
-                                              8,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            ot.isDocument
-                                                ? Icons.description_rounded
-                                                : svc.iconForObjectTypeId(
-                                                  ot.id,
+                                : Flexible(
+                                  child:
+                                      filteredEntries.isEmpty
+                                          ? Padding(
+                                            padding: const EdgeInsets.all(24),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.search_off,
+                                                  size: 36,
+                                                  color: Colors.grey.shade300,
                                                 ),
-                                            size: 20,
-                                            color: AppColors.primary,
-                                          ),
-                                        ),
-                                        title: Text(
-                                          ot.displayName,
-                                          style: const TextStyle(
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        trailing: Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: Colors.grey.shade400,
-                                        ),
-                                        onTap: () {
-                                          Navigator.pop(ctx);
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder:
-                                                  (_) => DynamicFormScreen(
-                                                    objectType: ot,
+                                                const SizedBox(height: 8),
+                                                Text(
+                                                  'No matches found',
+                                                  style: TextStyle(
+                                                    color: Colors.grey.shade500,
+                                                    fontSize: 13,
                                                   ),
+                                                ),
+                                              ],
                                             ),
-                                          );
-                                        },
-                                      ),
-                                    );
-                                  },
+                                          )
+                                          : SingleChildScrollView(
+                                            child: Column(
+                                              children: [
+                                                for (
+                                                  var i = 0;
+                                                  i < filteredEntries.length;
+                                                  i++
+                                                ) ...[
+                                                  Builder(
+                                                    builder: (rowCtx) {
+                                                      final entry =
+                                                          filteredEntries[i];
+                                                      if (entry.isScan) {
+                                                        return _buildCreateRow(
+                                                          ctx: ctx,
+                                                          icon:
+                                                              Icons
+                                                                  .document_scanner_rounded,
+                                                          title:
+                                                              'Scan Document',
+                                                          subtitle:
+                                                              'Take a photo and upload as a PDF',
+                                                          onTap: () async {
+                                                            Navigator.pop(ctx);
+                                                            await Future.delayed(
+                                                              const Duration(
+                                                                milliseconds:
+                                                                    300,
+                                                              ),
+                                                            );
+                                                            if (!mounted)
+                                                              return;
+                                                            await _startDocumentScan();
+                                                          },
+                                                        );
+                                                      }
+                                                      if (entry.isTemplate) {
+                                                        return _buildCreateRow(
+                                                          ctx: ctx,
+                                                          icon:
+                                                              Icons
+                                                                  .dashboard_customize_rounded,
+                                                          title: 'Templates',
+                                                          subtitle:
+                                                              'Create from a pre-defined template',
+                                                          onTap: () {
+                                                            Navigator.pop(ctx);
+                                                            _showTemplateClassPicker();
+                                                          },
+                                                        );
+                                                      }
+                                                      final ot =
+                                                          entry.objectType!;
+                                                      return _buildCreateRow(
+                                                        ctx: ctx,
+                                                        icon:
+                                                            ot.isDocument
+                                                                ? Icons
+                                                                    .description_rounded
+                                                                : svc
+                                                                    .iconForObjectTypeId(
+                                                                      ot.id,
+                                                                    ),
+                                                        title: ot.displayName,
+                                                        onTap: () {
+                                                          Navigator.pop(ctx);
+                                                          Navigator.push(
+                                                            context,
+                                                            MaterialPageRoute(
+                                                              builder:
+                                                                  (
+                                                                    _,
+                                                                  ) => DynamicFormScreen(
+                                                                    objectType:
+                                                                        ot,
+                                                                  ),
+                                                            ),
+                                                          );
+                                                        },
+                                                      );
+                                                    },
+                                                  ),
+                                                  if (i !=
+                                                      filteredEntries.length -
+                                                          1)
+                                                    Divider(
+                                                      height: 1,
+                                                      thickness: 0.5,
+                                                      indent: 44,
+                                                      color: Colors.black
+                                                          .withOpacity(0.06),
+                                                    ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
                                 ),
                       ),
                     ],
                   ),
                 ),
           ),
+    );
+  }
+
+  // ── Create bottom sheet rows ───────────────────────────────────────────────
+  Widget _buildCreateRow({
+    required BuildContext ctx,
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 11),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(icon, size: 20, color: AppColors.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.1,
+                      height: 1.25,
+                      color: Color(0xFF1A1A1A),
+                    ),
+                  ),
+                  if (subtitle != null && subtitle.trim().isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        color: Colors.grey.shade500,
+                        letterSpacing: -0.05,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.chevron_right_rounded,
+              size: 18,
+              color: Colors.grey.shade300,
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -3932,6 +3949,7 @@ class _HomeScreenState extends State<HomeScreen>
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
                       onTap: () {
+                        HapticFeedback.selectionClick();
                         Navigator.pop(context);
                         _handleLogout(context);
                       },

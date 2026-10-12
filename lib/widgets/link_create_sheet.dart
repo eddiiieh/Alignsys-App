@@ -919,7 +919,6 @@ Future<void> _refreshAfterLink(
     svc.refreshRelationshipsAfterLink(
       objectId: target.id,
       objectTypeId: target.objectTypeId,
-      classId: target.classId,
       versionId: target.versionId,
     ),
   ];
@@ -928,7 +927,6 @@ Future<void> _refreshAfterLink(
       svc.refreshRelationshipsAfterLink(
         objectId: result.objectId!,
         objectTypeId: result.objectTypeId,
-        classId: result.classId,
         versionId: 1,
       ),
     );

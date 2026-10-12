@@ -63,12 +63,43 @@ class ObjectComment {
   factory ObjectComment.fromJson(Map<String, dynamic> json) {
     // API uses "coment" (typo in backend). Support both spellings.
     final raw = (json['comment'] ?? json['coment'] ?? '').toString();
-    final parsed = _splitComent(raw);
+
+    // ── Preferred source: dedicated "commentedBy" field ────────────────
+    // The current backend returns the author as a separate field. Older
+    // web-app payloads embedded it in the comment text as
+    // "AuthorName : comment text" — fall back to that only when
+    // "commentedBy" is missing or empty.
+    String author = '';
+    String text = raw;
+
+    final commentedBy =
+        (json['commentedBy'] ??
+                json['commentedByName'] ??
+                json['author'] ??
+                json['authorName'] ??
+                '')
+            .toString()
+            .trim();
+
+    if (commentedBy.isNotEmpty) {
+      author = commentedBy;
+      text = raw.trim();
+    } else {
+      // Legacy: "AuthorName : comment text"
+      final parsed = _splitComent(raw);
+      author = parsed.author;
+      text = parsed.text;
+    }
 
     return ObjectComment(
-      author: parsed.author,
-      text: parsed.text,
-      modifiedDate: _parseDate(json['modifiedDate']),
+      author: author,
+      text: text,
+      modifiedDate: _parseDate(
+        json['modifiedDate'] ??
+            json['modified'] ??
+            json['createdDate'] ??
+            json['date'],
+      ),
     );
   }
 }
