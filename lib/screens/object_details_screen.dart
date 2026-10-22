@@ -1,6 +1,7 @@
 // object_details_screen.dart
 // ignore_for_file: use_build_context_synchronously, deprecated_member_use
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/utils/error_messages.dart';
@@ -158,6 +159,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       widget.obj.classId == -100 ||
       widget.obj.classTypeName.trim().toLowerCase() == 'assignment';
 
+  //
+  // State field
+  List<_PropVm> _currentProps = [];
+
+  // Wrap the load so every fetch keeps _currentProps in sync.
+  Future<List<_PropVm>> _loadPropsTracked() async {
+    final props = await _loadProps();
+    if (mounted) _currentProps = props;
+    return props;
+  }
 
   @override
   void initState() {
@@ -201,7 +212,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
         // Now safe to start loading — frame is fully built
         _commentsFuture = _loadComments();
-        _future = _loadProps();
+        _future = _loadPropsTracked();
         _filesFuture = _loadFiles();
         _workflowFuture = _loadWorkflow();
         _workflowsFuture = _loadWorkflowsForThisObject();
@@ -251,6 +262,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     }
     if (_saving) return;
     setState(() => _saving = true);
+
     try {
       final svc = context.read<MFilesService>();
       final dirty = _dirty[p.id]!;
@@ -273,18 +285,71 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
 
       if (!mounted) return;
-
       if (!ok) {
         SnackbarHelper.showError(context, svc.error ?? 'Update failed');
         return;
       }
+
+      // ── Build the value the read-only tile should show ────────────────
+      // For lookups we want the *label*, not the raw id, so future renders
+      // don't fall back to "ID 42".
+      dynamic displayValue = v;
+
+      if (_isMultiLookup(p)) {
+        final labels = _dirtyLookupLabels[p.id] ?? const <String>[];
+        final ids =
+            v is String && v.isNotEmpty
+                ? v
+                    .split(',')
+                    .map((s) => int.tryParse(s.trim()))
+                    .whereType<int>()
+                    .toList()
+                : <int>[];
+        displayValue = List.generate(
+          ids.length,
+          (i) => {
+            'id': ids[i],
+            'title': i < labels.length ? labels[i] : 'Item ${ids[i]}',
+          },
+        );
+      } else if (_isLookup(p)) {
+        final labels = _dirtyLookupLabels[p.id] ?? const <String>[];
+        final id = int.tryParse(v.toString());
+        displayValue = {
+          'id': id,
+          'title': labels.isNotEmpty ? labels.first : 'Item $id',
+        };
+      }
+
+      // ── Optimistic update: swap the tile's value in place and feed
+      //    the FutureBuilder a completed future, so no spinner flashes
+      //    and the new value shows immediately.
+      final updated =
+          _currentProps.isEmpty
+              ? _currentProps
+              : _currentProps
+                  .map(
+                    (x) => x.id == p.id ? x.copyWith(value: displayValue) : x,
+                  )
+                  .toList();
 
       _dirty.remove(p.id);
       _dirtyLookupLabels.remove(p.id);
       _fieldCtrl[p.id]?.dispose();
       _fieldCtrl.remove(p.id);
 
-      await _refreshAll(); 
+      setState(() {
+        _editingPropId = null;
+        if (updated.isNotEmpty) {
+          _currentProps = updated;
+          _future = SynchronousFuture(updated);
+        }
+      });
+
+      // Keep the AppBar / header title in sync if the user just edited Name.
+      if (p.id == 0 && v.toString().trim().isNotEmpty) {
+        _scheduleTitleUpdate(v.toString());
+      }
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -942,7 +1007,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
 
       await _refreshAll(clearDirty: false);
-
     } catch (e) {
       if (!mounted) return;
       final msg =
@@ -1000,7 +1064,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
 
       if (mounted) await _refreshAll(clearDirty: false);
-      
+
       return;
     }
 
@@ -1276,7 +1340,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         );
 
         await _refreshAll();
-
       } else {
         SnackbarHelper.showError(
           context,
@@ -1773,60 +1836,110 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             // ── Workflow dropdown (full width now) ──────────
-                            Container(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.grey.shade200),
+                            PopupMenuButton<int>(
+                              enabled: canInteract,
+                              tooltip: '',
+                              offset: const Offset(
+                                0,
+                                48,
+                              ), // Pushes the menu exactly below the field
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              child: DropdownButtonHideUnderline(
-                                child: ButtonTheme(
-                                  alignedDropdown: true,
-                                  child: DropdownButton<int>(
-                                    value: _selectedWorkflowId,
-                                    isExpanded: true,
-                                    isDense: true,
-                                    style: const TextStyle(
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w500,
-                                      color: Color(0xFF1E293B),
+                              color: const Color(
+                                0xFFEAF3FF,
+                              ), // Light blue background from screenshot
+                              elevation: 8,
+                              constraints: const BoxConstraints(
+                                maxHeight: 345,
+                                minWidth: 345,
+                              ), // Prevents full-screen takeover
+                              onSelected:
+                                  (v) => setState(() {
+                                    _selectedWorkflowId = v;
+                                    _selectedAssignStateId = null;
+                                  }),
+                              itemBuilder: (context) {
+                                return workflows.map((w) {
+                                  final isSelected =
+                                      w.id == _selectedWorkflowId;
+                                  return PopupMenuItem<int>(
+                                    value: w.id,
+                                    height: 44,
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6,
+                                        horizontal: 8,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            isSelected
+                                                ? Colors.grey.shade300
+                                                : Colors
+                                                    .transparent, // Grey highlight for selected item
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        w.title,
+                                        style: TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight:
+                                              isSelected
+                                                  ? FontWeight.w700
+                                                  : FontWeight.w500,
+                                          color:
+                                              isSelected
+                                                  ? Colors.black87
+                                                  : const Color(0xFF1E293B),
+                                        ),
+                                      ),
                                     ),
-                                    icon: Icon(
+                                  );
+                                }).toList();
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
+                                ),
+                                decoration: BoxDecoration(
+                                  color:
+                                      canInteract
+                                          ? const Color(0xFFF8FAFC)
+                                          : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(
+                                    color: Colors.grey.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        workflows
+                                            .firstWhere(
+                                              (w) =>
+                                                  w.id == _selectedWorkflowId,
+                                              orElse: () => workflows.first,
+                                            )
+                                            .title,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          fontSize: 13.5,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFF1E293B),
+                                        ),
+                                      ),
+                                    ),
+                                    Icon(
                                       Icons.keyboard_arrow_down_rounded,
                                       color: Colors.grey.shade500,
                                       size: 20,
                                     ),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 10,
-                                    ),
-                                    borderRadius: BorderRadius.circular(10),
-                                    items:
-                                        workflows
-                                            .map(
-                                              (w) => DropdownMenuItem<int>(
-                                                value: w.id,
-                                                child: Text(
-                                                  w.title,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: const TextStyle(
-                                                    fontSize: 13.5,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: Color(0xFF1E293B),
-                                                  ),
-                                                ),
-                                              ),
-                                            )
-                                            .toList(),
-                                    onChanged:
-                                        !canInteract
-                                            ? null
-                                            : (v) => setState(() {
-                                              _selectedWorkflowId = v;
-                                              _selectedAssignStateId = null;
-                                            }),
-                                  ),
+                                  ],
                                 ),
                               ),
                             ),
@@ -1854,53 +1967,119 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 ],
                               ),
                               const SizedBox(height: 10),
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF8FAFC),
-                                  borderRadius: BorderRadius.circular(10),
-                                  border: Border.all(
-                                    color: Colors.grey.shade200,
-                                  ),
+                              PopupMenuButton<int>(
+                                enabled: canInteract,
+                                tooltip: '',
+                                offset: const Offset(0, 48),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
                                 ),
-                                child: DropdownButtonHideUnderline(
-                                  child: ButtonTheme(
-                                    alignedDropdown: true,
-                                    child: DropdownButton<int>(
-                                      value: _selectedAssignStateId,
-                                      isExpanded: true,
-                                      isDense: true,
-                                      style: const TextStyle(
-                                        fontSize: 13.5,
-                                        fontWeight: FontWeight.w500,
-                                        color: Color(0xFF1E293B),
-                                      ),
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 10,
-                                      ),
-                                      borderRadius: BorderRadius.circular(10),
-                                      items:
-                                          selectedDef.states
-                                              .where((s) => s.isSelectable)
-                                              .map(
-                                                (s) => DropdownMenuItem<int>(
-                                                  value: s.id,
-                                                  child: Text(
-                                                    s.name,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                  ),
-                                                ),
-                                              )
-                                              .toList(),
-                                      onChanged:
-                                          !canInteract
-                                              ? null
-                                              : (v) => setState(
-                                                () =>
-                                                    _selectedAssignStateId = v,
-                                              ),
+                                color: const Color(0xFFEAF3FF),
+                                elevation: 8,
+                                constraints: const BoxConstraints(
+                                  maxHeight: 340,
+                                  minWidth: 345,
+                                ),
+                                onSelected:
+                                    (v) => setState(
+                                      () => _selectedAssignStateId = v,
                                     ),
+                                itemBuilder: (context) {
+                                  return selectedDef.states
+                                      .where((s) => s.isSelectable)
+                                      .map((s) {
+                                        final isSelected =
+                                            s.id == _selectedAssignStateId;
+                                        return PopupMenuItem<int>(
+                                          value: s.id,
+                                          height: 44,
+                                          child: Container(
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.symmetric(
+                                              vertical: 6,
+                                              horizontal: 8,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  isSelected
+                                                      ? Colors.grey.shade300
+                                                      : Colors.transparent,
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              s.name,
+                                              style: TextStyle(
+                                                fontSize: 13.5,
+                                                fontWeight:
+                                                    isSelected
+                                                        ? FontWeight.w700
+                                                        : FontWeight.w500,
+                                                color:
+                                                    isSelected
+                                                        ? Colors.black87
+                                                        : const Color(
+                                                          0xFF1E293B,
+                                                        ),
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      })
+                                      .toList();
+                                },
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 12,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        canInteract
+                                            ? const Color(0xFFF8FAFC)
+                                            : Colors.grey.shade100,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: Colors.grey.shade200,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          selectedDef.states
+                                              .firstWhere(
+                                                (s) =>
+                                                    s.id ==
+                                                    _selectedAssignStateId,
+                                                orElse:
+                                                    () => selectedDef.states
+                                                        .firstWhere(
+                                                          (s) => s.isSelectable,
+                                                          orElse:
+                                                              () =>
+                                                                  selectedDef
+                                                                      .states
+                                                                      .first,
+                                                        ),
+                                              )
+                                              .name,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 13.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: Color(0xFF1E293B),
+                                          ),
+                                        ),
+                                      ),
+                                      Icon(
+                                        Icons.keyboard_arrow_down_rounded,
+                                        color: Colors.grey.shade500,
+                                        size: 20,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
@@ -1956,7 +2135,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                             if (!mounted) return;
 
                                             await _refreshAll();
-
                                           } catch (e) {
                                             if (!mounted) return;
                                             SnackbarHelper.showError(
@@ -2128,9 +2306,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       if (ok) {
         setState(() => _assignmentCompleted = true);
         SnackbarHelper.showSuccess(context, 'Assignment marked as complete');
-        
+
         // land fresh data before popping
-        await _refreshAll(); 
+        await _refreshAll();
         if (!mounted) return;
         Navigator.pop(context, true);
       } else {
@@ -2433,40 +2611,43 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   .toList();
                           return RefreshIndicator(
                             onRefresh: () async {
-                            setState(() {
-                              _future = _loadProps();
-                              _filesFuture = _loadFiles();
-                              _workflowFuture = _loadWorkflow();
-                              _commentsFuture = _loadComments();
-                              _workflowsFuture = _loadWorkflowsForThisObject();
-                              _vaultWorkflowsFuture =
-                                  context.read<MFilesService>().fetchVaultWorkflowDefinitions();
-                              _dirty.clear();
-                              _dirtyLookupLabels.clear();
-                              _editingPropId = null;
-                              _approvedUserIds.clear();
-                              _approvingUserIds.clear();
-                              _assignedIdsSnapshot = null;
-                              _selectedWorkflowId = null;
-                              _selectedAssignStateId = null;
-                              // Reset title so a renamed object picks up the new name from props.
-                              _title = widget.obj.title;
-                            });
+                              setState(() {
+                                _future = _loadPropsTracked();
+                                _filesFuture = _loadFiles();
+                                _workflowFuture = _loadWorkflow();
+                                _commentsFuture = _loadComments();
+                                _workflowsFuture =
+                                    _loadWorkflowsForThisObject();
+                                _vaultWorkflowsFuture =
+                                    context
+                                        .read<MFilesService>()
+                                        .fetchVaultWorkflowDefinitions();
+                                _dirty.clear();
+                                _dirtyLookupLabels.clear();
+                                _editingPropId = null;
+                                _approvedUserIds.clear();
+                                _approvingUserIds.clear();
+                                _assignedIdsSnapshot = null;
+                                _selectedWorkflowId = null;
+                                _selectedAssignStateId = null;
+                                // Reset title so a renamed object picks up the new name from props.
+                                _title = widget.obj.title;
+                              });
 
-                            // Re-sync checkout state from the server FIRST, in parallel with the
-                            // other loads, so the padlock/badge update on the same refresh.
-                            await Future.wait([
-                              // _syncCheckoutState(), // Commented out as it's not needed in this context
-                              _future,
-                              _filesFuture,
-                              _workflowFuture,
-                              _commentsFuture,
-                              _workflowsFuture,
-                              _vaultWorkflowsFuture,
-                            ]);
+                              // Re-sync checkout state from the server FIRST, in parallel with the
+                              // other loads, so the padlock/badge update on the same refresh.
+                              await Future.wait([
+                                // _syncCheckoutState(), // Commented out as it's not needed in this context
+                                _future,
+                                _filesFuture,
+                                _workflowFuture,
+                                _commentsFuture,
+                                _workflowsFuture,
+                                _vaultWorkflowsFuture,
+                              ]);
 
-                            if (mounted) setState(() {});
-                          },
+                              if (mounted) setState(() {});
+                            },
                             child: Scrollbar(
                               controller: _pageScroll,
                               thickness: 6,
@@ -2997,6 +3178,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   vertical: 10,
                                 ),
                                 borderRadius: BorderRadius.circular(10),
+                                dropdownColor: const Color(0xFFEAF3FF),
+                                menuMaxHeight: 400,
+                                elevation: 8,
                                 items:
                                     info.nextStates
                                         .map(
@@ -3063,7 +3247,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                       if (!mounted) return;
 
                                       await _refreshAll();
-
                                     } catch (e) {
                                       if (mounted) {
                                         SnackbarHelper.showError(context, e);
@@ -3108,159 +3291,171 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   Widget _headerCard(ViewObject obj, {ObjectFile? firstFile}) {
-    final svc = context.read<MFilesService>();
-    final isMultiFileObj = svc.isMultiFile(
-      objectTypeId: obj.objectTypeId,
-      isSingleFile: obj.isSingleFile,
-    );
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        children: [
-          Row(
+    return Consumer<MFilesService>(
+      builder: (context, svc, _) {
+        final isMultiFileObj = svc.isMultiFile(
+          objectTypeId: obj.objectTypeId,
+          isSingleFile: obj.isSingleFile,
+        );
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
             children: [
-              (firstFile != null && !isMultiFileObj)
-                  ? CheckoutBadge(
-                    isCheckedOut:
-                        svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
-                    checkoutUserId:
-                        svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
-                    child: FileTypeBadge(
-                      extension: firstFile.extension,
-                      size: 36,
-                    ),
-                  )
-                  : CheckoutBadge(
-                    isCheckedOut:
-                        svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
-                    checkoutUserId:
-                        svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
+              Row(
+                children: [
+                  (firstFile != null && !isMultiFileObj)
+                      ? CheckoutBadge(
+                        isCheckedOut:
+                            svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+                        checkoutUserId:
+                            svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
+                        child: FileTypeBadge(
+                          extension: firstFile.extension,
+                          size: 36,
+                        ),
+                      )
+                      : CheckoutBadge(
+                        isCheckedOut:
+                            svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+                        checkoutUserId:
+                            svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Center(
+                            child: Icon(
+                              isMultiFileObj
+                                  ? Icons.folder_copy_rounded
+                                  : svc.iconForViewObject(obj),
+                              size: 20,
+                              color:
+                                  isMultiFileObj
+                                      ? const Color(
+                                        0xFF4CAF50,
+                                      ) // green only for multi-file
+                                      : AppColors
+                                          .primary, // blue / brand for single-file fallback
+                            ),
+                          ),
+                        ),
                       ),
-                      child: Center(
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _title.isEmpty ? obj.title : _title,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        height: 1.3,
+                      ),
+                    ),
+                  ),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(20),
+                      onTap:
+                          () => setState(
+                            () =>
+                                _headerDetailsExpanded =
+                                    !_headerDetailsExpanded,
+                          ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
                         child: Icon(
-                          isMultiFileObj
-                              ? Icons.folder_copy_rounded
-                              : svc.iconForViewObject(obj),
-                          size: 20,
-                          color: AppColors.primary,
+                          _headerDetailsExpanded
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
                         ),
                       ),
                     ),
                   ),
-              const SizedBox(width: 10),
-              Expanded(
+                ],
+              ),
+              const SizedBox(height: 4),
+              Align(
+                alignment: Alignment.centerLeft,
                 child: Text(
-                  _title.isEmpty ? obj.title : _title,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                    height: 1.3,
-                  ),
+                  '${obj.classTypeName} • ID ${obj.displayId} • v${obj.versionId}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
               ),
-              Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  borderRadius: BorderRadius.circular(20),
-                  onTap:
-                      () => setState(
-                        () => _headerDetailsExpanded = !_headerDetailsExpanded,
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: GestureDetector(
+                  onTap: _showPermissionsSheet,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F6FF),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.25),
                       ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(4),
-                    child: Icon(
-                      _headerDetailsExpanded
-                          ? Icons.keyboard_arrow_up
-                          : Icons.keyboard_arrow_down,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.lock_outline_rounded,
+                          size: 13,
+                          color: AppColors.primary,
+                        ),
+                        const SizedBox(width: 5),
+                        const Text(
+                          'Permissions',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
+              ),
+              AnimatedCrossFade(
+                firstChild: const SizedBox.shrink(),
+                secondChild: Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Column(
+                    children: [
+                      _kv('Object ID', obj.id.toString()),
+                      _kv('Object Type', obj.objectTypeName),
+                      _kv('Class', obj.classTypeName),
+                      _kv('Version', obj.versionId.toString()),
+                      _kv('Created', _fmt(obj.createdUtc)),
+                      _kv('Last modified', _fmt(obj.lastModifiedUtc)),
+                    ],
+                  ),
+                ),
+                crossFadeState:
+                    _headerDetailsExpanded
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                duration: const Duration(milliseconds: 180),
               ),
             ],
           ),
-          const SizedBox(height: 4),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              '${obj.classTypeName} • ID ${obj.displayId} • v${obj.versionId}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: GestureDetector(
-              onTap: _showPermissionsSheet,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 5,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F6FF),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: AppColors.primary.withOpacity(0.25),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.lock_outline_rounded,
-                      size: 13,
-                      color: AppColors.primary,
-                    ),
-                    const SizedBox(width: 5),
-                    const Text(
-                      'Permissions',
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          AnimatedCrossFade(
-            firstChild: const SizedBox.shrink(),
-            secondChild: Padding(
-              padding: const EdgeInsets.only(top: 10),
-              child: Column(
-                children: [
-                  _kv('Object ID', obj.id.toString()),
-                  _kv('Object Type', obj.objectTypeName),
-                  _kv('Class', obj.classTypeName),
-                  _kv('Version', obj.versionId.toString()),
-                  _kv('Created', _fmt(obj.createdUtc)),
-                  _kv('Last modified', _fmt(obj.lastModifiedUtc)),
-                ],
-              ),
-            ),
-            crossFadeState:
-                _headerDetailsExpanded
-                    ? CrossFadeState.showSecond
-                    : CrossFadeState.showFirst,
-            duration: const Duration(milliseconds: 180),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -3920,8 +4115,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       );
       // ── TEMP: inspect what the server returns for web-posted comments ──
       for (final c in items) {
-        debugPrint('COMMENT → author="${c.author}" '
-            'date=${c.modifiedDate} text="${c.text}"');
+        debugPrint(
+          'COMMENT → author="${c.author}" '
+          'date=${c.modifiedDate} text="${c.text}"',
+        );
       }
       return items;
     } catch (_) {
@@ -3932,7 +4129,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   // ─────────────────────────────────────────────────────────────────────────────
   // CANONICAL REFRESH — call this after ANY mutating action.
   // ─────────────────────────────────────────────────────────────────────────────
-  Future<void> _refreshAll({bool clearDirty = true, bool resetTitle = true}) async {
+  Future<void> _refreshAll({
+    bool clearDirty = true,
+    bool resetTitle = true,
+  }) async {
     if (!mounted) return;
 
     final svc = context.read<MFilesService>();
@@ -3941,11 +4141,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     //    Future instance. If we only call setState() without reassigning,
     //    FutureBuilder keeps its old future and never re-runs.
     setState(() {
-      _future               = _loadProps();
-      _filesFuture          = _loadFiles();
-      _workflowFuture       = _loadWorkflow();
-      _commentsFuture       = _loadComments();
-      _workflowsFuture      = _loadWorkflowsForThisObject();
+      _future = _loadPropsTracked();
+      _filesFuture = _loadFiles();
+      _workflowFuture = _loadWorkflow();
+      _commentsFuture = _loadComments();
+      _workflowsFuture = _loadWorkflowsForThisObject();
       _vaultWorkflowsFuture = svc.fetchVaultWorkflowDefinitions();
 
       if (clearDirty) {
@@ -3981,8 +4181,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       _workflowsFuture,
       _vaultWorkflowsFuture,
     ]);
-  }
 
+    // Keep the optimistic snapshot in sync with the server response.
+    try {
+      _currentProps = await _future;
+    } catch (_) {}
+  }
 
   Future<void> _submitComment() async {
     final text = _commentCtrl.text.trim();
@@ -4185,7 +4389,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   // COMMENTS CARD  ── redesigned
   // ─────────────────────────────────────────────────────────────────────────
-    Widget _commentsCard() {
+  Widget _commentsCard() {
     final disabled =
         _saving || _downloading || _changingWorkflow || _assigningWorkflow;
 
@@ -4216,10 +4420,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     bottomLeft: Radius.circular(_commentsExpanded ? 0 : 12),
                     bottomRight: Radius.circular(_commentsExpanded ? 0 : 12),
                   ),
-                  onTap: () => setState(() {
-                    _commentsExpanded = !_commentsExpanded;
-                    if (!_commentsExpanded) _commentFocusNode.unfocus();
-                  }),
+                  onTap:
+                      () => setState(() {
+                        _commentsExpanded = !_commentsExpanded;
+                        if (!_commentsExpanded) _commentFocusNode.unfocus();
+                      }),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -4442,7 +4647,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     );
   }
 
-    // ── Apple-grade expanding comment composer ──────────────────────────────
+  // ── Apple-grade expanding comment composer ──────────────────────────────
   Widget _commentComposer(bool disabled) {
     const int minLines = 1;
     const int maxLines = 6;
@@ -4455,27 +4660,34 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: _commentInputFocused
-              ? AppColors.primary.withOpacity(0.5)
-              : const Color(0xFFE2E8F0),
+          color:
+              _commentInputFocused
+                  ? AppColors.primary.withOpacity(0.5)
+                  : const Color(0xFFE2E8F0),
           width: _commentInputFocused ? 1.5 : 1,
         ),
-        boxShadow: _commentInputFocused
-            ? [
-                BoxShadow(
-                  color: AppColors.primary.withOpacity(0.08),
-                  blurRadius: 12,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : null,
+        boxShadow:
+            _commentInputFocused
+                ? [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+                : null,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           // Avatar
           Padding(
-            padding: const EdgeInsets.only(left: 8, right: 0, top: 8, bottom: 8),
+            padding: const EdgeInsets.only(
+              left: 8,
+              right: 0,
+              top: 8,
+              bottom: 8,
+            ),
             child: Container(
               width: 30,
               height: 30,
@@ -4484,21 +4696,22 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 shape: BoxShape.circle,
               ),
               child: Center(
-                child: _currentUserInitials.isNotEmpty
-                    ? Text(
-                        _currentUserInitials,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
+                child:
+                    _currentUserInitials.isNotEmpty
+                        ? Text(
+                          _currentUserInitials,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                            letterSpacing: 0.2,
+                          ),
+                        )
+                        : const Icon(
+                          Icons.person_outline,
+                          size: 16,
                           color: Colors.white,
-                          letterSpacing: 0.2,
                         ),
-                      )
-                    : const Icon(
-                        Icons.person_outline,
-                        size: 16,
-                        color: Colors.white,
-                      ),
               ),
             ),
           ),
@@ -4507,10 +4720,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           // Expanding TextField (internal scroll, Enter = newline)
           Expanded(
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minHeight: 40,
-                maxHeight: 160,
-              ),
+              constraints: const BoxConstraints(minHeight: 40, maxHeight: 160),
               child: Scrollbar(
                 controller: _commentInputScroll,
                 thumbVisibility: false,
@@ -4563,45 +4773,48 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           AnimatedSize(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOut,
-            child: _showCommentSend || hasText
-                ? Padding(
-                    padding: const EdgeInsets.only(
-                      right: 8,
-                      bottom: 8,
-                      top: 8,
-                      left: 2,
-                    ),
-                    child: GestureDetector(
-                      onTap: canSend ? _submitComment : null,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 160),
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: canSend
-                              ? AppColors.primary
-                              : AppColors.primary.withOpacity(0.35),
-                          shape: BoxShape.circle,
-                        ),
-                        child: _postingComment
-                            ? const Padding(
-                                padding: EdgeInsets.all(8),
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
-                              )
-                            : const Icon(
-                                Icons.arrow_upward_rounded,
-                                size: 18,
-                                color: Colors.white,
-                              ),
+            child:
+                _showCommentSend || hasText
+                    ? Padding(
+                      padding: const EdgeInsets.only(
+                        right: 8,
+                        bottom: 8,
+                        top: 8,
+                        left: 2,
                       ),
-                    ),
-                  )
-                : const SizedBox(width: 8),
+                      child: GestureDetector(
+                        onTap: canSend ? _submitComment : null,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color:
+                                canSend
+                                    ? AppColors.primary
+                                    : AppColors.primary.withOpacity(0.35),
+                            shape: BoxShape.circle,
+                          ),
+                          child:
+                              _postingComment
+                                  ? const Padding(
+                                    padding: EdgeInsets.all(8),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                  : const Icon(
+                                    Icons.arrow_upward_rounded,
+                                    size: 18,
+                                    color: Colors.white,
+                                  ),
+                        ),
+                      ),
+                    )
+                    : const SizedBox(width: 8),
           ),
         ],
       ),
@@ -4756,7 +4969,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 _dirty.remove(p.id);
                                 _dirtyLookupLabels.remove(p.id);
                               } else {
+                                final label =
+                                    items.first.displayValue.toString();
                                 _dirty[p.id] = p.copyWith(editedValue: id);
+                                _dirtyLookupLabels[p.id] = [label];
                               }
                             }
                           });
@@ -5886,12 +6102,12 @@ class _PropVm {
     this.isReadOnly = false,
   });
 
-  _PropVm copyWith({dynamic editedValue}) {
+  _PropVm copyWith({dynamic editedValue, dynamic value}) {
     return _PropVm(
       id: id,
       name: name,
       datatype: datatype,
-      value: value,
+      value: value ?? this.value,
       editedValue: editedValue,
       isReadOnly: isReadOnly,
     );

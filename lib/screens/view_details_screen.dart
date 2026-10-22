@@ -61,8 +61,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   bool _showSearch = false;
   final ScrollController _viewScroll = ScrollController();
 
-  int? _expandedInfoItemId;
-  int? _expandedRelationshipsItemId;
+  final Set<int> _expandedInfoItemIds = {};
+  final Set<int> _expandedRelationshipsItemIds = {};
 
   bool _dataLoaded = false;
 
@@ -215,8 +215,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   void _refreshThisView() {
     setState(() {
       _dataLoaded = false;
-      _expandedInfoItemId = null;
-      _expandedRelationshipsItemId = null;
+      _expandedInfoItemIds.clear();
+      _expandedRelationshipsItemIds.clear();
       _future = context
           .read<MFilesService>()
           .fetchObjectsInViewRaw(widget.view.id)
@@ -231,22 +231,18 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
   void _toggleInfo(int itemId) {
     setState(() {
-      if (_expandedInfoItemId == itemId) {
-        _expandedInfoItemId = null;
-      } else {
-        _expandedInfoItemId = itemId;
-        _expandedRelationshipsItemId = null;
+      if (!_expandedInfoItemIds.remove(itemId)) {
+        _expandedInfoItemIds.add(itemId);
+        _expandedRelationshipsItemIds.remove(itemId);
       }
     });
   }
 
   void _toggleRelationships(int itemId) {
     setState(() {
-      if (_expandedRelationshipsItemId == itemId) {
-        _expandedRelationshipsItemId = null;
-      } else {
-        _expandedRelationshipsItemId = itemId;
-        _expandedInfoItemId = null;
+      if (!_expandedRelationshipsItemIds.remove(itemId)) {
+        _expandedRelationshipsItemIds.add(itemId);
+        _expandedInfoItemIds.remove(itemId);
       }
     });
   }
@@ -681,332 +677,347 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildRow(ViewContentItem item, bool isLast) {
-  final subtitle = _subtitleLabel(item);
-  final svc = context.watch<MFilesService>();
+    final subtitle = _subtitleLabel(item);
+    final svc = context.watch<MFilesService>();
 
-  final bool isObject = item.isObject && item.id > 0;
-  final bool hasRelationships = isObject && item.classId > 0;
-  final bool canDelete = isObject;
-  final bool isDocument = isObject && svc.isDocumentContentItem(item);
+    final bool isObject = item.isObject && item.id > 0;
+    final bool hasRelationships = isObject && item.classId > 0;
+    final bool canDelete = isObject;
+    final bool isDocument = isObject && svc.isDocumentContentItem(item);
 
-  final bool infoExpanded = _expandedInfoItemId == item.id;
-  final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
-  final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+    final bool infoExpanded = _expandedInfoItemIds.contains(item.id);
+    final bool relationshipsExpanded = _expandedRelationshipsItemIds.contains(
+      item.id,
+    );
 
-  final ViewObject? asViewObj =
-      canDelete
-          ? ViewObject(
-            id: item.id,
-            title: item.title,
+    final ViewObject? asViewObj =
+        canDelete
+            ? ViewObject(
+              id: item.id,
+              title: item.title,
+              objectTypeId: item.objectTypeId,
+              classId: item.classId,
+              versionId: item.versionId,
+              objectTypeName: item.objectTypeName ?? '',
+              classTypeName: item.classTypeName ?? '',
+              displayId: item.displayId ?? '',
+              createdUtc: item.createdUtc,
+              lastModifiedUtc: item.lastModifiedUtc,
+              isSingleFile: item.isSingleFile,
+              isCheckedOut: item.isCheckedOut,
+              checkoutUserId: item.checkoutUserId,
+              checkoutUsername: item.checkoutUsername,
+            )
+            : null;
+
+    if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          svc.ensureRelationshipsPresenceForObject(
+            objectId: item.id,
             objectTypeId: item.objectTypeId,
-            classId: item.classId,
             versionId: item.versionId,
-            objectTypeName: item.objectTypeName ?? '',
-            classTypeName: item.classTypeName ?? '',
-            displayId: item.displayId ?? '',
-            createdUtc: item.createdUtc,
-            lastModifiedUtc: item.lastModifiedUtc,
-            isSingleFile: item.isSingleFile,
-            isCheckedOut: item.isCheckedOut,
-            checkoutUserId: item.checkoutUserId,
-            checkoutUsername: item.checkoutUsername,
-          )
-          : null;
+            notify: true,
+          );
+        }
+      });
+    }
 
-  if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        svc.ensureRelationshipsPresenceForObject(
-          objectId: item.id,
-          objectTypeId: item.objectTypeId,
-          versionId: item.versionId,
-          notify: true,
-        );
-      }
-    });
-  }
+    final BorderRadius radius =
+        infoExpanded
+            ? const BorderRadius.vertical(bottom: Radius.circular(12))
+            : BorderRadius.zero;
 
-  final BorderRadius radius =
-      isLast
-          ? const BorderRadius.vertical(bottom: Radius.circular(12))
-          : BorderRadius.zero;
-
-  return Column(
-    children: [
-      AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: isDimmed ? 0.45 : 1.0,
-        child: Material(
-          color:
-              _isSelected(item.id)
-                  ? AppColors.primary.withOpacity(0.12)
-                  : infoExpanded
-                  ? AppColors.primary.withOpacity(0.03)
-                  : Colors.white,
-          shape: RoundedRectangleBorder(
+    return Column(
+      children: [
+        Container(
+          // 1. Moved background color and added custom BoxShadow here
+          decoration: BoxDecoration(
+            color:
+                _isSelected(item.id)
+                    ? AppColors.primary.withOpacity(0.12)
+                    : Colors.white,
             borderRadius: radius,
-            side:
-                infoExpanded
-                    ? const BorderSide(color: AppColors.primary, width: 1.5)
-                    : BorderSide.none,
-          ),
-          clipBehavior: Clip.antiAlias,
-          elevation: 0,
-          child: InkWell(
-            borderRadius: radius,
-            onTap: () {
-              final now = DateTime.now();
-              if (_suppressRowTap) return;
-              if (_lastIconTap != null &&
-                  now.difference(_lastIconTap!) <
-                      const Duration(milliseconds: 350))
-                return;
-              if (isDimmed) {
-                setState(() {
-                  _expandedInfoItemId = null;
-                  _expandedRelationshipsItemId = null;
-                });
-                return;
-              }
-              if (_selectionMode && asViewObj != null) {
-                _toggleSelection(asViewObj);
-                return;
-              }
-              _handleTap(item);
-            },
-            onLongPress:
-                canDelete
-                    ? () {
-                      debugPrint("LONG PRESS: ${item.title}");
-                      if (asViewObj != null) {
-                        _toggleSelection(asViewObj);
-                      }
-                    }
-                    : null,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 11,
-                  ),
-                  child: Row(
-                    children: [
-                      // Relationships chevron
-                      if (hasRelationships &&
-                          svc.cachedHasRelationships(item.id) == true) ...[
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (!_tryClaimIconTap()) return;
-                            _toggleRelationships(item.id);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              relationshipsExpanded
-                                  ? Icons.expand_more
-                                  : Icons.chevron_right,
-                              size: 18,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                      ] else
-                        const SizedBox(width: 4),
-
-                      // Badge / folder
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child:
-                            _isSelected(item.id)
-                                ? Container(
-                                  key: const ValueKey('selected'),
-                                  width: 38,
-                                  height: 38,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.check,
-                                    color: Colors.white,
-                                    size: 22,
-                                  ),
-                                )
-                                : CheckoutBadge(
-                                  isCheckedOut:
-                                      svc.isCheckedOutLocally(item.id) ||
-                                      item.isCheckedOut,
-                                  checkoutUserId:
-                                      svc.checkoutOwnerId(item.id) ??
-                                      item.checkoutUserId,
-                                  child:
-                                      (item.isObject &&
-                                              svc.isDocumentContentItem(item))
-                                          ? FileTypeBadge(
-                                            extension:
-                                                svc.cachedExtensionForObject(
-                                                  item.id,
-                                                ) ??
-                                                '',
-                                            size: 40,
-                                          )
-                                          : Container(
-                                            width: 38,
-                                            height: 38,
-                                            child: Icon(
-                                              isObject
-                                                  ? svc.iconForViewObject(
-                                                    asViewObj!,
-                                                  )
-                                                  : Icons.folder_rounded,
-                                              color: AppColors.primary,
-                                              size: 28,
-                                            ),
-                                          ),
-                                ),
+            boxShadow:
+                (infoExpanded || relationshipsExpanded)
+                    ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.18),
+                        blurRadius: 40,
+                        offset: const Offset(0, 12),
                       ),
-
-                      const SizedBox(width: 12),
-
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.title,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -0.1,
-                                height: 1.2,
-                                color: Color(0xFF1A1A1A),
-                              ),
-                            ),
-                            if (subtitle != null &&
-                                subtitle.trim().isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.grey.shade500,
-                                  letterSpacing: -0.05,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.10),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
                       ),
-
-                      // Eye icon (documents only)
-                      if (isDocument) ...[
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _openPreview(item),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.blueGrey.withOpacity(0.08),
-                              shape: BoxShape.circle,
-                            ),
-                            child:
-                                _previewLoading.contains(item.id)
-                                    ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.blueGrey.shade400,
-                                            ),
-                                      ),
-                                    )
-                                    : Icon(
-                                      Icons.remove_red_eye_outlined,
-                                      size: 18,
-                                      color: Colors.blueGrey.shade400,
-                                    ),
-                          ),
-                        ),
-                      ],
-
-                      // Info icon
-                      if (isObject) ...[
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (!_tryClaimIconTap()) return;
-                            _toggleInfo(item.id);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color:
-                                  infoExpanded
-                                      ? AppColors.primary.withOpacity(0.15)
-                                      : AppColors.primary.withOpacity(0.08),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              infoExpanded
-                                  ? Icons.keyboard_arrow_up_rounded
-                                  : Icons.info_outline,
-                              size: 18,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ] else
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          size: 18,
-                          color: Colors.grey.shade300,
-                        ),
+                    ]
+                    : [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
                     ],
-                  ),
-                ),
+          ),
+          child: Material(
+            // 2. Material is now transparent and has no elevation
+            color: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              // side: Removed completely!
+            ),
+            clipBehavior: Clip.antiAlias,
+            elevation: 0,
+            child: InkWell(
+              borderRadius: radius,
+              onTap: () {
+                final now = DateTime.now();
+                if (_suppressRowTap) return;
+                if (_lastIconTap != null &&
+                    now.difference(_lastIconTap!) <
+                        const Duration(milliseconds: 350))
+                  return;
 
-                if (infoExpanded && isObject) ...[
-                  Divider(height: 1, color: Colors.grey.shade200),
-                  ObjectInfoDropdown(obj: asViewObj!),
-                ],
-
-                if (relationshipsExpanded && hasRelationships) ...[
-                  Divider(height: 1, color: Colors.grey.shade200),
+                if (_selectionMode && asViewObj != null) {
+                  _toggleSelection(asViewObj);
+                  return;
+                }
+                _handleTap(item);
+              },
+              onLongPress:
+                  canDelete
+                      ? () {
+                        debugPrint("LONG PRESS: ${item.title}");
+                        if (asViewObj != null) {
+                          _toggleSelection(asViewObj);
+                        }
+                      }
+                      : null,
+              child: Column(
+                children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: RelationshipsDropdown(
-                      key: ValueKey('rel_${item.id}'),
-                      obj: asViewObj!,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    child: Row(
+                      children: [
+                        // Relationships chevron
+                        if (hasRelationships &&
+                            svc.cachedHasRelationships(item.id) == true) ...[
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleRelationships(item.id);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                relationshipsExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ] else
+                          const SizedBox(width: 4),
+
+                        // Badge / folder
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child:
+                              _isSelected(item.id)
+                                  ? Container(
+                                    key: const ValueKey('selected'),
+                                    width: 38,
+                                    height: 38,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 22,
+                                    ),
+                                  )
+                                  : CheckoutBadge(
+                                    isCheckedOut:
+                                        svc.isCheckedOutLocally(item.id) ||
+                                        item.isCheckedOut,
+                                    checkoutUserId:
+                                        svc.checkoutOwnerId(item.id) ??
+                                        item.checkoutUserId,
+                                    child:
+                                        (item.isObject &&
+                                                svc.isDocumentContentItem(item))
+                                            ? FileTypeBadge(
+                                              extension:
+                                                  svc.cachedExtensionForObject(
+                                                    item.id,
+                                                  ) ??
+                                                  '',
+                                              size: 40,
+                                            )
+                                            : Container(
+                                              width: 38,
+                                              height: 38,
+                                              child: Icon(
+                                                isObject
+                                                    ? svc.iconForViewObject(
+                                                      asViewObj!,
+                                                    )
+                                                    : Icons.folder_rounded,
+                                                color: AppColors.primary,
+                                                size: 28,
+                                              ),
+                                            ),
+                                  ),
+                        ),
+
+                        const SizedBox(width: 12),
+
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.1,
+                                  height: 1.2,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                              ),
+                              if (subtitle != null &&
+                                  subtitle.trim().isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.grey.shade500,
+                                    letterSpacing: -0.05,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+
+                        // Eye icon (documents only)
+                        if (isDocument) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _openPreview(item),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.blueGrey.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child:
+                                  _previewLoading.contains(item.id)
+                                      ? SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.blueGrey.shade400,
+                                              ),
+                                        ),
+                                      )
+                                      : Icon(
+                                        Icons.remove_red_eye_outlined,
+                                        size: 18,
+                                        color: Colors.blueGrey.shade400,
+                                      ),
+                            ),
+                          ),
+                        ],
+
+                        // Info icon
+                        if (isObject) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleInfo(item.id);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color:
+                                    infoExpanded
+                                        ? AppColors.primary.withOpacity(0.15)
+                                        : AppColors.primary.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                infoExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.info_outline,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ] else
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: Colors.grey.shade300,
+                          ),
+                      ],
                     ),
                   ),
+
+                  if (infoExpanded && isObject) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    ObjectInfoDropdown(obj: asViewObj!),
+                  ],
+
+                  if (relationshipsExpanded && hasRelationships) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: RelationshipsDropdown(
+                        key: ValueKey('rel_${item.id}'),
+                        obj: asViewObj!,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
-      if (!isLast)
-        Divider(
-          height: 0.5,
-          thickness: 0.5,
-          indent: 64,
-          color: Colors.black.withOpacity(0.06),
-        ),
-    ],
-  );
-}
+        if (!isLast)
+          Divider(
+            height: 0.5,
+            thickness: 0.5,
+            indent: 64,
+            color: Colors.black.withOpacity(0.06),
+          ),
+      ],
+    );
+  }
 
   Future<void> _handleTap(ViewContentItem item) async {
     if (!item.isObject) {
@@ -1312,7 +1323,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
 
                   if (objectType == null) {
                     if (!mounted) break;
-                    SnackbarHelper.showWarning(context, 'Object type unavailable — please refresh');
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Object type unavailable — please refresh',
+                    );
                     break;
                   }
 
@@ -1558,11 +1572,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                 child: GestureDetector(
                                   behavior: HitTestBehavior.translucent,
                                   onTap: () {
-                                    if (_expandedInfoItemId != null ||
-                                        _expandedRelationshipsItemId != null) {
+                                    if (_expandedInfoItemIds.isNotEmpty ||
+                                        _expandedRelationshipsItemIds
+                                            .isNotEmpty) {
                                       setState(() {
-                                        _expandedInfoItemId = null;
-                                        _expandedRelationshipsItemId = null;
+                                        _expandedInfoItemIds.clear();
+                                        _expandedRelationshipsItemIds.clear();
                                       });
                                     }
                                   },

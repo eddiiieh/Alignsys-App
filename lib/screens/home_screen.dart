@@ -86,8 +86,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   String _selectionFilter = '';
 
-  int? _expandedInfoItemId;
-  int? _expandedRelationshipsItemId;
+  final Set<int> _expandedInfoItemIds = {};
+  final Set<int> _expandedRelationshipsItemIds = {};
 
   final Set<int> _previewLoading = {};
 
@@ -174,6 +174,8 @@ class _HomeScreenState extends State<HomeScreen>
     setState(() {
       _selectedIds.clear();
       _selectedObjects.clear();
+      _expandedInfoItemIds.clear();
+      _expandedRelationshipsItemIds.clear();
     });
   }
 
@@ -489,7 +491,7 @@ class _HomeScreenState extends State<HomeScreen>
           child: const Icon(
             Icons.folder_copy_rounded,
             size: 22,
-            color: AppColors.primary,
+            color: Color(0xFF4CAF50),
           ),
         ),
       ),
@@ -550,6 +552,8 @@ class _HomeScreenState extends State<HomeScreen>
   void _onTabChanged(int index) {
     if (_selectionMode) {
       _clearSelection();
+      _expandedInfoItemIds.clear();
+      _expandedRelationshipsItemIds.clear();
     }
     final service = context.read<MFilesService>();
     final tab = tabs[index];
@@ -2045,25 +2049,24 @@ class _HomeScreenState extends State<HomeScreen>
     // info dropdown. Just identify the item and offer Restore.
     final bool canExpand = obj.id != 0 && !isTrashTab;
 
-    final bool infoExpanded = canExpand && _expandedInfoItemId == obj.id;
-    final bool relationshipsExpanded =
-        canExpand && _expandedRelationshipsItemId == obj.id;
-    final bool isDimmed =
-        canExpand && _expandedInfoItemId != null && !infoExpanded;
+    final bool infoExpanded =
+    canExpand && _expandedInfoItemIds.contains(obj.id);
+final bool relationshipsExpanded =
+    canExpand && _expandedRelationshipsItemIds.contains(obj.id);
 
     if (canExpand && svc.cachedHasRelationships(obj.id) == null) {
-      svc.ensureRelationshipsPresenceForObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-        versionId: obj.versionId,
-        notify: false,
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        svc.ensureRelationshipsPresenceForObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+          versionId: obj.versionId,
+          notify: true,
+        );
+      });
     }
 
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
-      opacity: isDimmed ? 0.45 : 1.0,
-      child: Container(
+    return Container(
         margin: const EdgeInsets.only(bottom: 8),
         decoration: BoxDecoration(
           color:
@@ -2071,28 +2074,30 @@ class _HomeScreenState extends State<HomeScreen>
                   ? AppColors.primary.withOpacity(0.12)
                   : Colors.white,
           borderRadius: BorderRadius.circular(12),
-          border:
-              infoExpanded
-                  ? Border.all(color: AppColors.primary, width: 1.5)
-                  : null,
+         
+          //ADDED: Softer, multi-layered elevation for the expanded state
           boxShadow:
-              infoExpanded
-                  ? [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.25),
-                      blurRadius: 14,
-                      spreadRadius: 1,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                  : [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-        ),
+            (infoExpanded || relationshipsExpanded)
+                ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+                : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+          ),
         child: Column(
           children: [
             Material(
@@ -2104,10 +2109,7 @@ class _HomeScreenState extends State<HomeScreen>
                     _toggleSelection(obj);
                     return;
                   }
-                  if (isDimmed) {
-                    setState(() => _expandedInfoItemId = null);
-                    return;
-                  }
+                  
                   await Navigator.push<bool>(
                     context,
                     MaterialPageRoute(
@@ -2136,14 +2138,18 @@ class _HomeScreenState extends State<HomeScreen>
                           color: Colors.transparent,
                           child: InkWell(
                             onTap:
-                                () => setState(() {
-                                  if (_expandedRelationshipsItemId == obj.id) {
-                                    _expandedRelationshipsItemId = null;
-                                  } else {
-                                    _expandedRelationshipsItemId = obj.id;
-                                    _expandedInfoItemId = null;
-                                  }
-                                }),
+                              () => setState(() {
+                                if (_expandedRelationshipsItemIds.contains(
+                                  obj.id,
+                                )) {
+                                  _expandedRelationshipsItemIds.remove(obj.id);
+                                } else {
+                                  _expandedRelationshipsItemIds.add(obj.id);
+                                  _expandedInfoItemIds.remove(
+                                    obj.id,
+                                  ); // keep per-item mutual exclusion
+                                }
+                              }),
                             borderRadius: BorderRadius.circular(4),
                             child: Padding(
                               padding: const EdgeInsets.all(4),
@@ -2286,14 +2292,16 @@ class _HomeScreenState extends State<HomeScreen>
                             color: Colors.transparent,
                             child: InkWell(
                               onTap:
-                                  () => setState(() {
-                                    if (_expandedInfoItemId == obj.id) {
-                                      _expandedInfoItemId = null;
-                                    } else {
-                                      _expandedInfoItemId = obj.id;
-                                      _expandedRelationshipsItemId = null;
-                                    }
-                                  }),
+                                () => setState(() {
+                                  if (_expandedInfoItemIds.contains(obj.id)) {
+                                    _expandedInfoItemIds.remove(obj.id);
+                                  } else {
+                                    _expandedInfoItemIds.add(obj.id);
+                                    _expandedRelationshipsItemIds.remove(
+                                      obj.id,
+                                    );
+                                  }
+                                }),
                               borderRadius: BorderRadius.circular(20),
                               child: Container(
                                 padding: const EdgeInsets.all(6),
@@ -2343,8 +2351,7 @@ class _HomeScreenState extends State<HomeScreen>
             ],
           ],
         ),
-      ),
-    );
+      );
   }
 
   // New: clear, tappable Restore pill for the Trash tab.
@@ -2927,7 +2934,7 @@ class _HomeScreenState extends State<HomeScreen>
                                                     Divider(
                                                       height: 1,
                                                       thickness: 0.5,
-                                                      indent: 44,
+                                                      indent: 52,
                                                       color: Colors.black
                                                           .withOpacity(0.06),
                                                     ),

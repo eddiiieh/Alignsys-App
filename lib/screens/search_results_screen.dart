@@ -45,8 +45,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   String? _errorMessage;
   bool _isWarming = false;
 
-  int? _expandedInfoItemId;
-  int? _expandedRelationshipsItemId;
+  final Set<int> _expandedInfoItemIds = {};
+  final Set<int> _expandedRelationshipsItemIds = {};
 
   // Incrementing request ID to track the latest search request
   int _searchRequestId = 0;
@@ -107,6 +107,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       _selectedObjects.clear();
       _showSelectedOnly = false;
       _searchWhileSelecting = false;
+      _expandedInfoItemIds.clear();
+      _expandedRelationshipsItemIds.clear();
     });
   }
 
@@ -217,8 +219,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         _hasSearched = true;
         _isSearching = false;
         _isWarming = true;
-        _expandedInfoItemId = null;
-        _expandedRelationshipsItemId = null;
+        _expandedInfoItemIds.clear();
+        _expandedRelationshipsItemIds.clear();
       });
 
       await Future.wait([
@@ -627,352 +629,611 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     final allClasses = svc.getAllClasses();
 
-    // Local working copies so closing without Apply doesn't change state
     Set<int> workingTypes = Set.from(_selectedObjectTypeIds);
     int? workingClassId = _selectedClassId;
 
     bool objectTypeExpanded = false;
     bool classExpanded = false;
 
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) {
-        final screenHeight = MediaQuery.of(context).size.height;
-        final isShortScreen = screenHeight < 700;
+    // NEW: local search state for the filter sheet
+    final filterSearchController = TextEditingController();
+    String filterQuery = '';
 
-        return DraggableScrollableSheet(
-          initialChildSize: isShortScreen ? 0.75 : 0.62,
-          minChildSize: isShortScreen ? 0.55 : 0.4,
-          maxChildSize: 0.9,
-          expand: false,
-          builder: (context, scrollController) {
-            return StatefulBuilder(
-              builder: (ctx, setSheet) {
-                final activeCount =
-                    workingTypes.length + (workingClassId != null ? 1 : 0);
+    try {
+      await showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) {
+          final screenHeight = MediaQuery.of(context).size.height;
+          final isShortScreen = screenHeight < 700;
 
-                final screenWidth = MediaQuery.of(ctx).size.width;
-                final sheetWidth = screenWidth > 480 ? 480.0 : screenWidth;
+          return DraggableScrollableSheet(
+            initialChildSize: isShortScreen ? 0.75 : 0.62,
+            minChildSize: isShortScreen ? 0.55 : 0.4,
+            maxChildSize: 0.9,
+            expand: false,
+            builder: (context, scrollController) {
+              return StatefulBuilder(
+                builder: (ctx, setSheet) {
+                  final activeCount =
+                      workingTypes.length + (workingClassId != null ? 1 : 0);
 
-                return Center(
-                  child: SizedBox(
-                    width: sheetWidth,
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(20),
+                  final screenWidth = MediaQuery.of(ctx).size.width;
+                  final sheetWidth = screenWidth > 480 ? 480.0 : screenWidth;
+
+                  // NEW: derived search state — filters both lists at once
+                  final q = filterQuery.trim().toLowerCase();
+                  final searching = q.isNotEmpty;
+
+                  final filteredTypes =
+                      searching
+                          ? svc.objectTypes
+                              .where(
+                                (ot) =>
+                                    ot.displayName.toLowerCase().contains(q),
+                              )
+                              .toList()
+                          : svc.objectTypes;
+
+                  final filteredClasses =
+                      searching
+                          ? allClasses
+                              .where(
+                                (c) => c.displayName.toLowerCase().contains(q),
+                              )
+                              .toList()
+                          : allClasses;
+
+                  // Hide sections with no matches while searching
+                  final showTypesSection =
+                      !searching || filteredTypes.isNotEmpty;
+                  final showClassesSection =
+                      !searching || filteredClasses.isNotEmpty;
+
+                  // Force-expand matching sections while searching
+                  final typesExpanded =
+                      searching ? filteredTypes.isNotEmpty : objectTypeExpanded;
+                  final classesExpanded =
+                      searching ? filteredClasses.isNotEmpty : classExpanded;
+
+                  final noResults =
+                      searching &&
+                      filteredTypes.isEmpty &&
+                      filteredClasses.isEmpty;
+
+                  return Center(
+                    child: SizedBox(
+                      width: sheetWidth,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(20),
+                          ),
                         ),
-                      ),
-                      child: Column(
-                        children: [
-                          const SizedBox(height: 10),
-                          Container(
-                            width: 36,
-                            height: 5,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade300,
-                              borderRadius: BorderRadius.circular(2.5),
+                        child: Column(
+                          children: [
+                            const SizedBox(height: 10),
+                            Container(
+                              width: 36,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(2.5),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 14),
 
-                          // Teal header card (kept)
-                          Container(
-                            width: double.infinity,
-                            margin: const EdgeInsets.symmetric(horizontal: 20),
-                            padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: const Icon(
-                                    Icons.tune_rounded,
-                                    color: Colors.white,
-                                    size: 20,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'Filter Search',
-                                        style: TextStyle(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        activeCount == 0
-                                            ? 'Refine results by type or class'
-                                            : '$activeCount filter${activeCount == 1 ? '' : 's'} selected',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.white70,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.close,
-                                    color: Colors.white70,
-                                  ),
-                                  onPressed: () => Navigator.pop(ctx),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          // Clean body — no nested containers
-                          Expanded(
-                            child: ListView(
-                              controller: scrollController,
-                              padding: const EdgeInsets.symmetric(
+                            // ── Header card (unchanged) ──
+                            Container(
+                              width: double.infinity,
+                              margin: const EdgeInsets.symmetric(
                                 horizontal: 20,
                               ),
-                              children: [
-                                _buildFilterSectionHeader(
-                                  title: 'Object Type',
-                                  count: workingTypes.length,
-                                  expanded: objectTypeExpanded,
-                                  onToggle:
-                                      () => setSheet(
-                                        () =>
-                                            objectTypeExpanded =
-                                                !objectTypeExpanded,
-                                      ),
-                                ),
-                                AnimatedSize(
-                                  duration: const Duration(milliseconds: 200),
-                                  curve: Curves.easeInOut,
-                                  alignment: Alignment.topCenter,
-                                  child:
-                                      objectTypeExpanded
-                                          ? Column(
-                                            children: [
-                                              for (
-                                                int i = 0;
-                                                i < svc.objectTypes.length;
-                                                i++
-                                              ) ...[
-                                                _buildFilterRow(
-                                                  label:
-                                                      svc
-                                                          .objectTypes[i]
-                                                          .displayName,
-                                                  selected: workingTypes
-                                                      .contains(
-                                                        svc.objectTypes[i].id,
-                                                      ),
-                                                  multiSelect: true,
-                                                  onTap: () {
-                                                    setSheet(() {
-                                                      final id =
-                                                          svc.objectTypes[i].id;
-                                                      if (!workingTypes.remove(
-                                                        id,
-                                                      )) {
-                                                        workingTypes.add(id);
-                                                      }
-                                                    });
-                                                  },
-                                                ),
-                                                if (i !=
-                                                    svc.objectTypes.length - 1)
-                                                  Divider(
-                                                    height: 1,
-                                                    color: Colors.grey.shade100,
-                                                    indent: 16,
-                                                  ),
-                                              ],
-                                            ],
-                                          )
-                                          : const SizedBox.shrink(),
-                                ),
-
-                                const SizedBox(height: 24),
-
-                                _buildFilterSectionHeader(
-                                  title: 'Class',
-                                  count: workingClassId != null ? 1 : 0,
-                                  expanded: classExpanded,
-                                  onToggle:
-                                      () => setSheet(
-                                        () => classExpanded = !classExpanded,
-                                      ),
-                                ),
-                                AnimatedSize(
-                                  duration: const Duration(milliseconds: 200),
-                                  curve: Curves.easeInOut,
-                                  alignment: Alignment.topCenter,
-                                  child:
-                                      classExpanded
-                                          ? Column(
-                                            children: [
-                                              _buildFilterRow(
-                                                label: 'Any class',
-                                                selected:
-                                                    workingClassId == null,
-                                                multiSelect: false,
-                                                onTap:
-                                                    () => setSheet(
-                                                      () =>
-                                                          workingClassId = null,
-                                                    ),
-                                              ),
-                                              for (
-                                                int i = 0;
-                                                i < allClasses.length;
-                                                i++
-                                              ) ...[
-                                                Divider(
-                                                  height: 1,
-                                                  color: Colors.grey.shade100,
-                                                  indent: 16,
-                                                ),
-                                                _buildFilterRow(
-                                                  label:
-                                                      allClasses[i].displayName,
-                                                  selected:
-                                                      workingClassId ==
-                                                      allClasses[i].id,
-                                                  multiSelect: false,
-                                                  onTap:
-                                                      () => setSheet(
-                                                        () =>
-                                                            workingClassId =
-                                                                allClasses[i]
-                                                                    .id,
-                                                      ),
-                                                ),
-                                              ],
-                                            ],
-                                          )
-                                          : const SizedBox.shrink(),
-                                ),
-
-                                const SizedBox(height: 16),
-                              ],
-                            ),
-                          ),
-
-                          // Sticky bottom actions
-                          Container(
-                            padding: EdgeInsets.fromLTRB(
-                              20,
-                              12,
-                              20,
-                              MediaQuery.of(ctx).viewInsets.bottom + 16,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              border: Border(
-                                top: BorderSide(color: Colors.grey.shade100),
+                              padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Icon(
+                                      Icons.tune_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Filter Search',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.white,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          activeCount == 0
+                                              ? 'Refine results by type or class'
+                                              : '$activeCount filter${activeCount == 1 ? '' : 's'} selected',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.white70,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.close,
+                                      color: Colors.white70,
+                                    ),
+                                    onPressed: () => Navigator.pop(ctx),
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(),
+                                  ),
+                                ],
                               ),
                             ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: TextButton(
-                                    onPressed:
-                                        activeCount == 0
-                                            ? null
-                                            : () {
-                                              setSheet(() {
-                                                workingTypes = {};
-                                                workingClassId = null;
-                                              });
-                                            },
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: Colors.grey.shade700,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Clear',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  flex: 2,
-                                  child: ElevatedButton(
-                                    onPressed: () {
-                                      setState(() {
-                                        _selectedObjectTypeIds
-                                          ..clear()
-                                          ..addAll(workingTypes);
-                                        _selectedClassId = workingClassId;
-                                      });
-                                      Navigator.pop(ctx);
-                                      if (_lastQuery.isNotEmpty) {
-                                        _runSearch(_lastQuery);
-                                      }
-                                    },
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.primary,
-                                      foregroundColor: Colors.white,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(
-                                        vertical: 14,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      activeCount == 0
-                                          ? 'Apply'
-                                          : 'Apply ($activeCount)',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
+
+                            const SizedBox(height: 12),
+
+                            // ── NEW: Apple-style search bar ──
+                            _buildFilterSearchBar(
+                              controller: filterSearchController,
+                              query: filterQuery,
+                              onChanged: (v) => setSheet(() => filterQuery = v),
+                              onClear: () {
+                                filterSearchController.clear();
+                                setSheet(() => filterQuery = '');
+                              },
                             ),
-                          ),
-                        ],
+
+                            const SizedBox(height: 4),
+
+                            // ── Body ──
+                            Expanded(
+                              child: ListView(
+                                controller: scrollController,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                ),
+                                children: [
+                                  if (noResults) ...[
+                                    const SizedBox(height: 60),
+                                    _buildFilterNoResults(filterQuery),
+                                  ] else ...[
+                                    if (showTypesSection) ...[
+                                      _buildFilterSectionHeader(
+                                        title: 'Object Type',
+                                        count: workingTypes.length,
+                                        expanded: typesExpanded,
+                                        onToggle:
+                                            searching
+                                                ? null
+                                                : () => setSheet(
+                                                  () =>
+                                                      objectTypeExpanded =
+                                                          !objectTypeExpanded,
+                                                ),
+                                      ),
+                                      AnimatedSize(
+                                        duration: const Duration(
+                                          milliseconds: 200,
+                                        ),
+                                        curve: Curves.easeInOut,
+                                        alignment: Alignment.topCenter,
+                                        child:
+                                            typesExpanded
+                                                ? Column(
+                                                  children: [
+                                                    for (
+                                                      int i = 0;
+                                                      i < filteredTypes.length;
+                                                      i++
+                                                    ) ...[
+                                                      _buildFilterRow(
+                                                        label:
+                                                            filteredTypes[i]
+                                                                .displayName,
+                                                        selected: workingTypes
+                                                            .contains(
+                                                              filteredTypes[i]
+                                                                  .id,
+                                                            ),
+                                                        multiSelect: true,
+                                                        query: filterQuery,
+                                                        onTap: () {
+                                                          setSheet(() {
+                                                            final id =
+                                                                filteredTypes[i]
+                                                                    .id;
+                                                            if (!workingTypes
+                                                                .remove(id)) {
+                                                              workingTypes.add(
+                                                                id,
+                                                              );
+                                                            }
+                                                          });
+                                                        },
+                                                      ),
+                                                      if (i !=
+                                                          filteredTypes.length -
+                                                              1)
+                                                        Divider(
+                                                          height: 1,
+                                                          color:
+                                                              Colors
+                                                                  .grey
+                                                                  .shade100,
+                                                          indent: 16,
+                                                        ),
+                                                    ],
+                                                  ],
+                                                )
+                                                : const SizedBox.shrink(),
+                                      ),
+                                      const SizedBox(height: 24),
+                                    ],
+
+                                    if (showClassesSection) ...[
+                                      _buildFilterSectionHeader(
+                                        title: 'Class',
+                                        count: workingClassId != null ? 1 : 0,
+                                        expanded: classesExpanded,
+                                        onToggle:
+                                            searching
+                                                ? null
+                                                : () => setSheet(
+                                                  () =>
+                                                      classExpanded =
+                                                          !classExpanded,
+                                                ),
+                                      ),
+                                      AnimatedSize(
+                                        duration: const Duration(
+                                          milliseconds: 200,
+                                        ),
+                                        curve: Curves.easeInOut,
+                                        alignment: Alignment.topCenter,
+                                        child:
+                                            classesExpanded
+                                                ? Column(
+                                                  children: [
+                                                    if (!searching)
+                                                      _buildFilterRow(
+                                                        label: 'Any class',
+                                                        selected:
+                                                            workingClassId ==
+                                                            null,
+                                                        multiSelect: false,
+                                                        onTap:
+                                                            () => setSheet(
+                                                              () =>
+                                                                  workingClassId =
+                                                                      null,
+                                                            ),
+                                                      ),
+                                                    for (
+                                                      int i = 0;
+                                                      i <
+                                                          filteredClasses
+                                                              .length;
+                                                      i++
+                                                    ) ...[
+                                                      if (!searching || i > 0)
+                                                        Divider(
+                                                          height: 1,
+                                                          color:
+                                                              Colors
+                                                                  .grey
+                                                                  .shade100,
+                                                          indent: 16,
+                                                        ),
+                                                      _buildFilterRow(
+                                                        label:
+                                                            filteredClasses[i]
+                                                                .displayName,
+                                                        selected:
+                                                            workingClassId ==
+                                                            filteredClasses[i]
+                                                                .id,
+                                                        multiSelect: false,
+                                                        query: filterQuery,
+                                                        onTap:
+                                                            () => setSheet(
+                                                              () =>
+                                                                  workingClassId =
+                                                                      filteredClasses[i]
+                                                                          .id,
+                                                            ),
+                                                      ),
+                                                    ],
+                                                  ],
+                                                )
+                                                : const SizedBox.shrink(),
+                                      ),
+                                    ],
+
+                                    const SizedBox(height: 16),
+                                  ],
+                                ],
+                              ),
+                            ),
+
+                            // ── Sticky bottom actions (unchanged) ──
+                            Container(
+                              padding: EdgeInsets.fromLTRB(
+                                20,
+                                12,
+                                20,
+                                MediaQuery.of(ctx).viewInsets.bottom + 16,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                border: Border(
+                                  top: BorderSide(color: Colors.grey.shade100),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextButton(
+                                      onPressed:
+                                          activeCount == 0
+                                              ? null
+                                              : () {
+                                                setSheet(() {
+                                                  workingTypes = {};
+                                                  workingClassId = null;
+                                                });
+                                              },
+                                      style: TextButton.styleFrom(
+                                        foregroundColor: Colors.grey.shade700,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 14,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                      child: const Text(
+                                        'Clear',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    flex: 2,
+                                    child: ElevatedButton(
+                                      onPressed: () {
+                                        setState(() {
+                                          _selectedObjectTypeIds
+                                            ..clear()
+                                            ..addAll(workingTypes);
+                                          _selectedClassId = workingClassId;
+                                        });
+                                        Navigator.pop(ctx);
+                                        if (_lastQuery.isNotEmpty) {
+                                          _runSearch(_lastQuery);
+                                        }
+                                      },
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.primary,
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        padding: const EdgeInsets.symmetric(
+                                          vertical: 14,
+                                        ),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            12,
+                                          ),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        activeCount == 0
+                                            ? 'Apply'
+                                            : 'Apply ($activeCount)',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 15,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
+                  );
+                },
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      filterSearchController.dispose();
+    }
+  }
+
+  Widget _buildFilterNoResults(String query) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: const Color(0xFF767680).withOpacity(0.10),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(
+            Icons.search_off_rounded,
+            size: 28,
+            color: Color(0xFF8E8E93),
+          ),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          'No matches',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF1C1C1E),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Text(
+            'No object types or classes match "$query".',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: const Color(0xFF8E8E93).withOpacity(0.9),
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFilterHighlightedLabel(
+    String label,
+    String query,
+    bool selected,
+  ) {
+    final baseStyle = TextStyle(
+      fontSize: 15,
+      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+      color: selected ? AppColors.primary : const Color(0xFF1E293B),
+    );
+
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) {
+      return Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: baseStyle,
+      );
+    }
+
+    final lower = label.toLowerCase();
+    final spans = <TextSpan>[];
+    int start = 0;
+
+    while (true) {
+      final index = lower.indexOf(q, start);
+      if (index == -1) {
+        spans.add(TextSpan(text: label.substring(start)));
+        break;
+      }
+      if (index > start) {
+        spans.add(TextSpan(text: label.substring(start, index)));
+      }
+      spans.add(
+        TextSpan(
+          text: label.substring(index, index + q.length),
+          style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+      );
+      start = index + q.length;
+    }
+
+    return Text.rich(
+      TextSpan(style: baseStyle, children: spans),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  Widget _buildFilterSearchBar({
+    required TextEditingController controller,
+    required String query,
+    required ValueChanged<String> onChanged,
+    required VoidCallback onClear,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: const Color(0xFF767680).withOpacity(0.10),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            const SizedBox(width: 10),
+            Icon(
+              Icons.search_rounded,
+              size: 18,
+              color: const Color(0xFF8E8E93).withOpacity(0.9),
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: TextField(
+                controller: controller,
+                onChanged: onChanged,
+                style: const TextStyle(fontSize: 16, color: Color(0xFF1C1C1E)),
+                cursorColor: AppColors.primary,
+                textInputAction: TextInputAction.search,
+                decoration: InputDecoration(
+                  hintText: 'Search types and classes',
+                  hintStyle: TextStyle(
+                    fontSize: 16,
+                    color: const Color(0xFF8E8E93).withOpacity(0.7),
                   ),
-                );
-              },
-            );
-          },
-        );
-      },
+                  border: InputBorder.none,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+            if (query.isNotEmpty)
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onClear,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Icon(
+                    Icons.cancel,
+                    size: 18,
+                    color: const Color(0xFF8E8E93).withOpacity(0.8),
+                  ),
+                ),
+              )
+            else
+              const SizedBox(width: 10),
+          ],
+        ),
+      ),
     );
   }
 
@@ -980,8 +1241,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     required String title,
     required int count,
     required bool expanded,
-    required VoidCallback onToggle,
+    required VoidCallback? onToggle,
   }) {
+    final enabled = onToggle != null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1021,15 +1283,16 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 ),
               ],
               const Spacer(),
-              AnimatedRotation(
-                turns: expanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 200),
-                child: Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 22,
-                  color: Colors.grey.shade400,
+              if (enabled)
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 200),
+                  child: Icon(
+                    Icons.keyboard_arrow_down_rounded,
+                    size: 22,
+                    color: Colors.grey.shade400,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -1042,6 +1305,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     required bool selected,
     required bool multiSelect,
     required VoidCallback onTap,
+    String query = '',
   }) {
     return Material(
       color: Colors.transparent,
@@ -1053,17 +1317,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           child: Row(
             children: [
               Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    color:
-                        selected ? AppColors.primary : const Color(0xFF1E293B),
-                  ),
-                ),
+                child: _buildFilterHighlightedLabel(label, query, selected),
               ),
               const SizedBox(width: 8),
               if (multiSelect)
@@ -1710,316 +1964,312 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
     final bool canExpand = obj.id != 0;
     final bool isDoc = svc.isDocumentViewObject(obj);
-    final bool infoExpanded = _expandedInfoItemId == obj.id;
-    final bool relationshipsExpanded = _expandedRelationshipsItemId == obj.id;
-    final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+    final bool infoExpanded = _expandedInfoItemIds.contains(obj.id);
+    final bool relationshipsExpanded = _expandedRelationshipsItemIds.contains(
+      obj.id,
+    );
     final bool hasRelationships = svc.cachedHasRelationships(obj.id) == true;
 
     // Resolve extension for document rows
     final String? ext = isDoc ? svc.cachedExtensionForObject(obj.id) : null;
 
     if (canExpand && svc.cachedHasRelationships(obj.id) == null) {
-      svc.ensureRelationshipsPresenceForObject(
-        objectId: obj.id,
-        objectTypeId: obj.objectTypeId,
-        versionId: obj.versionId,
-        notify: false,
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        svc.ensureRelationshipsPresenceForObject(
+          objectId: obj.id,
+          objectTypeId: obj.objectTypeId,
+          versionId: obj.versionId,
+          notify: true,
+        );
+      });
     }
 
-    return AnimatedOpacity(
-      duration: const Duration(milliseconds: 200),
-      opacity: isDimmed ? 0.45 : 1.0,
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color:
-              _isSelected(obj.id)
-                  ? AppColors.primary.withOpacity(0.08)
-                  : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border:
-              infoExpanded
-                  ? Border.all(color: AppColors.primary, width: 1.5)
-                  : null,
-          boxShadow:
-              infoExpanded
-                  ? [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.25),
-                      blurRadius: 14,
-                      spreadRadius: 1,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                  : [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-        ),
-        child: Column(
-          children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () async {
-                  if (_selectionMode) {
-                    _toggleSelection(obj);
-                    return;
-                  }
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color:
+            _isSelected(obj.id)
+                ? AppColors.primary.withOpacity(0.08)
+                : Colors.white,
+        borderRadius: BorderRadius.circular(12),
 
-                  if (isDimmed) {
-                    setState(() => _expandedInfoItemId = null);
-                    return;
-                  }
-
-                  await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ObjectDetailsScreen(obj: obj),
-                    ),
-                  );
-                },
-
-                onLongPress: () {
-                  if (!_selectionMode) {
-                    _toggleSelection(obj);
-                  }
-                },
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+        // ADDED: Softer, multi-layered elevation for the expanded state
+        boxShadow:
+            (infoExpanded || relationshipsExpanded)
+                ? [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.08),
+                    blurRadius: 24,
+                    offset: const Offset(0, 8),
                   ),
-                  child: Row(
-                    children: [
-                      // Relationships chevron
-                      if (canExpand && hasRelationships) ...[
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                if (_expandedRelationshipsItemId == obj.id) {
-                                  _expandedRelationshipsItemId = null;
-                                } else {
-                                  _expandedRelationshipsItemId = obj.id;
-                                  _expandedInfoItemId = null;
-                                }
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(4),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                relationshipsExpanded
-                                    ? Icons.expand_more
-                                    : Icons.chevron_right,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+                : [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+      ),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () async {
+                if (_selectionMode) {
+                  _toggleSelection(obj);
+                  return;
+                }
+
+                await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ObjectDetailsScreen(obj: obj),
+                  ),
+                );
+              },
+
+              onLongPress: () {
+                if (!_selectionMode) {
+                  _toggleSelection(obj);
+                }
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    // Relationships chevron
+                    if (canExpand && hasRelationships) ...[
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              if (!_expandedRelationshipsItemIds.remove(
+                                obj.id,
+                              )) {
+                                _expandedRelationshipsItemIds.add(obj.id);
+                                _expandedInfoItemIds.remove(
+                                  obj.id,
+                                ); // per-row mutual exclusion
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              relationshipsExpanded
+                                  ? Icons.expand_more
+                                  : Icons.chevron_right,
+                              size: 18,
+                              color: AppColors.primary,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                      ] else
-                        const SizedBox(width: 4),
-
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child:
-                            (_selectionMode && _isSelected(obj.id))
-                                ? Container(
-                                  key: const ValueKey('selected'),
-                                  width: 42,
-                                  height: 42,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.check,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                                )
-                                : Container(
-                                  key: const ValueKey('normal'),
-                                  child: CheckoutBadge(
-                                    isCheckedOut:
-                                        svc.isCheckedOutLocally(obj.id) ||
-                                        obj.isCheckedOut,
-                                    checkoutUserId:
-                                        svc.checkoutOwnerId(obj.id) ??
-                                        obj.checkoutUserId,
-                                    child:
-                                        isDoc
-                                            ? FileTypeBadge(
-                                              extension: ext ?? '',
-                                              size: 28,
-                                            )
-                                            : svc.isMultiFile(
-                                              objectTypeId: obj.objectTypeId,
-                                              isSingleFile: obj.isSingleFile,
-                                            )
-                                            ? Container(
-                                              width: 28,
-                                              height: 28,
-                                              decoration: BoxDecoration(
-                                                color: AppColors.primary
-                                                    .withOpacity(0.10),
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                              ),
-                                              child: const Icon(
-                                                Icons.folder_copy_rounded,
-                                                size: 22,
-                                                color: AppColors.primary,
-                                              ),
-                                            )
-                                            : Container(
-                                              width: 28,
-                                              height: 28,
-
-                                              child: Icon(
-                                                svc.iconForViewObject(obj),
-                                                size: 28,
-                                                color: AppColors.primary,
-                                              ),
-                                            ),
-                                  ),
-                                ),
                       ),
+                      const SizedBox(width: 6),
+                    ] else
+                      const SizedBox(width: 4),
 
-                      const SizedBox(width: 12),
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child:
+                          (_selectionMode && _isSelected(obj.id))
+                              ? Container(
+                                key: const ValueKey('selected'),
+                                width: 42,
+                                height: 42,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              )
+                              : Container(
+                                key: const ValueKey('normal'),
+                                child: CheckoutBadge(
+                                  isCheckedOut:
+                                      svc.isCheckedOutLocally(obj.id) ||
+                                      obj.isCheckedOut,
+                                  checkoutUserId:
+                                      svc.checkoutOwnerId(obj.id) ??
+                                      obj.checkoutUserId,
+                                  child:
+                                      isDoc
+                                          ? FileTypeBadge(
+                                            extension: ext ?? '',
+                                            size: 28,
+                                          )
+                                          : svc.isMultiFile(
+                                            objectTypeId: obj.objectTypeId,
+                                            isSingleFile: obj.isSingleFile,
+                                          )
+                                          ? Container(
+                                            width: 28,
+                                            height: 28,
+                                            decoration: BoxDecoration(
+                                              color: AppColors.primary
+                                                  .withOpacity(0.10),
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                            child: const Icon(
+                                              Icons.folder_copy_rounded,
+                                              size: 22,
+                                              color: AppColors.primary,
+                                            ),
+                                          )
+                                          : Container(
+                                            width: 28,
+                                            height: 28,
 
-                      // Title + subtitle
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _HighlightedText(
-                              text: obj.title,
-                              query: _controller.text.trim(),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
+                                            child: Icon(
+                                              svc.iconForViewObject(obj),
+                                              size: 28,
+                                              color: AppColors.primary,
+                                            ),
+                                          ),
+                                ),
                               ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    // Title + subtitle
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _HighlightedText(
+                            text: obj.title,
+                            query: _controller.text.trim(),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
                             ),
-                          ],
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Eye icon (documents only)
+                    if (isDoc) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _openPreview(obj),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: Colors.blueGrey.withOpacity(0.08),
+                            shape: BoxShape.circle,
+                          ),
+                          child:
+                              _previewLoading.contains(obj.id)
+                                  ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.blueGrey.shade400,
+                                      ),
+                                    ),
+                                  )
+                                  : Icon(
+                                    Icons.remove_red_eye_outlined,
+                                    size: 18,
+                                    color: Colors.blueGrey.shade400,
+                                  ),
                         ),
                       ),
+                    ],
 
-                      // Eye icon (documents only)
-                      if (isDoc) ...[
-                        const SizedBox(width: 8),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _openPreview(obj),
+                    // Info icon (all expandable objects)
+                    if (canExpand) ...[
+                      const SizedBox(width: 8),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              if (!_expandedInfoItemIds.remove(obj.id)) {
+                                _expandedInfoItemIds.add(obj.id);
+                                _expandedRelationshipsItemIds.remove(obj.id);
+                              }
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(20),
                           child: Container(
                             padding: const EdgeInsets.all(6),
                             decoration: BoxDecoration(
-                              color: Colors.blueGrey.withOpacity(0.08),
+                              color:
+                                  infoExpanded
+                                      ? AppColors.primary.withOpacity(0.15)
+                                      : AppColors.primary.withOpacity(0.08),
                               shape: BoxShape.circle,
                             ),
-                            child:
-                                _previewLoading.contains(obj.id)
-                                    ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.blueGrey.shade400,
-                                            ),
-                                      ),
-                                    )
-                                    : Icon(
-                                      Icons.remove_red_eye_outlined,
-                                      size: 18,
-                                      color: Colors.blueGrey.shade400,
-                                    ),
-                          ),
-                        ),
-                      ],
-
-                      // Info icon (all expandable objects)
-                      if (canExpand) ...[
-                        const SizedBox(width: 8),
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                if (_expandedInfoItemId == obj.id) {
-                                  _expandedInfoItemId = null;
-                                } else {
-                                  _expandedInfoItemId = obj.id;
-                                  _expandedRelationshipsItemId = null;
-                                }
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(20),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color:
-                                    infoExpanded
-                                        ? AppColors.primary.withOpacity(0.15)
-                                        : AppColors.primary.withOpacity(0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                infoExpanded
-                                    ? Icons.keyboard_arrow_up_rounded
-                                    : Icons.info_outline,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
+                            child: Icon(
+                              infoExpanded
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.info_outline,
+                              size: 18,
+                              color: AppColors.primary,
                             ),
                           ),
                         ),
-                      ] else
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          size: 20,
-                          color: Colors.grey.shade400,
-                        ),
-                    ],
-                  ),
+                      ),
+                    ] else
+                      Icon(
+                        Icons.chevron_right_rounded,
+                        size: 20,
+                        color: Colors.grey.shade400,
+                      ),
+                  ],
                 ),
               ),
             ),
+          ),
 
-            if (infoExpanded && canExpand) ...[
-              Divider(height: 1, color: Colors.grey.shade200),
-              ObjectInfoDropdown(obj: obj),
-            ],
-
-            if (relationshipsExpanded && canExpand) ...[
-              Divider(height: 1, color: Colors.grey.shade200),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: RelationshipsDropdown(
-                  key: ValueKey('rel_${obj.id}'),
-                  obj: obj,
-                  initiallyExpanded: true,
-                ),
-              ),
-            ],
+          if (infoExpanded && canExpand) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            ObjectInfoDropdown(obj: obj),
           ],
-        ),
+
+          if (relationshipsExpanded && canExpand) ...[
+            Divider(height: 1, color: Colors.grey.shade200),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: RelationshipsDropdown(
+                key: ValueKey('rel_${obj.id}'),
+                obj: obj,
+                initiallyExpanded: true,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

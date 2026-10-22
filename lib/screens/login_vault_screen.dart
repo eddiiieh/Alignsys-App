@@ -23,6 +23,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
   bool _loading = false;
   bool _proceedLoading = false;
   bool _showPassword = false;
+  bool _showingVaults = false;
   List<Vault> _vaults = [];
   Vault? _selectedVault;
 
@@ -124,6 +125,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
       _passwordController.clear();
       _loading = false;
       _proceedLoading = false;
+      _showingVaults = false;
     });
   }
 
@@ -149,6 +151,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     try {
       final success = await mFilesService.login(username, password);
       if (!success) throw Exception('Login failed. Check credentials.');
+
+      FocusManager.instance.primaryFocus?.unfocus();
 
       // Tell the OS to save these credentials to Google Password Manager / Keychain
       TextInput.finishAutofillContext(shouldSave: true);
@@ -355,119 +359,147 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                 const SizedBox(height: 22),
 
                 // Animated area: login form slides out, vault picker slides in
-                ClipRect(
-                  child: Stack(
-                    children: [
-                      // ── LOGIN FORM ──
-                      SlideTransition(
-                        position: _loginSlide,
-                        child: Column(
-                          children: [
-                            const Text(
-                              'Welcome back',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            _buildCard(
-                              child: AutofillGroup(
+                    ClipRect(
+                      child: Stack(
+                        children: [
+                          // ── LOGIN FORM ──
+                          ExcludeFocus(
+                            excluding: _showingVaults,
+                            child: IgnorePointer(
+                              ignoring: _showingVaults,
+                              child: SlideTransition(
+                                position: _loginSlide,
                                 child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
                                   children: [
-                                    _buildTextField(
-                                      controller: _usernameController,
-                                      label: 'Email / Username',
-                                      icon: Icons.person_outline,
-                                      keyboardType: TextInputType.emailAddress,
-                                      errorText: _usernameError,
-                                      autofillHints: const [
-                                        AutofillHints.username,
-                                        AutofillHints.email,
-                                      ],
-                                    ),
-                                    const SizedBox(height: 16),
-                                    _buildTextField(
-                                      controller: _passwordController,
-                                      label: 'Password',
-                                      icon: Icons.lock_outline,
-                                      obscureText: !_showPassword,
-                                      autofillHints: const [AutofillHints.password],
-                                      suffixIcon: IconButton(
-                                        icon: Icon(
-                                          _showPassword
-                                              ? Icons.visibility
-                                              : Icons.visibility_off,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        onPressed: () => setState(
-                                            () => _showPassword = !_showPassword),
+                                    const Text(
+                                      'Welcome back',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
                                       ),
                                     ),
                                     const SizedBox(height: 12),
+                                    _buildCard(
+                                      child: AutofillGroup(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            _buildTextField(
+                                              controller: _usernameController,
+                                              label: 'Email / Username',
+                                              icon: Icons.person_outline,
+                                              keyboardType:
+                                                  TextInputType.emailAddress,
+                                              errorText: _usernameError,
+                                              autofillHints: const [
+                                                AutofillHints.username,
+                                                AutofillHints.email,
+                                              ],
+                                            ),
+                                            const SizedBox(height: 16),
+                                            _buildTextField(
+                                              controller: _passwordController,
+                                              label: 'Password',
+                                              icon: Icons.lock_outline,
+                                              obscureText: !_showPassword,
+                                              autofillHints: const [
+                                                AutofillHints.password,
+                                              ],
+                                              suffixIcon: IconButton(
+                                                icon: Icon(
+                                                  _showPassword
+                                                      ? Icons.visibility
+                                                      : Icons.visibility_off,
+                                                  color: Colors.grey.shade600,
+                                                ),
+                                                onPressed:
+                                                    () => setState(
+                                                      () =>
+                                                          _showPassword =
+                                                              !_showPassword,
+                                                    ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
 
-                                    // ── FORGOT PASSWORD LINK ──
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton(
-                                        onPressed: _showForgotPasswordSheet,
-                                        style: TextButton.styleFrom(
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 4, horizontal: 0),
-                                          minimumSize: Size.zero,
-                                          tapTargetSize:
-                                              MaterialTapTargetSize.shrinkWrap,
-                                        ),
-                                        child: Text(
-                                          'Forgot password?',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: _accentBlue.withOpacity(0.85),
-                                            fontWeight: FontWeight.w500,
-                                          ),
+                                            // ── FORGOT PASSWORD LINK ──
+                                            Align(
+                                              alignment: Alignment.centerRight,
+                                              child: TextButton(
+                                                onPressed:
+                                                    _showForgotPasswordSheet,
+                                                style: TextButton.styleFrom(
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        vertical: 4,
+                                                        horizontal: 0,
+                                                      ),
+                                                  minimumSize: Size.zero,
+                                                  tapTargetSize:
+                                                      MaterialTapTargetSize
+                                                          .shrinkWrap,
+                                                ),
+                                                child: Text(
+                                                  'Forgot password?',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    color: _accentBlue
+                                                        .withOpacity(0.85),
+                                                    fontWeight: FontWeight.w500,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+
+                                            const SizedBox(height: 12),
+                                            _loading
+                                                ? const Center(
+                                                  child: CircularProgressIndicator(
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                          Color
+                                                        >(_accentBlue),
+                                                  ),
+                                                )
+                                                : ElevatedButton(
+                                                  onPressed: _login,
+                                                  style: ElevatedButton.styleFrom(
+                                                    backgroundColor:
+                                                        _primaryBlue,
+                                                    foregroundColor:
+                                                        Colors.white,
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          vertical: 16,
+                                                        ),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            12,
+                                                          ),
+                                                    ),
+                                                    elevation: 2,
+                                                  ),
+                                                  child: const Text(
+                                                    'Login',
+                                                    style: TextStyle(
+                                                      fontSize: 16,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                          ],
                                         ),
                                       ),
                                     ),
-
-                                    const SizedBox(height: 12),
-                                    _loading
-                                        ? const Center(
-                                            child: CircularProgressIndicator(
-                                              valueColor:
-                                                  AlwaysStoppedAnimation<Color>(
-                                                      _accentBlue),
-                                            ),
-                                          )
-                                        : ElevatedButton(
-                                            onPressed: _login,
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: _primaryBlue,
-                                              foregroundColor: Colors.white,
-                                              padding: const EdgeInsets.symmetric(
-                                                  vertical: 16),
-                                              shape: RoundedRectangleBorder(
-                                                borderRadius:
-                                                    BorderRadius.circular(12),
-                                              ),
-                                              elevation: 2,
-                                            ),
-                                            child: const Text(
-                                              'Login',
-                                              style: TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.w600,
-                                              ),
-                                            ),
-                                          ),
                                   ],
                                 ),
                               ),
                             ),
-                          ],
-                        ),
-                      ),
+                          ),
 
                       // ── VAULT PICKER ──
                       SlideTransition(

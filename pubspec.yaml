@@ -2,7 +2,7 @@ name: mfiles_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.1.7+28
+version: 1.1.9+30
 
 environment:
   sdk: ^3.7.2
@@ -48,6 +48,9 @@ dev_dependencies:
   json_serializable: ^6.14.1
   flutter_launcher_icons: ^0.14.4
   rename: ^3.1.0
+
+dependency_overrides:
+  image: 4.10.1
 
 flutter:
   uses-material-design: true

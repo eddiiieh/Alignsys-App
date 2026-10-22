@@ -74,8 +74,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   final Set<int> _previewLoading = {};
 
-  int? _expandedInfoItemId;
-  int? _expandedRelationshipsItemId;
+  final Set<int> _expandedInfoItemIds = {};
+  final Set<int> _expandedRelationshipsItemIds = {};
 
   // ── Multi-selection ─────────────────────────────────────────────
 
@@ -164,8 +164,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     setState(() {
       _selectedIds.clear();
       _selectedObjects.clear();
-      _expandedInfoItemId = null;
-      _expandedRelationshipsItemId = null;
+      _expandedInfoItemIds.clear();
+      _expandedRelationshipsItemIds.clear();
       _searchWhileSelecting = false;
     });
   }
@@ -407,22 +407,18 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
 
   void _toggleInfo(int itemId) {
     setState(() {
-      if (_expandedInfoItemId == itemId) {
-        _expandedInfoItemId = null;
-      } else {
-        _expandedInfoItemId = itemId;
-        _expandedRelationshipsItemId = null;
+      if (!_expandedInfoItemIds.remove(itemId)) {
+        _expandedInfoItemIds.add(itemId);
+        _expandedRelationshipsItemIds.remove(itemId);
       }
     });
   }
 
   void _toggleRelationships(int itemId) {
     setState(() {
-      if (_expandedRelationshipsItemId == itemId) {
-        _expandedRelationshipsItemId = null;
-      } else {
-        _expandedRelationshipsItemId = itemId;
-        _expandedInfoItemId = null;
+      if (!_expandedRelationshipsItemIds.remove(itemId)) {
+        _expandedRelationshipsItemIds.add(itemId);
+        _expandedInfoItemIds.remove(itemId);
       }
     });
   }
@@ -443,7 +439,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       if (!mounted) return;
 
       if (files.isEmpty) {
-        SnackbarHelper.showWarning(context, 'No files attached to this document.');
+        SnackbarHelper.showWarning(
+          context,
+          'No files attached to this document.',
+        );
         return;
       }
 
@@ -469,7 +468,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      SnackbarHelper.showError(context, 'Failed to load preview: ${humanizeError(e.toString())}');
+      SnackbarHelper.showError(
+        context,
+        'Failed to load preview: ${humanizeError(e.toString())}',
+      );
     } finally {
       if (mounted) setState(() => _previewLoading.remove(item.id));
     }
@@ -592,323 +594,336 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   }
 
   Widget _buildRow(ViewContentItem item, bool isLast) {
-  final subtitle = _subtitleLabel(item);
-  final svc = context.watch<MFilesService>();
+    final subtitle = _subtitleLabel(item);
+    final svc = context.watch<MFilesService>();
 
-  final bool isObject = item.isObject && item.id > 0;
-  final bool hasRelationships = isObject && item.classId > 0;
-  final bool isDocument = isObject && svc.isDocumentContentItem(item);
+    final bool isObject = item.isObject && item.id > 0;
+    final bool hasRelationships = isObject && item.classId > 0;
+    final bool isDocument = isObject && svc.isDocumentContentItem(item);
 
-  if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        svc.ensureRelationshipsPresenceForObject(
-          objectId: item.id,
-          objectTypeId: item.objectTypeId,
-          versionId: item.versionId,
-          notify: true,
-        );
-      }
-    });
-  }
+    if (hasRelationships && svc.cachedHasRelationships(item.id) == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          svc.ensureRelationshipsPresenceForObject(
+            objectId: item.id,
+            objectTypeId: item.objectTypeId,
+            versionId: item.versionId,
+            notify: true,
+          );
+        }
+      });
+    }
 
-  final bool infoExpanded = _expandedInfoItemId == item.id;
-  final bool relationshipsExpanded = _expandedRelationshipsItemId == item.id;
-  final bool isDimmed = _expandedInfoItemId != null && !infoExpanded;
+    final bool infoExpanded = _expandedInfoItemIds.contains(item.id);
+    final bool relationshipsExpanded = _expandedRelationshipsItemIds.contains(
+      item.id,
+    );
 
-  final BorderRadius radius =
-      isLast
-          ? const BorderRadius.vertical(bottom: Radius.circular(12))
-          : BorderRadius.zero;
+    final BorderRadius radius =
+        infoExpanded
+            ? const BorderRadius.vertical(bottom: Radius.circular(12))
+            : BorderRadius.zero;
 
-  final ViewObject asViewObj = ViewObject(
-    id: item.id,
-    title: item.title,
-    objectTypeId: item.objectTypeId,
-    classId: item.classId,
-    versionId: item.versionId,
-    objectTypeName: item.objectTypeName ?? '',
-    classTypeName: item.classTypeName ?? '',
-    displayId: item.displayId ?? '',
-    createdUtc: item.createdUtc,
-    lastModifiedUtc: item.lastModifiedUtc,
-    isSingleFile: item.isSingleFile,
-    isCheckedOut: item.isCheckedOut,
-    checkoutUserId: item.checkoutUserId,
-    checkoutUsername: item.checkoutUsername,
-  );
+    final ViewObject asViewObj = ViewObject(
+      id: item.id,
+      title: item.title,
+      objectTypeId: item.objectTypeId,
+      classId: item.classId,
+      versionId: item.versionId,
+      objectTypeName: item.objectTypeName ?? '',
+      classTypeName: item.classTypeName ?? '',
+      displayId: item.displayId ?? '',
+      createdUtc: item.createdUtc,
+      lastModifiedUtc: item.lastModifiedUtc,
+      isSingleFile: item.isSingleFile,
+      isCheckedOut: item.isCheckedOut,
+      checkoutUserId: item.checkoutUserId,
+      checkoutUsername: item.checkoutUsername,
+    );
 
-  return Column(
-    children: [
-      AnimatedOpacity(
-        duration: const Duration(milliseconds: 200),
-        opacity: isDimmed ? 0.45 : 1.0,
-        child: Material(
-          color:
-              _isSelected(item.id)
-                  ? AppColors.primary.withValues(alpha: 0.12)
-                  : infoExpanded
-                  ? AppColors.primary.withValues(alpha: 0.03)
-                  : Colors.white,
-          shape: RoundedRectangleBorder(
+    return Column(
+      children: [
+        Container(
+          // 1. Moved background color and added custom BoxShadow here
+          decoration: BoxDecoration(
+            color:
+                _isSelected(item.id)
+                    ? AppColors.primary.withValues(alpha: 0.12)
+                    : Colors.white,
             borderRadius: radius,
-            side:
-                infoExpanded
-                    ? const BorderSide(color: AppColors.primary, width: 1.5)
-                    : BorderSide.none,
-          ),
-          clipBehavior: Clip.antiAlias,
-          elevation: 0,
-          child: InkWell(
-            borderRadius: radius,
-            onLongPress: () {
-              _toggleSelection(asViewObj);
-            },
-            onTap: () {
-              final now = DateTime.now();
-              if (_suppressRowTap) return;
-              if (_lastIconTap != null &&
-                  now.difference(_lastIconTap!) <
-                      const Duration(milliseconds: 350))
-                return;
-
-              if (isDimmed) {
-                setState(() {
-                  _expandedInfoItemId = null;
-                  _expandedRelationshipsItemId = null;
-                });
-                return;
-              }
-
-              if (_selectionMode) {
-                _toggleSelection(asViewObj);
-                return;
-              }
-
-              _handleTap(item);
-            },
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 14,
-                    vertical: 11,
-                  ),
-                  child: Row(
-                    children: [
-                      // Relationships chevron
-                      if (hasRelationships &&
-                          svc.cachedHasRelationships(item.id) == true) ...[
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (!_tryClaimIconTap()) return;
-                            _toggleRelationships(item.id);
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(4),
-                            child: Icon(
-                              relationshipsExpanded
-                                  ? Icons.expand_more
-                                  : Icons.chevron_right,
-                              size: 18,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                      ] else
-                        const SizedBox(width: 4),
-
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child:
-                            _isSelected(item.id)
-                                ? Container(
-                                  width: 38,
-                                  height: 38,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.check,
-                                    color: Colors.white,
-                                    size: 22,
-                                  ),
-                                )
-                                : CheckoutBadge(
-                                  isCheckedOut:
-                                      svc.isCheckedOutLocally(item.id) ||
-                                      item.isCheckedOut,
-                                  checkoutUserId:
-                                      svc.checkoutOwnerId(item.id) ??
-                                      item.checkoutUserId,
-                                  child:
-                                      (item.isObject &&
-                                              svc.isDocumentContentItem(item))
-                                          ? FileTypeBadge(
-                                            extension:
-                                                svc.cachedExtensionForObject(
-                                                  item.id,
-                                                ) ??
-                                                '',
-                                            size: 40,
-                                          )
-                                          : Container(
-                                            width: 38,
-                                            height: 38,
-                                            child: Icon(
-                                              isObject
-                                                  ? svc.iconForViewObject(
-                                                    asViewObj,
-                                                  )
-                                                  : Icons.folder_rounded,
-                                              color: AppColors.primary,
-                                              size: 28,
-                                            ),
-                                          ),
-                                ),
+            boxShadow:
+                (infoExpanded || relationshipsExpanded)
+                    ? [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.18),
+                        blurRadius: 24,
+                        offset: const Offset(0, 8),
                       ),
-
-                      const SizedBox(width: 12),
-
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              item.title,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14.5,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: -0.1,
-                                height: 1.2,
-                                color: Color(0xFF1A1A1A),
-                              ),
-                            ),
-                            if (subtitle != null &&
-                                subtitle.trim().isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w400,
-                                  color: Colors.grey.shade500,
-                                  letterSpacing: -0.05,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2),
                       ),
-
-                      // Eye / preview icon
-                      if (isDocument) ...[
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _openPreview(item),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: Colors.blueGrey.withOpacity(0.08),
-                              shape: BoxShape.circle,
-                            ),
-                            child:
-                                _previewLoading.contains(item.id)
-                                    ? SizedBox(
-                                      width: 18,
-                                      height: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        valueColor:
-                                            AlwaysStoppedAnimation<Color>(
-                                              Colors.blueGrey.shade400,
-                                            ),
-                                      ),
-                                    )
-                                    : Icon(
-                                      Icons.remove_red_eye_outlined,
-                                      size: 18,
-                                      color: Colors.blueGrey.shade400,
-                                    ),
-                          ),
-                        ),
-                      ],
-
-                      // Info icon
-                      if (isObject) ...[
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (!_tryClaimIconTap()) return;
-                            _toggleInfo(item.id);
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color:
-                                  infoExpanded
-                                      ? AppColors.primary.withOpacity(0.15)
-                                      : AppColors.primary.withOpacity(0.08),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              infoExpanded
-                                  ? Icons.keyboard_arrow_up_rounded
-                                  : Icons.info_outline,
-                              size: 18,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                      ] else
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          size: 18,
-                          color: Colors.grey.shade300,
-                        ),
+                    ]
+                    : [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset: const Offset(0, 2),
+                      ),
                     ],
-                  ),
-                ),
+          ),
+          child: Material(
+            // 2. Material is now transparent and has no elevation
+            color: Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: radius,
+              // side: Removed completely!
+            ),
+            clipBehavior: Clip.antiAlias,
+            elevation: 0,
+            child: InkWell(
+              borderRadius: radius,
+              onLongPress: () {
+                _toggleSelection(asViewObj);
+              },
+              onTap: () {
+                final now = DateTime.now();
+                if (_suppressRowTap) return;
+                if (_lastIconTap != null &&
+                    now.difference(_lastIconTap!) <
+                        const Duration(milliseconds: 350))
+                  return;
 
-                if (infoExpanded && isObject) ...[
-                  Divider(height: 1, color: Colors.grey.shade200),
-                  ObjectInfoDropdown(obj: asViewObj),
-                ],
+                if (_selectionMode) {
+                  _toggleSelection(asViewObj);
+                  return;
+                }
 
-                if (relationshipsExpanded && hasRelationships) ...[
-                  Divider(height: 1, color: Colors.grey.shade200),
+                _handleTap(item);
+              },
+              child: Column(
+                children: [
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                    child: RelationshipsDropdown(
-                      key: ValueKey('rel_${item.id}'),
-                      obj: asViewObj,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 11,
+                    ),
+                    child: Row(
+                      children: [
+                        // Relationships chevron
+                        if (hasRelationships &&
+                            svc.cachedHasRelationships(item.id) == true) ...[
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleRelationships(item.id);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(4),
+                              child: Icon(
+                                relationshipsExpanded
+                                    ? Icons.expand_more
+                                    : Icons.chevron_right,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ] else
+                          const SizedBox(width: 4),
+
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 180),
+                          child:
+                              _isSelected(item.id)
+                                  ? Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: const BoxDecoration(
+                                      color: AppColors.primary,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 22,
+                                    ),
+                                  )
+                                  : CheckoutBadge(
+                                    isCheckedOut:
+                                        svc.isCheckedOutLocally(item.id) ||
+                                        item.isCheckedOut,
+                                    checkoutUserId:
+                                        svc.checkoutOwnerId(item.id) ??
+                                        item.checkoutUserId,
+                                    child:
+                                        (item.isObject &&
+                                                svc.isDocumentContentItem(item))
+                                            ? FileTypeBadge(
+                                              extension:
+                                                  svc.cachedExtensionForObject(
+                                                    item.id,
+                                                  ) ??
+                                                  '',
+                                              size: 40,
+                                            )
+                                            : Container(
+                                              width: 38,
+                                              height: 38,
+                                              child: Icon(
+                                                isObject
+                                                    ? svc.iconForViewObject(
+                                                      asViewObj,
+                                                    )
+                                                    : Icons.folder_rounded,
+                                                color: AppColors.primary,
+                                                size: 28,
+                                              ),
+                                            ),
+                                  ),
+                        ),
+
+                        const SizedBox(width: 12),
+
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                item.title,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14.5,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.1,
+                                  height: 1.2,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                              ),
+                              if (subtitle != null &&
+                                  subtitle.trim().isNotEmpty) ...[
+                                const SizedBox(height: 3),
+                                Text(
+                                  subtitle,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w400,
+                                    color: Colors.grey.shade500,
+                                    letterSpacing: -0.05,
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+
+                        // Eye / preview icon
+                        if (isDocument) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () => _openPreview(item),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.blueGrey.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child:
+                                  _previewLoading.contains(item.id)
+                                      ? SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                Colors.blueGrey.shade400,
+                                              ),
+                                        ),
+                                      )
+                                      : Icon(
+                                        Icons.remove_red_eye_outlined,
+                                        size: 18,
+                                        color: Colors.blueGrey.shade400,
+                                      ),
+                            ),
+                          ),
+                        ],
+
+                        // Info icon
+                        if (isObject) ...[
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: () {
+                              if (!_tryClaimIconTap()) return;
+                              _toggleInfo(item.id);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color:
+                                    infoExpanded
+                                        ? AppColors.primary.withOpacity(0.15)
+                                        : AppColors.primary.withOpacity(0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                infoExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.info_outline,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ),
+                        ] else
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 18,
+                            color: Colors.grey.shade300,
+                          ),
+                      ],
                     ),
                   ),
+
+                  if (infoExpanded && isObject) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    ObjectInfoDropdown(obj: asViewObj),
+                  ],
+
+                  if (relationshipsExpanded && hasRelationships) ...[
+                    Divider(height: 1, color: Colors.grey.shade200),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                      child: RelationshipsDropdown(
+                        key: ValueKey('rel_${item.id}'),
+                        obj: asViewObj,
+                      ),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
         ),
-      ),
-      if (!isLast)
-        Divider(
-          height: 0.5,
-          thickness: 0.5,
-          indent: 64,
-          color: Colors.black.withOpacity(0.06),
-        ),
-    ],
-  );
-}
+        if (!isLast)
+          Divider(
+            height: 0.5,
+            thickness: 0.5,
+            indent: 64,
+            color: Colors.black.withOpacity(0.06),
+          ),
+      ],
+    );
+  }
 
   Future<void> _handleTap(ViewContentItem item) async {
     if (item.isObject) {
@@ -967,7 +982,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       ).hasMatch(key);
 
       if (key.isEmpty || dtype.isEmpty || looksLikeGuid) {
-        SnackbarHelper.showWarning(context, 'This grouping level cannot be opened.');
+        SnackbarHelper.showWarning(
+          context,
+          'This grouping level cannot be opened.',
+        );
         return;
       }
 
@@ -1192,13 +1210,17 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   _clearSelection();
 
                   final svc = context.read<MFilesService>();
-                  final objectType = svc.objectTypes
-                      .where((t) => t.id == src.objectTypeId)
-                      .firstOrNull;
+                  final objectType =
+                      svc.objectTypes
+                          .where((t) => t.id == src.objectTypeId)
+                          .firstOrNull;
 
                   if (objectType == null) {
                     if (!mounted) break;
-                    SnackbarHelper.showWarning(context, 'Object type unavailable — please refresh');
+                    SnackbarHelper.showWarning(
+                      context,
+                      'Object type unavailable — please refresh',
+                    );
                     break;
                   }
 
@@ -1208,17 +1230,23 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   });
 
                   try {
-                    await svc.fetchClassProperties(src.objectTypeId, src.classId);
+                    await svc.fetchClassProperties(
+                      src.objectTypeId,
+                      src.classId,
+                    );
 
                     List<Map<String, dynamic>>? srcProps;
                     try {
-                      final displayIdInt = int.tryParse(src.displayId) ?? src.id;
+                      final displayIdInt =
+                          int.tryParse(src.displayId) ?? src.id;
                       srcProps = await svc.fetchObjectViewProps(
                         objectId: displayIdInt,
                         objectTypeId: src.objectTypeId,
                       );
                     } catch (e) {
-                      debugPrint('⚠️ Make-a-copy: could not preload source props: $e');
+                      debugPrint(
+                        '⚠️ Make-a-copy: could not preload source props: $e',
+                      );
                     }
 
                     if (!mounted) break;
@@ -1226,11 +1254,12 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => DynamicFormScreen(
-                          objectType: objectType,
-                          copyFrom: src,
-                          copyFromPrefetchedProps: srcProps,
-                        ),
+                        builder:
+                            (_) => DynamicFormScreen(
+                              objectType: objectType,
+                              copyFrom: src,
+                              copyFromPrefetchedProps: srcProps,
+                            ),
                       ),
                     );
                   } finally {
@@ -1432,11 +1461,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                             : GestureDetector(
                               behavior: HitTestBehavior.translucent,
                               onTap: () {
-                                if (_expandedInfoItemId != null ||
-                                    _expandedRelationshipsItemId != null) {
+                                if (_expandedInfoItemIds.isNotEmpty ||
+                                    _expandedRelationshipsItemIds.isNotEmpty) {
                                   setState(() {
-                                    _expandedInfoItemId = null;
-                                    _expandedRelationshipsItemId = null;
+                                    _expandedInfoItemIds.clear();
+                                    _expandedRelationshipsItemIds.clear();
                                   });
                                 }
                               },

@@ -2083,7 +2083,7 @@ class MFilesService extends ChangeNotifier {
     required int versionId,
     required bool notify,
   }) async {
-    if (objectId <= 0 || objectTypeId <= 0) return;
+    if (objectId <= 0) return;
     if (_hasRelationshipsCache.containsKey(objectId)) return;
     if (_relInFlight.contains(objectId)) return;
 
@@ -2142,41 +2142,39 @@ class MFilesService extends ChangeNotifier {
               hasRel: groups.any((g) => g.items.isNotEmpty),
             );
           } catch (_) {
-            return (id: it.objectId, hasRel: false);
+            return (id: it.objectId, hasRel: null);
           }
         }),
       );
 
       for (final r in results) {
-        _hasRelationshipsCache[r.id] = r.hasRel;
+        debugPrint('rel warm: id=${r.id} result=${r.hasRel}');
         _relInFlight.remove(r.id);
-        _saveRelationshipToPrefs(r.id, r.hasRel);
+        if (r.hasRel == null) continue; 
+        _hasRelationshipsCache[r.id] = r.hasRel!;
+        _saveRelationshipToPrefs(r.id, r.hasRel!);
       }
 
       notifyListeners();
     }
   }
 
-  Future<void> warmRelationshipsForObjects(List<ViewObject> objects) async {
-    final items = objects.where((o) => o.id > 0 && o.objectTypeId > 0).toList();
-
-    final futures = items.map(
-      (o) => ensureRelationshipsPresenceForObject(
+  Future<void> warmRelationshipsForObjects(List<ViewObject> objects) {
+  final batch = objects
+      .where((o) => o.id > 0)
+      .map((o) => (
         objectId: o.id,
         objectTypeId: o.objectTypeId,
         versionId: o.versionId,
-        notify: false,
-      ),
-    );
-
-    await Future.wait(futures);
-    notifyListeners();
-  }
+      ))
+      .toList();
+  return _warmRelationshipsBatch(batch);
+}
 
   void warmRelationshipsForItems(List<ViewContentItem> items) {
     final batch =
         items
-            .where((it) => it.isObject && it.id > 0 && it.objectTypeId > 0)
+            .where((it) => it.isObject && it.id > 0)
             .map(
               (it) => (
                 objectId: it.id,
