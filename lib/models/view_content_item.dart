@@ -1,3 +1,4 @@
+import 'user_permissions.dart';
 
 class ViewContentItem {
   final String type;
@@ -14,10 +15,12 @@ class ViewContentItem {
   final int viewId;
   final String? propId;
   final String? propDatatype;
-  final bool isSingleFile;          // ← ADD
-  final bool isCheckedOut;            // ← ADD
-  final int? checkoutUserId;          // ← ADD
+  final bool isSingleFile;
+  final bool isCheckedOut;
+  final int? checkoutUserId;
   final String? checkoutUsername;
+  final UserPermission? userPermission; // NEW
+  final List<UserPermissionEntry> permissionEntries; // NEW
 
   ViewContentItem({
     required this.type,
@@ -34,16 +37,18 @@ class ViewContentItem {
     required this.viewId,
     required this.propId,
     required this.propDatatype,
-    required this.isSingleFile,     // ← ADD
-    required this.isCheckedOut,     // ← ADD
-    required this.checkoutUserId,   // ← ADD
-    required this.checkoutUsername, // ← ADD
+    required this.isSingleFile,
+    required this.isCheckedOut,
+    required this.checkoutUserId,
+    required this.checkoutUsername,
+    this.userPermission, // NEW
+    this.permissionEntries = const [], // NEW
   });
 
   bool get isObject => type == 'MFFolderContentItemTypeObjectVersion' && id > 0;
   bool get isGroupFolder => type == 'MFFolderContentItemTypePropertyFolder';
   bool get isViewFolder => type == 'MFFolderContentItemTypeViewFolder' && id > 0;
-  bool get isMultiFile => objectTypeId == 0 && !isSingleFile;   // ← ADD convenience getter
+  bool get isMultiFile => objectTypeId == 0 && !isSingleFile;
 
   static DateTime? _dt(dynamic v) {
     if (v == null) return null;
@@ -51,8 +56,31 @@ class ViewContentItem {
     return null;
   }
 
-  factory ViewContentItem.fromJson(Map<String, dynamic> m) {
+  factory ViewContentItem.fromJson(Map<String, dynamic> m, {int? forUserId}) {
     final rawPropId = m['propId'] ?? m['propID'] ?? m['propertyId'] ?? m['propertyID'];
+
+    // ── NEW PERMISSIONS PARSING ──
+    final rawPerm = m['userPermission'];
+    UserPermission? resolvedPermission;
+    List<UserPermissionEntry> entries = const [];
+
+    if (rawPerm is Map<String, dynamic>) {
+      resolvedPermission = UserPermission.fromJson(rawPerm);
+    } else if (rawPerm is List) {
+      entries = rawPerm
+          .whereType<Map<String, dynamic>>()
+          .map(UserPermissionEntry.fromJson)
+          .toList();
+      
+      if (forUserId != null) {
+        for (final e in entries) {
+          if (e.userId == forUserId) {
+            resolvedPermission = e.permission;
+            break;
+          }
+        }
+      }
+    }
 
     return ViewContentItem(
       type: (m['type'] as String?) ?? '',
@@ -69,10 +97,12 @@ class ViewContentItem {
       viewId: (m['viewId'] as num?)?.toInt() ?? -1,
       propId: rawPropId?.toString(),
       propDatatype: m['propDatatype']?.toString(),
-      isSingleFile: (m['isSingleFile'] as bool?) ?? true,       // ← ADD
-      isCheckedOut: (m['isCheckedOut'] as bool?) ?? false,       // ← ADD
+      isSingleFile: (m['isSingleFile'] as bool?) ?? true,
+      isCheckedOut: (m['isCheckedOut'] as bool?) ?? false,
       checkoutUserId: ((m['checkoutUserId'] ?? m['checkoutuserid']) as num?)?.toInt(),
-      checkoutUsername: (m['checkoutUsername'] ?? m['checkoutusername']) as String?,        // ← ADD
+      checkoutUsername: (m['checkoutUsername'] ?? m['checkoutusername']) as String?,
+      userPermission: resolvedPermission, // NEW
+      permissionEntries: entries,         // NEW
     );
   }
 }

@@ -3,6 +3,7 @@
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:mfiles_app/models/user_permissions.dart';
 import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/utils/error_messages.dart';
 import 'package:mfiles_app/widgets/file_type_badge.dart';
@@ -684,219 +685,33 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   // ── Show a dialog with the object's automatic permissions ──────────────────
   void _showPermissionsSheet() {
-    final obj = widget.obj;
-    final perms = obj.userPermission;
+    final svc = context.read<MFilesService>();
+
+    // 👇 ADD THIS DEBUG PRINT
+    debugPrint('=== PERMISSIONS DEBUG ===');
+    debugPrint('My User ID: ${svc.mfilesUserId}');
+    debugPrint('Entries received: ${widget.obj.permissionEntries.length}');
+    for (final e in widget.obj.permissionEntries) {
+      debugPrint(' -> User ${e.userId} (${e.displayName})');
+    }
+    debugPrint('=========================');
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (ctx) {
-        final screenHeight = MediaQuery.of(ctx).size.height; // NEW
-        return ConstrainedBox(
-          // NEW — caps height so it never runs off-screen
-          constraints: BoxConstraints(maxHeight: screenHeight * 0.85),
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-            child: SafeArea(
-              top: false,
-              child: SingleChildScrollView(
-                // NEW — content scrolls instead of overflowing
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            'Permissions',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary,
-                            ),
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () => Navigator.pop(ctx),
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Icon(
-                              Icons.close,
-                              size: 16,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'OBJECT INFORMATION',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: const Color.fromARGB(255, 0, 0, 0),
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _permInfoRow('Title', _title.isEmpty ? obj.title : _title),
-                    _permInfoRow('Type', obj.objectTypeName),
-                    _permInfoRow('Class', obj.classTypeName),
-                    const SizedBox(height: 16),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'PERMISSIONS',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          color: const Color.fromARGB(255, 5, 5, 5),
-                          letterSpacing: 0.8,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.grey.shade200),
-                      ),
-                      child: Column(
-                        children: [
-                          _permListRow(
-                            icon: Icons.visibility_outlined,
-                            label: 'Read',
-                            allowed: perms?.readPermission ?? false,
-                          ),
-                          _permListRow(
-                            icon: Icons.edit_outlined,
-                            label: 'Edit',
-                            allowed: perms?.editPermission ?? false,
-                          ),
-                          _permListRow(
-                            icon: Icons.delete_outline_rounded,
-                            label: 'Delete',
-                            allowed: perms?.deletePermission ?? false,
-                          ),
-                          _permListRow(
-                            icon: Icons.attach_file_rounded,
-                            label: 'Attach',
-                            allowed: perms?.attachObjectsPermission ?? false,
-                            isLast: true,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _permInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 70,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade500,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value.isEmpty ? '-' : value,
-              style: const TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF1E293B),
-              ),
-            ),
-          ),
-        ],
+      builder: (_) => _PermissionsSheet(
+        title: _title.isEmpty ? widget.obj.title : _title,
+        objectTypeName: widget.obj.objectTypeName,
+        className: widget.obj.classTypeName,
+        myPermission: widget.obj.userPermission,
+        allEntries: widget.obj.permissionEntries, // Requires Step 2
+        currentUserId: svc.mfilesUserId,
+        myFullName: svc.fullname ?? svc.username,
       ),
     );
   }
 
-  Widget _permListRow({
-    required IconData icon,
-    required String label,
-    required bool allowed,
-    bool isLast = false,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        border:
-            isLast
-                ? null
-                : Border(bottom: BorderSide(color: Colors.grey.shade100)),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: Colors.grey.shade500),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontSize: 14.5,
-                fontWeight: FontWeight.w500,
-                color: Color(0xFF1E293B),
-              ),
-            ),
-          ),
-          allowed
-              ? const Icon(
-                Icons.check_rounded,
-                size: 20,
-                color: AppColors.primary,
-              )
-              : Icon(
-                Icons.remove_rounded,
-                size: 18,
-                color: Colors.grey.shade300,
-              ),
-        ],
-      ),
-    );
-  }
 
   // ─────────────────────────────────────────────────────────────────────────
   // e-SIGN ─ SEND FOR SIGNING DIALOG
@@ -5726,7 +5541,7 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
       surfaceTintColor: Colors.transparent,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          maxHeight: MediaQuery.of(context).size.height * 0.95,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -6246,4 +6061,575 @@ class _PreparingCopyLoader extends StatelessWidget {
       ),
     );
   }
+}
+
+class _PermissionsSheet extends StatefulWidget {
+  final String title;
+  final String objectTypeName;
+  final String className;
+  final UserPermission? myPermission;
+  final List<UserPermissionEntry> allEntries;
+  final int? currentUserId;
+  final String? myFullName;
+
+  const _PermissionsSheet({
+    required this.title,
+    required this.objectTypeName,
+    required this.className,
+    required this.myPermission,
+    required this.allEntries,
+    required this.currentUserId,
+    required this.myFullName,
+  });
+
+  @override
+  State<_PermissionsSheet> createState() => _PermissionsSheetState();
+}
+
+class _PermissionsSheetState extends State<_PermissionsSheet> {
+  bool _showAllUsers = false;
+  final TextEditingController _searchCtrl = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  final GlobalKey _searchFieldKey = GlobalKey();
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchFocusNode.addListener(_onSearchFocusChanged);
+  }
+
+  void _onSearchFocusChanged() {
+    if (!_searchFocusNode.hasFocus) return;
+    // Give the keyboard inset animation time to settle before measuring.
+    Future.delayed(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      final ctx = _searchFieldKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+        alignment: 0.0, // align search field to top of visible viewport
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
+    _searchFocusNode.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // DEBUG PRINT
+    debugPrint('=== PERMISSIONS SHEET ===');
+    debugPrint('My User ID: ${widget.currentUserId}');
+    debugPrint('Total entries received: ${widget.allEntries.length}');
+    debugPrint('My Permission is null?: ${widget.myPermission == null}');
+    //
+
+    // Find the current user's entry in the list
+    final myEntry = widget.allEntries.firstWhere(
+      (e) => e.userId == widget.currentUserId,
+      orElse: () => UserPermissionEntry(
+        userId: widget.currentUserId ?? 0,
+        fullName: widget.myFullName ?? 'You',
+        permission: widget.myPermission ?? UserPermission.denyAll,
+      ),
+    );
+
+    // Extract everyone EXCEPT the current user
+    final others = widget.allEntries
+        .where((e) => e.userId != widget.currentUserId)
+        .toList();
+
+    // Apply search filter
+    final filteredOthers = others.where((e) {
+      if (_searchQuery.isEmpty) return true;
+      final query = _searchQuery.toLowerCase();
+      return e.displayName.toLowerCase().contains(query);
+    }).toList();
+
+    // Determine how many to show initially
+    // If searching, show all matches. If not searching, limit to 4 unless expanded.
+    final displayedUsers = _searchQuery.isNotEmpty
+        ? filteredOthers
+        : (_showAllUsers ? others : others.take(4).toList());
+
+    // Determine if the "Show all" pill should appear
+    final showAllButton = _searchQuery.isEmpty && others.length > 4;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+        child: SafeArea(
+          top: false,
+          child: SingleChildScrollView(
+            // Extra bottom room so the search field can clear the keyboard.
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Drag Handle ──
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // ── Header ──
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Permissions',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.close,
+                            size: 16, color: Colors.grey.shade600),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // ── Object Info ──
+                _sectionLabel('OBJECT INFORMATION'),
+                const SizedBox(height: 10),
+                _infoRow('Title', widget.title),
+                _infoRow('Type', widget.objectTypeName),
+                _infoRow('Class', widget.className),
+                const SizedBox(height: 22),
+
+                // ── Your Access ──
+                _sectionLabel('YOUR ACCESS'),
+                const SizedBox(height: 10),
+                _permissionLegend(),
+                const SizedBox(height: 10),
+                if (myEntry.permission.isClassDeleted) _classDeletedBanner(),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: AppColors.primary.withOpacity(0.3),
+                      width: 1.5,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      )
+                    ],
+                  ),
+                  child: _buildUserRow(myEntry, isMe: true, isLast: true),
+                ),
+
+                //
+
+
+                // ── Other Users ──
+                if (others.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  _sectionLabel('OTHER USERS WITH ACCESS (${others.length})'),
+                  const SizedBox(height: 10),
+
+                  // ── Search Bar ──
+                  Container(
+                    key: _searchFieldKey,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: TextField(
+                      controller: _searchCtrl,
+                      focusNode: _searchFocusNode,
+                      onChanged: (val) {
+                        setState(() => _searchQuery = val.trim());
+                      },
+                      style: const TextStyle(
+                          fontSize: 14, color: Color(0xFF1E293B)),
+                      decoration: InputDecoration(
+                        hintText: 'Search by name...',
+                        hintStyle: TextStyle(
+                            fontSize: 14, color: Colors.grey.shade400),
+                        prefixIcon: Icon(Icons.search,
+                            size: 20, color: Colors.grey.shade500),
+                        suffixIcon: _searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(Icons.clear,
+                                    size: 18, color: Colors.grey.shade500),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  setState(() => _searchQuery = '');
+                                  FocusScope.of(context).unfocus();
+                                },
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+
+                  // ── List Container ──
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (displayedUsers.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Center(
+                              child: Column(
+                                children: [
+                                  Icon(Icons.person_off_outlined,
+                                      size: 28, color: Colors.grey.shade300),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'No users found',
+                                    style: TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey.shade500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else
+                          // Bounded, independently-scrolling list.
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: MediaQuery.of(context).size.height *
+                                  0.35,
+                            ),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              padding: EdgeInsets.zero,
+                              physics: const ClampingScrollPhysics(),
+                              itemCount: displayedUsers.length,
+                              itemBuilder: (context, i) {
+                                return _buildUserRow(
+                                  displayedUsers[i],
+                                  isMe: false,
+                                  isLast:
+                                      i == displayedUsers.length - 1,
+                                );
+                              },
+                            ),
+                          ),
+
+                        // ── Show all / Show less (pinned below the list) ──
+                        if (showAllButton)
+                          InkWell(
+                            onTap: () => setState(
+                                () => _showAllUsers = !_showAllUsers),
+                            borderRadius: const BorderRadius.vertical(
+                                bottom: Radius.circular(14)),
+                            child: Container(
+                              width: double.infinity,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 14),
+                              decoration: BoxDecoration(
+                                border: Border(
+                                    top: BorderSide(
+                                        color: Colors.grey.shade100)),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  _showAllUsers
+                                      ? 'Show less'
+                                      : 'Show all ${others.length} users',
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 32),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Unified Row for Both You and Others ──
+  Widget _buildUserRow(UserPermissionEntry e, {required bool isMe, bool isLast = false}) {
+    final name = e.displayName;
+    
+    // Generate initials (e.g. "Mathew Namanda" -> "MN")
+    final parts = name.split(' ').where((s) => s.isNotEmpty).toList();
+    final initials = parts.length >= 2
+        ? '${parts.first[0]}${parts.last[0]}'.toUpperCase()
+        : name.substring(0, name.length.clamp(0, 2)).toUpperCase();
+
+    final p = e.permission;
+
+    return Container(
+      decoration: BoxDecoration(
+        border: isLast ? null : Border(bottom: BorderSide(color: Colors.grey.shade100)),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      child: Row(
+        children: [
+          // Avatar
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: isMe ? AppColors.primary : Colors.grey.shade200,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: Text(
+                initials,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: isMe ? Colors.white : Colors.grey.shade600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          
+          // Name & ID
+          Expanded(
+            child: Text(
+              name,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: isMe ? FontWeight.w700 : FontWeight.w600,
+                color: const Color(0xFF1E293B),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          
+          // Permission Badges (R E D A)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _miniPermChip('R', p.readPermission, isMe),
+              const SizedBox(width: 4),
+              _miniPermChip('E', p.editPermission, isMe),
+              const SizedBox(width: 4),
+              _miniPermChip('D', p.deletePermission, isMe),
+              const SizedBox(width: 4),
+              _miniPermChip('A', p.attachObjectsPermission, isMe),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Small badges for the list view
+  Widget _miniPermChip(String label, bool allowed, bool isMe) => Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        color: allowed
+            ? (isMe ? AppColors.primary : AppColors.primary.withOpacity(0.1))
+            : const Color(0xFFF1F5F9), // slate-100 – gives the letter a shape
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Center(
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            color: allowed
+                ? (isMe ? Colors.white : AppColors.primary)
+                : const Color(0xFF94A3B8), // slate-400 – legible on white
+          ),
+        ),
+      ),
+    );
+
+    //
+    Widget _permissionLegend() => Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: const [
+          Expanded(child: _LegendItem('R', 'Read')),
+          Expanded(child: _LegendItem('E', 'Edit')),
+          Expanded(child: _LegendItem('D', 'Delete')),
+          Expanded(child: _LegendItem('A', 'Attach')),
+        ],
+      ),
+    );
+
+  Widget _classDeletedBanner() => Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF8E1),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+        ),
+        child: const Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.warning_amber_rounded, size: 15, color: Color(0xFF92700A)),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'The class for this object has been deleted.',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF5C4A00),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+
+  Widget _sectionLabel(String text) => Text(
+        text,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF0F172A),
+          letterSpacing: 0.8,
+        ),
+      );
+
+  Widget _infoRow(String label, String value) => Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 70,
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade500,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value.isEmpty ? '-' : value,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+}
+
+// ignore: unused_element
+class _PermissionGroup {
+  final UserPermission permission;
+  final List<UserPermissionEntry> members;
+  const _PermissionGroup({required this.permission, required this.members});
+}
+
+//
+class _LegendItem extends StatelessWidget {
+  final String letter;
+  final String label;
+  const _LegendItem(this.letter, this.label);
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Center(
+              child: Text(
+                letter,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF64748B), // slate-500
+            ),
+          ),
+        ],
+      );
 }

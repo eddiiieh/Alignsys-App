@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'user_permissions.dart';
 
 class ViewObject {
@@ -13,9 +12,10 @@ class ViewObject {
   final DateTime? createdUtc;
   final DateTime? lastModifiedUtc;
   final UserPermission? userPermission;
-  final bool isSingleFile;          // ← ADD
-  final bool isCheckedOut;          // ← ADD
-  final int? checkoutUserId;        // ← ADD
+  final List<UserPermissionEntry> permissionEntries; // NEW
+  final bool isSingleFile;
+  final bool isCheckedOut;
+  final int? checkoutUserId;
   final String? checkoutUsername;
 
   ViewObject({
@@ -30,9 +30,10 @@ class ViewObject {
     required this.createdUtc,
     required this.lastModifiedUtc,
     this.userPermission,
-    required this.isSingleFile,     // ← ADD
-    this.isCheckedOut = false,     // ← ADD
-    this.checkoutUserId,           // ← ADD 
+    this.permissionEntries = const [], // NEW
+    required this.isSingleFile,
+    this.isCheckedOut = false,
+    this.checkoutUserId,
     this.checkoutUsername
   });
 
@@ -42,7 +43,7 @@ class ViewObject {
     return null;
   }
 
-  factory ViewObject.fromJson(Map<String, dynamic> json) {
+  factory ViewObject.fromJson(Map<String, dynamic> json, {int? forUserId}) {
     int asInt(dynamic v) {
       if (v == null) return 0;
       if (v is num) return v.toInt();
@@ -68,19 +69,30 @@ class ViewObject {
             ? asInt(json['classID'])
             : asInt(json['classTypeId']);
 
-    debugPrint(
-      'PARSE ViewObject → raw.classId=${json['classId']} raw.classID=${json['classID']} '
-      'resolvedClassId=$resolvedClassId raw.objectTypeId=${json['objectTypeId']} resolvedObjectTypeId=$resolvedObjectTypeId '
-      'raw.id=${json['id']} raw.displayID=${json['displayID']} resolvedId=$resolvedId',
-    );
+    // ── NEW PERMISSIONS PARSING ──
+    final rawPerm = json['userPermission'];
+    UserPermission? resolvedPermission;
+    List<UserPermissionEntry> entries = const [];
 
-    debugPrint(
-      'Checkout: '
-      'id=${resolvedId}, '
-      'checkedOut=${json['isCheckedOut']}, '
-      'checkoutUserId=${json['checkoutUserId']}, '
-      'checkoutUsername=${json['checkoutUsername']}',
-    );
+    if (rawPerm is Map<String, dynamic>) {
+      // Old format fallback
+      resolvedPermission = UserPermission.fromJson(rawPerm);
+    } else if (rawPerm is List) {
+      // New array format
+      entries = rawPerm
+          .whereType<Map<String, dynamic>>()
+          .map(UserPermissionEntry.fromJson)
+          .toList();
+      
+      if (forUserId != null) {
+        for (final e in entries) {
+          if (e.userId == forUserId) {
+            resolvedPermission = e.permission;
+            break;
+          }
+        }
+      }
+    }
 
     return ViewObject(
       id: resolvedId,
@@ -93,13 +105,12 @@ class ViewObject {
       displayId: (json['displayID']?.toString()) ?? (json['displayId']?.toString()) ?? '',
       createdUtc: _dt(json['createdUtc']),
       lastModifiedUtc: _dt(json['lastModifiedUtc']),
-      userPermission: json['userPermission'] is Map<String, dynamic>
-          ? UserPermission.fromJson(json['userPermission'] as Map<String, dynamic>)
-          : null,
-      isSingleFile: (json['isSingleFile'] as bool?) ?? true,   // ← ADD
-      isCheckedOut: (json['isCheckedOut'] as bool?) ?? false,  // ← ADD
-      checkoutUserId: asInt(json['checkoutUserId']),          // ← ADD
-      checkoutUsername: (json['checkoutUsername'] as String?) ?? '', // ← ADD
+      userPermission: resolvedPermission,
+      permissionEntries: entries,
+      isSingleFile: (json['isSingleFile'] as bool?) ?? true,
+      isCheckedOut: (json['isCheckedOut'] as bool?) ?? false,
+      checkoutUserId: asInt(json['checkoutUserId']),
+      checkoutUsername: (json['checkoutUsername'] as String?) ?? '',
     );
   }
 }

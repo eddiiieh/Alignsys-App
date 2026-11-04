@@ -173,6 +173,7 @@ class MFilesService extends ChangeNotifier {
           ? _resolveServerAddress(_serverAddress!).authUrl
           : 'https://auth.alignsys.tech';
 
+
   Future<void> setServerAddress(String address) async {
     final normalized = address.trim().replaceAll(RegExp(r'/+$'), '');
     _serverAddress = normalized.isEmpty ? null : normalized;
@@ -1233,7 +1234,7 @@ class MFilesService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        final results = data.map((e) => ViewObject.fromJson(e)).toList();
+        final results = data.map((e) => ViewObject.fromJson(e, forUserId: mfilesUserId)).toList();
 
         searchResults = results;
         warmExtensionsForObjects(results);
@@ -1309,7 +1310,7 @@ class MFilesService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
-        final results = data.map((e) => ViewObject.fromJson(e)).toList();
+        final results = data.map((e) => ViewObject.fromJson(e, forUserId: mfilesUserId)).toList();
 
         searchResults = results;
         warmExtensionsForObjects(results);
@@ -1679,9 +1680,16 @@ class MFilesService extends ChangeNotifier {
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
+
+        // ADD THIS DEBUG PRINT
+        if (data.isNotEmpty) {
+          debugPrint('🚨 RECENT OBJECT RAW PERMISSIONS: ${data.first['userPermission']}');
+        }
+        //
+
         final fetched =
             data
-                .map((e) => ViewObject.fromJson(e as Map<String, dynamic>))
+                .map((e) => ViewObject.fromJson(e as Map<String, dynamic>, forUserId: mfilesUserId))
                 .toList();
         fetched.sort((a, b) {
           final ad =
@@ -1729,7 +1737,7 @@ class MFilesService extends ChangeNotifier {
         assignedObjects =
             data
                 .whereType<Map<String, dynamic>>()
-                .map((e) => ViewObject.fromJson(e))
+                .map((e) => ViewObject.fromJson(e, forUserId: mfilesUserId))
                 .toList();
         assignedObjects.sort((a, b) {
           final ad =
@@ -2717,7 +2725,7 @@ class MFilesService extends ChangeNotifier {
         deletedObjects =
             data
                 .whereType<Map<String, dynamic>>()
-                .map((e) => ViewObject.fromJson(e))
+                .map((e) => ViewObject.fromJson(e, forUserId: mfilesUserId))
                 .toList();
         deletedObjects.sort((a, b) {
           final ad =
@@ -2791,7 +2799,7 @@ class MFilesService extends ChangeNotifier {
     final items =
         list
             .whereType<Map<String, dynamic>>()
-            .map(ViewContentItem.fromJson)
+            .map((e) => ViewContentItem.fromJson(e, forUserId: mfilesUserId))
             .toList();
 
     warmExtensionsForItems(items);
@@ -2848,7 +2856,7 @@ class MFilesService extends ChangeNotifier {
     final items =
         decoded
             .whereType<Map<String, dynamic>>()
-            .map(ViewContentItem.fromJson)
+            .map((e) => ViewContentItem.fromJson(e, forUserId: mfilesUserId))
             .toList();
     warmRelationshipsForItems(items);
     syncCheckoutStateForItems(items);

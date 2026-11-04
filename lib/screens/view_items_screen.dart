@@ -131,6 +131,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   isCheckedOut: item.isCheckedOut,
                   checkoutUserId: item.checkoutUserId,
                   checkoutUsername: item.checkoutUsername,
+                  userPermission: item.userPermission,
+                  permissionEntries: item.permissionEntries, 
                 ),
               ),
             ),
@@ -639,6 +641,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       isCheckedOut: item.isCheckedOut,
       checkoutUserId: item.checkoutUserId,
       checkoutUsername: item.checkoutUsername,
+      userPermission: item.userPermission,
+      permissionEntries: item.permissionEntries,
     );
 
     return Column(
@@ -942,6 +946,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         isCheckedOut: item.isCheckedOut,
         checkoutUserId: item.checkoutUserId,
         checkoutUsername: item.checkoutUsername,
+        userPermission: item.userPermission,
+        permissionEntries: item.permissionEntries
       );
 
       await Navigator.push(

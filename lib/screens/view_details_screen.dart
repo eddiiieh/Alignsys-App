@@ -121,6 +121,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   isCheckedOut: item.isCheckedOut,
                   checkoutUserId: item.checkoutUserId,
                   checkoutUsername: item.checkoutUsername,
+                  userPermission: item.userPermission,
+                  permissionEntries: item.permissionEntries,
                 ),
               ),
             ),
@@ -707,6 +709,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               isCheckedOut: item.isCheckedOut,
               checkoutUserId: item.checkoutUserId,
               checkoutUsername: item.checkoutUsername,
+              userPermission: item.userPermission,
+              permissionEntries: item.permissionEntries
             )
             : null;
 
@@ -1133,6 +1137,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
       isCheckedOut: item.isCheckedOut,
       checkoutUserId: item.checkoutUserId,
       checkoutUsername: item.checkoutUsername,
+      userPermission: item.userPermission,
+      permissionEntries: item.permissionEntries
     );
 
     final deleted = await Navigator.push<bool>(
