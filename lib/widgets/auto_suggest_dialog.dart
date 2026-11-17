@@ -263,7 +263,7 @@ class _CheckingDialogState extends State<_CheckingDialog>
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 60),
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.surfaceElevated,
       surfaceTintColor: Colors.transparent,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
@@ -272,13 +272,13 @@ class _CheckingDialogState extends State<_CheckingDialog>
           children: [
             _AnimatedDots(controller: _ctrl),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Checking for suggestions...',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1E293B),
+                color: context.colors.textPrimary,
               ),
             ),
           ],
@@ -303,9 +303,9 @@ class _AnimatedDots extends AnimatedWidget {
           padding: const EdgeInsets.symmetric(horizontal: 4),
           child: Opacity(
             opacity: opacity,
-            child: const CircleAvatar(
+            child: CircleAvatar(
               radius: 5,
-              backgroundColor: AppColors.primary,
+              backgroundColor: context.colors.brand,
             ),
           ),
         );
@@ -377,7 +377,7 @@ class _SuggestionsDialogState extends State<_SuggestionsDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.surfaceElevated,
       surfaceTintColor: Colors.transparent,
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -427,7 +427,7 @@ class _SuggestionsDialogState extends State<_SuggestionsDialog> {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: Colors.grey.shade600,
+                  color: context.colors.textSecondary,
                 ),
               ),
             ),
@@ -439,9 +439,9 @@ class _SuggestionsDialogState extends State<_SuggestionsDialog> {
                 padding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 6),
                 itemCount: widget.suggestions.length,
-                separatorBuilder: (_, __) => const Divider(
+                separatorBuilder: (_, __) => Divider(
                   height: 1,
-                  color: Color(0xFFF1F5F9),
+                  color: context.colors.divider,
                 ),
                 itemBuilder: (_, i) {
                   final s = widget.suggestions[i];
@@ -468,7 +468,7 @@ class _SuggestionsDialogState extends State<_SuggestionsDialog> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               decoration: BoxDecoration(
                 border: Border(
-                  top: BorderSide(color: Colors.grey.shade100),
+                  top: BorderSide(color: context.colors.divider),
                 ),
               ),
               child: Row(
@@ -476,7 +476,7 @@ class _SuggestionsDialogState extends State<_SuggestionsDialog> {
                   TextButton(
                     onPressed: () => _toggleAll(!_allChecked),
                     style: TextButton.styleFrom(
-                      foregroundColor: AppColors.primary,
+                      foregroundColor: context.colors.brand,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 4),
                     ),
@@ -494,7 +494,7 @@ class _SuggestionsDialogState extends State<_SuggestionsDialog> {
                   TextButton(
                     onPressed: () => Navigator.pop(context),
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey.shade600,
+                      foregroundColor: context.colors.textSecondary,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                     ),
@@ -519,9 +519,9 @@ class _SuggestionsDialogState extends State<_SuggestionsDialog> {
                             Navigator.pop(context, chosen);
                           },
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
+                      backgroundColor: context.colors.brand,
                       foregroundColor: Colors.white,
-                      disabledBackgroundColor: Colors.grey.shade200,
+                      disabledBackgroundColor: context.colors.surfaceSunken,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 20, vertical: 10),
                       shape: RoundedRectangleBorder(
@@ -574,10 +574,10 @@ class _SuggestionRow extends StatelessWidget {
               width: 22,
               height: 22,
               decoration: BoxDecoration(
-                color: checked ? AppColors.primary : Colors.white,
+                color: checked ? context.colors.brand : context.colors.surfaceElevated,
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
-                  color: checked ? AppColors.primary : Colors.grey.shade300,
+                  color: checked ? context.colors.brand : context.colors.border,
                   width: 1.5,
                 ),
               ),
@@ -596,10 +596,10 @@ class _SuggestionRow extends StatelessWidget {
                     flex: 4,
                     child: Text(
                       field.propertyTitle,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E293B),
+                        color: context.colors.textPrimary,
                       ),
                     ),
                   ),
@@ -611,13 +611,13 @@ class _SuggestionRow extends StatelessWidget {
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: checked
-                            ? const Color(0xFFEFF6FF)
-                            : Colors.grey.shade100,
+                            ? context.colors.brandTint
+                            : context.colors.surfaceSunken,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: checked
-                              ? const Color(0xFFBFDBFE)
-                              : Colors.grey.shade200,
+                              ? context.colors.brand.withOpacity(0.35)
+                              : context.colors.border,
                         ),
                       ),
                       child: Text(
@@ -628,8 +628,8 @@ class _SuggestionRow extends StatelessWidget {
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
                           color: checked
-                              ? const Color(0xFF1E40AF)
-                              : Colors.grey.shade600,
+                              ? context.colors.brand
+                              : context.colors.textSecondary,
                         ),
                       ),
                     ),

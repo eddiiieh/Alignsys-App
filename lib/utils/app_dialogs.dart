@@ -4,7 +4,7 @@ import '../theme/app_colors.dart';
 /// Standard info/blocking dialog used across the app in place of ad-hoc
 /// SnackBars for anything the user actually needs to read — empty states,
 /// permission denials, blocked actions. Mirrors the "Signing already in
-/// progress" dialog: rounded corners, bold title, grey body copy, single
+/// progress" dialog: rounded corners, bold title, muted body copy, single
 /// primary-colored action button.
 Future<void> showAppInfoDialog(
   BuildContext context, {
@@ -16,46 +16,62 @@ Future<void> showAppInfoDialog(
 }) {
   return showDialog(
     context: context,
-    builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(
-        children: [
-          if (icon != null) ...[
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: (iconColor ?? AppColors.primary).withOpacity(0.1),
-                shape: BoxShape.circle,
+    builder: (ctx) {
+      final c = ctx.colors;
+      final resolvedIconColor = iconColor ?? c.brand;
+
+      return AlertDialog(
+        backgroundColor: c.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            if (icon != null) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: resolvedIconColor.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: resolvedIconColor, size: 20),
               ),
-              child: Icon(icon, color: iconColor ?? AppColors.primary, size: 20),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: c.textPrimary,
+                ),
+              ),
             ),
-            const SizedBox(width: 12),
           ],
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            color: c.textSecondary,
+            fontSize: 13.5,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: c.brand,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 0,
             ),
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(buttonText),
           ),
         ],
-      ),
-      content: Text(
-        message,
-        style: TextStyle(color: Colors.grey.shade700, fontSize: 13.5, height: 1.4),
-      ),
-      actions: [
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            elevation: 0,
-          ),
-          onPressed: () => Navigator.pop(ctx),
-          child: Text(buttonText),
-        ),
-      ],
-    ),
+      );
+    },
   );
 }
 
@@ -73,51 +89,69 @@ Future<bool> showAppActionDialog(
 }) async {
   final result = await showDialog<bool>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(
-        children: [
-          if (icon != null) ...[
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: (iconColor ?? AppColors.primary).withOpacity(0.1),
-                shape: BoxShape.circle,
+    builder: (ctx) {
+      final c = ctx.colors;
+      final resolvedIconColor = iconColor ?? c.brand;
+
+      return AlertDialog(
+        backgroundColor: c.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            if (icon != null) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: resolvedIconColor.withOpacity(0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: resolvedIconColor, size: 20),
               ),
-              child: Icon(icon, color: iconColor ?? AppColors.primary, size: 20),
+              const SizedBox(width: 12),
+            ],
+            Expanded(
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: c.textPrimary,
+                ),
+              ),
             ),
-            const SizedBox(width: 12),
           ],
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        content: Text(
+          message,
+          style: TextStyle(
+            color: c.textSecondary,
+            fontSize: 13.5,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            style: TextButton.styleFrom(
+              foregroundColor: c.textSecondary,
             ),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(cancelText),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: c.brand,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              elevation: 0,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(actionText),
           ),
         ],
-      ),
-      content: Text(
-        message,
-        style: TextStyle(color: Colors.grey.shade700, fontSize: 13.5, height: 1.4),
-      ),
-      actions: [
-        TextButton(
-          style: TextButton.styleFrom(foregroundColor: Colors.grey.shade600),
-          onPressed: () => Navigator.pop(ctx, false),
-          child: Text(cancelText),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            elevation: 0,
-          ),
-          onPressed: () => Navigator.pop(ctx, true),
-          child: Text(actionText),
-        ),
-      ],
-    ),
+      );
+    },
   );
   return result ?? false;
 }

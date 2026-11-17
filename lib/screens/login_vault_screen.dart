@@ -191,13 +191,13 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: AppColors.surfaceLight,
+          color: context.colors.inputFill,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color:
                 hasSelection
-                    ? _accentBlue.withOpacity(0.4)
-                    : Colors.grey.shade300,
+                    ? context.colors.brand.withOpacity(0.4)
+                    : context.colors.inputBorder,
           ),
         ),
         child: Row(
@@ -208,11 +208,11 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w500,
-                  color: hasSelection ? Colors.black87 : Colors.grey.shade500,
+                  color: hasSelection ? context.colors.textPrimary : context.colors.textSecondary,
                 ),
               ),
             ),
-            Icon(Icons.chevron_right, size: 20, color: Colors.grey.shade400),
+            Icon(Icons.chevron_right, size: 20, color: context.colors.textTertiary),
           ],
         ),
       ),
@@ -526,20 +526,18 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                         Container(
                                           padding: const EdgeInsets.all(8),
                                           decoration: BoxDecoration(
-                                            color: _primaryBlue.withOpacity(0.1),
-                                            borderRadius:
-                                                BorderRadius.circular(8),
+                                            color: context.colors.brandTint,
+                                            borderRadius: BorderRadius.circular(8),
                                           ),
-                                          child: const Icon(Icons.storage,
-                                              color: _accentBlue, size: 20),
+                                          child: Icon(Icons.storage, color: context.colors.brand, size: 20),
                                         ),
                                         const SizedBox(width: 12),
-                                        const Text(
+                                        Text(
                                           'Select Repository',
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
-                                            color: _accentBlue,
+                                            color: Colors.white,
                                           ),
                                         ),
                                       ],
@@ -556,7 +554,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                           ? null
                                           : _proceedToVault,
                                       style: ElevatedButton.styleFrom(
-                                        backgroundColor: _primaryBlue,
+                                        backgroundColor: context.colors.brand,
                                         foregroundColor: Colors.white,
                                         padding: const EdgeInsets.symmetric(
                                             vertical: 16),
@@ -566,7 +564,8 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                         ),
                                         elevation: 2,
                                         disabledBackgroundColor:
-                                            Colors.grey.shade300,
+                                            context.colors.surfaceSunken,
+                                        disabledForegroundColor: context.colors.textTertiary,
                                       ),
                                       child: _proceedLoading
                                           ? const SizedBox(
@@ -590,11 +589,14 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
                                     const SizedBox(height: 12),
                                     TextButton.icon(
                                       onPressed: _logout,
-                                      icon: const Icon(Icons.arrow_back,
-                                          size: 16, color: Colors.grey),
-                                      label: const Text(
+                                      icon: Icon(
+                                        Icons.arrow_back,
+                                        size: 16,
+                                        color: context.colors.textSecondary,
+                                      ),
+                                      label: Text(
                                         'Back to login',
-                                        style: TextStyle(color: Colors.grey),
+                                        style: TextStyle(color: context.colors.textSecondary),
                                       ),
                                     ),
                                   ],
@@ -621,11 +623,11 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.15),
+            color: context.colors.shadow,
             blurRadius: 20,
             offset: const Offset(0, 4),
           ),
@@ -658,7 +660,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.grey.shade300),
+          borderSide: BorderSide(color: context.colors.inputBorder),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -667,7 +669,7 @@ class _LoginVaultScreenState extends State<LoginVaultScreen>
         ),
         errorText: errorText,
         filled: true,
-        fillColor: AppColors.surfaceLight,
+        fillColor: context.colors.inputFill,
         suffixIcon: suffixIcon,
       ),
     );
@@ -739,11 +741,12 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
+    //sheet background + rounded corners + padding + bottom inset for keyboard
     return Container(
       padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + bottomInset),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceElevated,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -755,7 +758,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
               width: 40,
               height: 4,
               decoration: BoxDecoration(
-                color: Colors.grey.shade300,
+                color: context.colors.divider,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
@@ -774,10 +777,10 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 child: const Icon(Icons.lock_reset, color: _accentBlue, size: 22),
               ),
               const SizedBox(width: 12),
-              const Column(
+              Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Reset your password',
                     style: TextStyle(
                       fontSize: 17,
@@ -785,10 +788,10 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                       color: _primaryBlue,
                     ),
                   ),
-                  SizedBox(height: 2),
+                  const SizedBox(height: 2),
                   Text(
                     "We'll email you a reset link.",
-                    style: TextStyle(fontSize: 13, color: Colors.grey),
+                    style: TextStyle(fontSize: 13, color: context.colors.textSecondary),
                   ),
                 ],
               ),
@@ -801,20 +804,20 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.green.shade50,
+                color: context.colors.successSurface,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green.shade200),
+                border: Border.all(color: context.colors.successBorder),
               ),
               child: Row(
                 children: [
                   Icon(Icons.check_circle_outline,
-                      color: Colors.green.shade600, size: 22),
+                      color: context.colors.successText, size: 22),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
                       'Check your inbox! If an account exists for ${_emailController.text.trim()}, you\'ll receive a reset link shortly.',
                       style: TextStyle(
-                          color: Colors.green.shade800, fontSize: 14),
+                          color: context.colors.successText, fontSize: 14),
                     ),
                   ),
                 ],
@@ -849,7 +852,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                     borderRadius: BorderRadius.circular(12)),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+                  borderSide: BorderSide(color: context.colors.inputBorder),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -857,7 +860,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 ),
                 errorText: _emailError,
                 filled: true,
-                fillColor: AppColors.surfaceLight,
+                fillColor: context.colors.inputFill,
               ),
             ),
 
@@ -867,20 +870,20 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: context.colors.dangerSurface,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(color: context.colors.dangerBorder),
                 ),
                 child: Row(
                   children: [
                     Icon(Icons.error_outline,
-                        color: Colors.red.shade600, size: 18),
+                        color: context.colors.dangerText, size: 18),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         _errorMessage,
                         style: TextStyle(
-                            color: Colors.red.shade700, fontSize: 13),
+                            color: context.colors.dangerText, fontSize: 13),
                       ),
                     ),
                   ],
@@ -897,7 +900,7 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
-                disabledBackgroundColor: Colors.grey.shade300,
+                disabledBackgroundColor: context.colors.surfaceSunken,
                 elevation: 2,
               ),
               child: _state == _ResetState.loading
@@ -919,8 +922,8 @@ class _ForgotPasswordSheetState extends State<_ForgotPasswordSheet> {
             const SizedBox(height: 8),
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Colors.grey)),
+              child: Text('Cancel',
+                  style: TextStyle(color: context.colors.textSecondary)),
             ),
           ],
         ],
@@ -950,8 +953,8 @@ class _VaultPickerSheet extends StatelessWidget {
       expand: false,
       builder: (context, scrollController) {
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
+          decoration: BoxDecoration(
+            color: context.colors.surfaceElevated,
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -961,7 +964,7 @@ class _VaultPickerSheet extends StatelessWidget {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: context.colors.inputBorder,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -990,20 +993,20 @@ class _VaultPickerSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 12),
-                    const Expanded(
+                    Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
+                           Text(
                             'Select Repository',
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              color: context.colors.brand,
                             ),
                           ),
-                          SizedBox(height: 2),
-                          Text(
+                          const SizedBox(height: 2),
+                          const Text(
                             'Choose a vault to work in',
                             style: TextStyle(fontSize: 12, color: Colors.white70),
                           ),
@@ -1025,7 +1028,7 @@ class _VaultPickerSheet extends StatelessWidget {
                     ? Center(
                         child: Text(
                           'No repositories available',
-                          style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+                          style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
                         ),
                       )
                     : ListView.separated(
@@ -1033,7 +1036,7 @@ class _VaultPickerSheet extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         itemCount: vaults.length,
                         separatorBuilder: (_, __) =>
-                            Divider(height: 1, color: Colors.grey.shade200),
+                            Divider(height: 1, color: context.colors.divider),
                         itemBuilder: (context, index) {
                           final v = vaults[index];
                           final isSelected = v.guid == selected?.guid;
@@ -1050,7 +1053,7 @@ class _VaultPickerSheet extends StatelessWidget {
                                       shape: BoxShape.circle,
                                       color: isSelected
                                           ? AppColors.primary
-                                          : Colors.grey.shade300,
+                                          : context.colors.textTertiary,
                                     ),
                                   ),
                                   const SizedBox(width: 14),
@@ -1066,7 +1069,7 @@ class _VaultPickerSheet extends StatelessWidget {
                                             : FontWeight.w400,
                                         color: isSelected
                                             ? AppColors.primary
-                                            : const Color(0xFF1E293B),
+                                            : context.colors.textPrimary,
                                       ),
                                     ),
                                   ),
@@ -1080,7 +1083,7 @@ class _VaultPickerSheet extends StatelessWidget {
                                     Icon(
                                       Icons.chevron_right_rounded,
                                       size: 18,
-                                      color: Colors.grey.shade400,
+                                      color: context.colors.textTertiary,
                                     ),
                                 ],
                               ),

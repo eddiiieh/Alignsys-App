@@ -15,9 +15,6 @@ import 'package:mfiles_app/services/mfiles_service.dart';
 import 'package:mfiles_app/theme/app_colors.dart';
 import 'package:mfiles_app/utils/app_dialogs.dart';
 import 'package:mfiles_app/utils/scan_document_flow.dart';
-// ─────────────────────────────────────────────────────────────────────────────
-// Entry rows on the sheet
-// ─────────────────────────────────────────────────────────────────────────────
 
 class _LinkEntry {
   final bool isScan;
@@ -50,11 +47,11 @@ Future<void> showLinkCreateSheet(
 
   if (svc.objectTypes.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
+      SnackBar(
+        content: const Text(
           'No object types available. Please wait for data to load.',
         ),
-        backgroundColor: Colors.orange,
+        backgroundColor: context.colors.warningText,
       ),
     );
     return;
@@ -78,189 +75,90 @@ Future<void> showLinkCreateSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder:
-        (sheetContext) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 14,
-            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-          ),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+    builder: (sheetContext) {
+      final c = sheetContext.colors;
+      return Container(
+        decoration: BoxDecoration(
+          color: c.surfaceElevated,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 14,
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+        ),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetContext).size.height * 0.8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: c.divider,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: c.brandTint,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.add_link_rounded,
+                    color: c.brand,
+                    size: 24,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.add_link_rounded,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Create & Link',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        'Linking to "${target.title}"',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Create & Link',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'Linking to "${target.title}"',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    onPressed: () => Navigator.pop(sheetContext),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: entries.length,
-                  separatorBuilder:
-                      (_, __) =>
-                          Divider(height: 1, color: Colors.grey.shade100),
-                  itemBuilder: (itemContext, index) {
-                    final entry = entries[index];
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, color: c.textSecondary),
+                  onPressed: () => Navigator.pop(sheetContext),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: entries.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: c.divider),
+                itemBuilder: (itemContext, index) {
+                  final entry = entries[index];
 
-                    // ── Scan Document ─────────────────────────────────
-                    if (entry.isScan) {
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.document_scanner_rounded,
-                            size: 20,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        title: const Text(
-                          'Scan Document',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Take a photo, upload as PDF, and link it',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                        trailing: Icon(
-                          Icons.chevron_right_rounded,
-                          color: Colors.grey.shade400,
-                        ),
-                        onTap: () async {
-                          Navigator.pop(sheetContext);
-                          await _scanAndLink(
-                            context,
-                            svc,
-                            target,
-                            onLinked,
-                            onScanStatusChange,
-                          );
-                        },
-                      );
-                    }
-
-                    // ── Templates ─────────────────────────────────────
-                    if (entry.isTemplate) {
-                      return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(
-                            Icons.dashboard_customize_rounded,
-                            size: 20,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                        title: const Text(
-                          'Templates',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        subtitle: Text(
-                          'Start from a vault template — no upload needed',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                        trailing: Icon(
-                          Icons.chevron_right_rounded,
-                          color: Colors.grey.shade400,
-                        ),
-                        onTap: () async {
-                          Navigator.pop(sheetContext);
-                          await _openVaultTemplatesForLink(
-                            context,
-                            svc,
-                            target,
-                            onLinked,
-                          );
-                        },
-                      );
-                    }
-
-                    // ── Object type ───────────────────────────────────
-                    final ot = entry.objectType!;
+                  if (entry.isScan) {
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 8,
@@ -269,59 +167,155 @@ Future<void> showLinkCreateSheet(
                       leading: Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.08),
+                          color: c.brandTint,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Icon(
-                          ot.isDocument
-                              ? Icons.description_rounded
-                              : svc.iconForObjectTypeId(ot.id),
+                          Icons.document_scanner_rounded,
                           size: 20,
-                          color: AppColors.primary,
+                          color: c.brand,
                         ),
                       ),
                       title: Text(
-                        ot.displayName,
-                        style: const TextStyle(
+                        'Scan Document',
+                        style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Take a photo, upload as PDF, and link it',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.textSecondary,
                         ),
                       ),
                       trailing: Icon(
                         Icons.chevron_right_rounded,
-                        color: Colors.grey.shade400,
+                        color: c.textTertiary,
                       ),
                       onTap: () async {
                         Navigator.pop(sheetContext);
-                        final result =
-                            await Navigator.push<LinkedCreationResult>(
-                              context,
-                              MaterialPageRoute(
-                                builder:
-                                    (_) => DynamicFormScreen(
-                                      objectType: ot,
-                                      linkTarget: target,
-                                    ),
-                              ),
-                            );
-                        if (result != null) {
-                          await _refreshAfterLink(svc, target, result);
-                          onLinked();
-                        }
+                        await _scanAndLink(
+                          context,
+                          svc,
+                          target,
+                          onLinked,
+                          onScanStatusChange,
+                        );
                       },
                     );
-                  },
-                ),
+                  }
+
+                  if (entry.isTemplate) {
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: c.brandTint,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          Icons.dashboard_customize_rounded,
+                          size: 20,
+                          color: c.brand,
+                        ),
+                      ),
+                      title: Text(
+                        'Templates',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Start from a vault template — no upload needed',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.textSecondary,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right_rounded,
+                        color: c.textTertiary,
+                      ),
+                      onTap: () async {
+                        Navigator.pop(sheetContext);
+                        await _openVaultTemplatesForLink(
+                          context,
+                          svc,
+                          target,
+                          onLinked,
+                        );
+                      },
+                    );
+                  }
+
+                  final ot = entry.objectType!;
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: c.brandTint,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        ot.isDocument
+                            ? Icons.description_rounded
+                            : svc.iconForObjectTypeId(ot.id),
+                        size: 20,
+                        color: c.brand,
+                      ),
+                    ),
+                    title: Text(
+                      ot.displayName,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      color: c.textTertiary,
+                    ),
+                    onTap: () async {
+                      Navigator.pop(sheetContext);
+                      final result =
+                          await Navigator.push<LinkedCreationResult>(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DynamicFormScreen(
+                            objectType: ot,
+                            linkTarget: target,
+                          ),
+                        ),
+                      );
+                      if (result != null) {
+                        await _refreshAfterLink(svc, target, result);
+                        onLinked();
+                      }
+                    },
+                  );
+                },
               ),
-            ],
-          ),
+            ),
+          ],
         ),
+      );
+    },
   );
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Link-aware template flow (mirrors HomeScreen's Create flow, adds linkTarget)
-// ─────────────────────────────────────────────────────────────────────────────
 
 Future<void> _openVaultTemplatesForLink(
   BuildContext context,
@@ -373,9 +367,7 @@ Future<void> _openVaultTemplatesForLink(
 
     final allClasses = _collectAllClasses(svc);
     final classesWithTemplates =
-        allClasses
-            .where((cls) => templatesByClass.containsKey(cls.id))
-            .toList();
+        allClasses.where((cls) => templatesByClass.containsKey(cls.id)).toList();
 
     if (classesWithTemplates.isEmpty) {
       await showAppInfoDialog(
@@ -407,7 +399,7 @@ Future<void> _openVaultTemplatesForLink(
           'Something went wrong fetching templates for this repository. '
           'Please try again.',
       icon: Icons.error_outline_rounded,
-      iconColor: Colors.red.shade600,
+      iconColor: context.colors.dangerText,
     );
   }
 }
@@ -428,8 +420,7 @@ List<ObjectClass> _collectAllClasses(MFilesService service) {
     }
   }
   result.sort(
-    (a, b) =>
-        a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
+    (a, b) => a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase()),
   );
   return result;
 }
@@ -452,257 +443,236 @@ Future<void> _openTemplateClassSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder:
-        (sheetContext) => StatefulBuilder(
-          builder:
-              (ctx, setSheet) => Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(20),
+    builder: (sheetContext) => StatefulBuilder(
+      builder: (ctx, setSheet) {
+        final c = ctx.colors;
+        return Container(
+          decoration: BoxDecoration(
+            color: c.surfaceElevated,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 14,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+          ),
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(ctx).size.height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: c.divider,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: c.brandTint,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Icons.dashboard_customize_rounded,
+                      color: c.brand,
+                      size: 24,
+                    ),
                   ),
-                ),
-                padding: EdgeInsets.only(
-                  left: 20,
-                  right: 20,
-                  top: 14,
-                  bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-                ),
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(ctx).size.height * 0.8,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(2),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Select Template',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: c.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Icon(
-                            Icons.dashboard_customize_rounded,
-                            color: AppColors.primary,
-                            size: 24,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        const Expanded(
-                          child: Text(
-                            'Select Template',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      Icons.search_rounded,
+                      color: showSearch ? c.brand : c.textSecondary,
+                    ),
+                    onPressed: () {
+                      setSheet(() {
+                        showSearch = !showSearch;
+                        if (!showSearch) {
+                          searchController.clear();
+                          filtered = List.from(allClasses);
+                        } else {
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            searchFocusNode.requestFocus();
+                          });
+                        }
+                      });
+                    },
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close, color: c.textSecondary),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ],
+              ),
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeInOut,
+                child: showSearch
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: TextField(
+                          controller: searchController,
+                          focusNode: searchFocusNode,
+                          style: TextStyle(color: c.textPrimary),
+                          cursorColor: c.brand,
+                          decoration: InputDecoration(
+                            hintText: 'Search templates...',
+                            hintStyle: TextStyle(
+                              color: c.textTertiary,
+                              fontSize: 14,
                             ),
+                            prefixIcon: Icon(
+                              Icons.search,
+                              color: c.textTertiary,
+                              size: 20,
+                            ),
+                            filled: true,
+                            fillColor: c.surfaceSunken,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: c.border),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: c.border),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide(color: c.brand, width: 2),
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            isDense: true,
                           ),
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            Icons.search_rounded,
-                            color:
-                                showSearch
-                                    ? AppColors.primary
-                                    : Colors.grey.shade700,
-                          ),
-                          onPressed: () {
+                          onChanged: (q) {
                             setSheet(() {
-                              showSearch = !showSearch;
-                              if (!showSearch) {
-                                searchController.clear();
-                                filtered = List.from(allClasses);
-                              } else {
-                                WidgetsBinding.instance.addPostFrameCallback((
-                                  _,
-                                ) {
-                                  searchFocusNode.requestFocus();
-                                });
-                              }
+                              filtered = q.trim().isEmpty
+                                  ? List.from(allClasses)
+                                  : allClasses
+                                      .where((cls) => cls.displayName
+                                          .toLowerCase()
+                                          .contains(q.toLowerCase()))
+                                      .toList();
                             });
                           },
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(ctx),
-                        ),
-                      ],
+                      )
+                    : const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text(
+                    '${filtered.length} template${filtered.length == 1 ? '' : 's'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: c.textSecondary,
                     ),
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 200),
-                      curve: Curves.easeInOut,
-                      child:
-                          showSearch
-                              ? Padding(
-                                padding: const EdgeInsets.only(top: 12),
-                                child: TextField(
-                                  controller: searchController,
-                                  focusNode: searchFocusNode,
-                                  decoration: InputDecoration(
-                                    hintText: 'Search templates...',
-                                    hintStyle: TextStyle(
-                                      color: Colors.grey.shade400,
-                                      fontSize: 14,
-                                    ),
-                                    prefixIcon: Icon(
-                                      Icons.search,
-                                      color: Colors.grey.shade400,
-                                      size: 20,
-                                    ),
-                                    filled: true,
-                                    fillColor: AppColors.surfaceLight,
-                                    border: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey.shade200,
-                                      ),
-                                    ),
-                                    enabledBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: BorderSide(
-                                        color: Colors.grey.shade200,
-                                      ),
-                                    ),
-                                    focusedBorder: OutlineInputBorder(
-                                      borderRadius: BorderRadius.circular(12),
-                                      borderSide: const BorderSide(
-                                        color: AppColors.primary,
-                                        width: 2,
-                                      ),
-                                    ),
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 12,
-                                    ),
-                                    isDense: true,
-                                  ),
-                                  onChanged: (q) {
-                                    setSheet(() {
-                                      filtered =
-                                          q.trim().isEmpty
-                                              ? List.from(allClasses)
-                                              : allClasses
-                                                  .where(
-                                                    (c) => c.displayName
-                                                        .toLowerCase()
-                                                        .contains(
-                                                          q.toLowerCase(),
-                                                        ),
-                                                  )
-                                                  .toList();
-                                    });
-                                  },
-                                ),
-                              )
-                              : const SizedBox.shrink(),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          '${filtered.length} template${filtered.length == 1 ? '' : 's'}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ),
-                    ),
-                    Flexible(
-                      child:
-                          filtered.isEmpty
-                              ? Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      Icons.search_off,
-                                      size: 36,
-                                      color: Colors.grey.shade300,
-                                    ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      'No matches found',
-                                      style: TextStyle(
-                                        color: Colors.grey.shade500,
-                                        fontSize: 13,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              )
-                              : ListView.separated(
-                                shrinkWrap: true,
-                                itemCount: filtered.length,
-                                separatorBuilder:
-                                    (_, __) => Divider(
-                                      height: 1,
-                                      color: Colors.grey.shade100,
-                                    ),
-                                itemBuilder: (_, index) {
-                                  final cls = filtered[index];
-                                  return ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    leading: Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: AppColors.primary.withOpacity(
-                                          0.08,
-                                        ),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: const Icon(
-                                        Icons.dashboard_customize_rounded,
-                                        size: 20,
-                                        color: AppColors.primary,
-                                      ),
-                                    ),
-                                    title: Text(
-                                      cls.displayName,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    trailing: Icon(
-                                      Icons.chevron_right_rounded,
-                                      color: Colors.grey.shade400,
-                                    ),
-                                    onTap: () {
-                                      Navigator.pop(ctx);
-                                      final templates =
-                                          templatesByClass[cls.id] ?? [];
-                                      _openTemplateDocumentSheetForLink(
-                                        context,
-                                        cls,
-                                        templates,
-                                        target: target,
-                                        onLinked: onLinked,
-                                      );
-                                    },
-                                  );
-                                },
-                              ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
-        ),
+              Flexible(
+                child: filtered.isEmpty
+                    ? Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.search_off,
+                              size: 36,
+                              color: c.textTertiary,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'No matches found',
+                              style: TextStyle(
+                                color: c.textTertiary,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    : ListView.separated(
+                        shrinkWrap: true,
+                        itemCount: filtered.length,
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: c.divider),
+                        itemBuilder: (_, index) {
+                          final cls = filtered[index];
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            leading: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: c.brandTint,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(
+                                Icons.dashboard_customize_rounded,
+                                size: 20,
+                                color: c.brand,
+                              ),
+                            ),
+                            title: Text(
+                              cls.displayName,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: c.textPrimary,
+                              ),
+                            ),
+                            trailing: Icon(
+                              Icons.chevron_right_rounded,
+                              color: c.textTertiary,
+                            ),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              final templates =
+                                  templatesByClass[cls.id] ?? [];
+                              _openTemplateDocumentSheetForLink(
+                                context,
+                                cls,
+                                templates,
+                                target: target,
+                                onLinked: onLinked,
+                              );
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
   );
 }
 
@@ -746,122 +716,125 @@ Future<void> _openTemplateDocumentSheetForLink(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder:
-        (sheetContext) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 14,
-            bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
-          ),
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(
-                      Icons.description_rounded,
-                      color: AppColors.primary,
-                      size: 24,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Choose Template',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          cls.displayName,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close, color: Colors.grey),
-                    onPressed: () => Navigator.pop(sheetContext),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Flexible(
-                child: ListView.separated(
-                  shrinkWrap: true,
-                  itemCount: templates.length,
-                  separatorBuilder:
-                      (_, __) =>
-                          Divider(height: 1, color: Colors.grey.shade100),
-                  itemBuilder: (_, index) {
-                    final t = templates[index];
-                    final title = t['title'] as String? ?? 'Untitled';
-                    return ListTile(
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 6,
-                      ),
-                      leading: Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.description_rounded,
-                          size: 20,
-                          color: Color.fromRGBO(25, 76, 129, 1),
-                        ),
-                      ),
-                      title: Text(
-                        title,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      trailing: Icon(
-                        Icons.chevron_right_rounded,
-                        color: Colors.grey.shade400,
-                      ),
-                      onTap: () => Navigator.pop(sheetContext, t),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+    builder: (sheetContext) {
+      final c = sheetContext.colors;
+      return Container(
+        decoration: BoxDecoration(
+          color: c.surfaceElevated,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         ),
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 14,
+          bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 20,
+        ),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(sheetContext).size.height * 0.7,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: c.divider,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: c.brandTint,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.description_rounded,
+                    color: c.brand,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Choose Template',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: c.textPrimary,
+                        ),
+                      ),
+                      Text(
+                        cls.displayName,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: c.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close, color: c.textSecondary),
+                  onPressed: () => Navigator.pop(sheetContext),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: templates.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: c.divider),
+                itemBuilder: (_, index) {
+                  final t = templates[index];
+                  final title = t['title'] as String? ?? 'Untitled';
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: c.brandTint,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Icon(
+                        Icons.description_rounded,
+                        size: 20,
+                        color: c.brand,
+                      ),
+                    ),
+                    title: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
+                      ),
+                    ),
+                    trailing: Icon(
+                      Icons.chevron_right_rounded,
+                      color: c.textTertiary,
+                    ),
+                    onTap: () => Navigator.pop(sheetContext, t),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    },
   );
 
   if (picked == null || !context.mounted) return;
@@ -887,15 +860,14 @@ Future<void> _pushTemplateForm(
   final result = await Navigator.push<LinkedCreationResult>(
     context,
     MaterialPageRoute(
-      builder:
-          (_) => TemplateFormScreen(
-            classId: cls.id,
-            className: cls.displayName,
-            templateObjectId: template['id'] as int,
-            templateTitle: template['title'] as String? ?? 'Template',
-            objectTypeId: objectTypeId, 
-            linkTarget: target,
-          ),
+      builder: (_) => TemplateFormScreen(
+        classId: cls.id,
+        className: cls.displayName,
+        templateObjectId: template['id'] as int,
+        templateTitle: template['title'] as String? ?? 'Template',
+        objectTypeId: objectTypeId,
+        linkTarget: target,
+      ),
     ),
   );
 
@@ -905,10 +877,6 @@ Future<void> _pushTemplateForm(
     onLinked();
   }
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 Future<void> _refreshAfterLink(
   MFilesService svc,
@@ -956,7 +924,10 @@ Future<void> _scanAndLink(
     onScanStatusChange(null);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Scan failed: $e'), backgroundColor: Colors.red),
+        SnackBar(
+          content: Text('Scan failed: $e'),
+          backgroundColor: context.colors.dangerText,
+        ),
       );
     }
     return;
@@ -967,12 +938,11 @@ Future<void> _scanAndLink(
 
   final result = await Navigator.of(context).push<LinkedCreationResult>(
     MaterialPageRoute(
-      builder:
-          (_) => DynamicFormScreen(
-            objectType: docType,
-            scannedFile: pdfFile,
-            linkTarget: target,
-          ),
+      builder: (_) => DynamicFormScreen(
+        objectType: docType,
+        scannedFile: pdfFile,
+        linkTarget: target,
+      ),
     ),
   );
 

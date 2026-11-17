@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 
-/// Reusable action label + icon for [BatchActionsMenu].
 class BatchMenuAction {
   final String value;
   final IconData icon;
@@ -10,9 +9,6 @@ class BatchMenuAction {
   const BatchMenuAction(this.value, this.icon, this.label);
 }
 
-/// Shared "More" popup menu for batch/multi-select action bars.
-/// Consistent rounded-card style, icon+label rows, and shadow —
-/// used by HomeScreen, ViewDetailsScreen, and ViewItemsScreen.
 class BatchActionsMenu extends StatelessWidget {
   const BatchActionsMenu({
     super.key,
@@ -21,11 +17,7 @@ class BatchActionsMenu extends StatelessWidget {
       BatchMenuAction('history', Icons.history_rounded, 'Version History'),
       BatchMenuAction('copy', Icons.copy_rounded, 'Make a copy'),
       BatchMenuAction('download', Icons.download_rounded, 'Download'),
-      BatchMenuAction(
-        'convertPdf',
-        Icons.picture_as_pdf_rounded,
-        'Convert to PDF',
-      ),
+      BatchMenuAction('convertPdf', Icons.picture_as_pdf_rounded, 'Convert to PDF'),
     ],
     this.disabledValues = const <String>{},
     this.icon = Icons.more_vert,
@@ -42,34 +34,35 @@ class BatchActionsMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    
+    final c = context.colors;
     final visible = items.where((a) => !disabledValues.contains(a.value)).toList();
-    
+
     return PopupMenuButton<String>(
       tooltip: tooltip,
-      color: Colors.white,
+      iconColor: iconColor,
+      color: c.surfaceElevated,
       elevation: 6,
-      shadowColor: Colors.black.withOpacity(0.18),
+      shadowColor: c.shadow,
       offset: const Offset(0, 44),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade100),
+        side: BorderSide(color: c.divider),
       ),
       constraints: const BoxConstraints(minWidth: 190),
       onSelected: onSelected,
-      itemBuilder:
-          (_) => visible
-              .where((a) => !disabledValues.contains(a.value))
-              .map((a) => _buildMenuItem(a.value, a.icon, a.label))
-              .toList(),
+      itemBuilder: (_) => visible
+          .map((a) => _buildMenuItem(context, a.value, a.icon, a.label))
+          .toList(),
     );
   }
 
   PopupMenuItem<String> _buildMenuItem(
+    BuildContext context,
     String value,
     IconData icon,
     String label,
   ) {
+    final c = context.colors;
     return PopupMenuItem<String>(
       value: value,
       height: 46,
@@ -78,18 +71,18 @@ class BatchActionsMenu extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
+              color: c.brandTint,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, size: 16, color: AppColors.primary),
+            child: Icon(icon, size: 16, color: c.brand),
           ),
           const SizedBox(width: 12),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13.5,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF1A1A1A),
+              color: c.textPrimary,
             ),
           ),
         ],

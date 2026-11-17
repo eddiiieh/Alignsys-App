@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../services/mfiles_service.dart';
 import '../models/view_object.dart';
+import '../theme/app_colors.dart';
+
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API
 // ─────────────────────────────────────────────────────────────────────────────
@@ -63,80 +65,100 @@ Future<bool> showBatchDeleteConfirmDialog(
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
-    builder: (_) => AlertDialog(
-      backgroundColor: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-      actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                color: Colors.red.shade50, shape: BoxShape.circle),
-            child: Icon(Icons.delete_outline_rounded,
-                size: 28, color: Colors.red.shade500),
-          ),
-          const SizedBox(height: 12),
-          const Text('Delete Objects',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text(
-            '$count selected ${count == 1 ? "object" : "objects"}?',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: Colors.grey.shade700,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'This action cannot be undone.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-          ),
-          const SizedBox(height: 4),
-        ],
-      ),
-      actions: [
-        Row(
+    builder: (ctx) {
+      final c = ctx.colors;
+      return AlertDialog(
+        backgroundColor: c.surfaceElevated,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: () => Navigator.pop(context, false),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey.shade700,
-                  side: BorderSide(color: Colors.grey.shade300),
-                  padding: const EdgeInsets.symmetric(vertical: 11),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                child: const Text('Cancel',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: c.dangerSurface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.delete_outline_rounded,
+                size: 28,
+                color: c.dangerText,
               ),
             ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: ElevatedButton(
-                onPressed: () => Navigator.pop(context, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade600,
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 11),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
-                child: const Text('Delete',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 12),
+            Text(
+              'Delete Objects',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: c.textPrimary,
               ),
             ),
+            const SizedBox(height: 8),
+            Text(
+              '$count selected ${count == 1 ? "object" : "objects"}?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 13,
+                color: c.textSecondary,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'This action cannot be undone.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: c.textTertiary),
+            ),
+            const SizedBox(height: 4),
           ],
         ),
-      ],
-    ),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: c.textPrimary,
+                    side: BorderSide(color: c.border),
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFDC2626),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  child: const Text(
+                    'Delete',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    },
   );
   return result ?? false;
 }
@@ -170,6 +192,7 @@ class _ActionDialogState extends State<_ActionDialog> {
   Future<void> _confirm() async {
     setState(() => _isBusy = true);
     final svc = context.read<MFilesService>();
+    final c = context.colors;
 
     try {
       final bool success;
@@ -212,11 +235,11 @@ class _ActionDialogState extends State<_ActionDialog> {
                 ),
               ],
             ),
-            backgroundColor:
-                _isDelete ? Colors.green.shade700 : Colors.blue.shade700,
+            backgroundColor: _isDelete ? c.successText : c.brand,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+              borderRadius: BorderRadius.circular(10),
+            ),
             margin: const EdgeInsets.all(12),
           ),
         );
@@ -225,10 +248,11 @@ class _ActionDialogState extends State<_ActionDialog> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('$action failed. Please try again.'),
-            backgroundColor: Colors.red.shade700,
+            backgroundColor: c.dangerText,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10)),
+              borderRadius: BorderRadius.circular(10),
+            ),
             margin: const EdgeInsets.all(12),
           ),
         );
@@ -246,35 +270,34 @@ class _ActionDialogState extends State<_ActionDialog> {
               Expanded(child: Text('$action failed: $e')),
             ],
           ),
-          backgroundColor: Colors.red.shade700,
+          backgroundColor: c.dangerText,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
+            borderRadius: BorderRadius.circular(10),
+          ),
           margin: const EdgeInsets.all(12),
         ),
       );
     }
   }
 
-
   @override
   Widget build(BuildContext context) {
-    final Color iconBg =
-        _isDelete ? Colors.red.shade50 : Colors.blue.shade50;
-    final Color iconColor =
-        _isDelete ? Colors.red.shade500 : Colors.blue.shade500;
+    final c = context.colors;
+
+    final Color iconBg = _isDelete ? c.dangerSurface : c.brandTint;
+    final Color iconColor = _isDelete ? c.dangerText : c.brand;
     final IconData iconData =
         _isDelete ? Icons.delete_outline_rounded : Icons.restore_rounded;
     final String title = _isDelete ? 'Delete Object' : 'Restore Object';
     final String subtitle = _isDelete
         ? 'This action cannot be undone.'
         : 'The object will be moved back to its original location.';
-    final Color confirmColor =
-        _isDelete ? Colors.red.shade600 : Colors.blue.shade600;
+    final Color confirmColor = _isDelete ? const Color(0xFFDC2626) : c.brand;
     final String confirmLabel = _isDelete ? 'Delete' : 'Restore';
 
     return AlertDialog(
-      backgroundColor: Colors.white,
+      backgroundColor: c.surfaceElevated,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
       actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -292,7 +315,11 @@ class _ActionDialogState extends State<_ActionDialog> {
           // Title
           Text(
             title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: c.textPrimary,
+            ),
           ),
           const SizedBox(height: 8),
 
@@ -304,7 +331,7 @@ class _ActionDialogState extends State<_ActionDialog> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey.shade700,
+              color: c.textSecondary,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -314,7 +341,7 @@ class _ActionDialogState extends State<_ActionDialog> {
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 12, color: c.textTertiary),
           ),
           const SizedBox(height: 4),
         ],
@@ -326,14 +353,17 @@ class _ActionDialogState extends State<_ActionDialog> {
               child: OutlinedButton(
                 onPressed: _isBusy ? null : () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey.shade700,
-                  side: BorderSide(color: Colors.grey.shade300),
+                  foregroundColor: c.textPrimary,
+                  side: BorderSide(color: c.border),
                   padding: const EdgeInsets.symmetric(vertical: 11),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
-                child: const Text('Cancel',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
+                child: const Text(
+                  'Cancel',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -346,17 +376,22 @@ class _ActionDialogState extends State<_ActionDialog> {
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 11),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 child: _isBusy
                     ? const SizedBox(
                         height: 16,
                         width: 16,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
-                    : Text(confirmLabel,
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                    : Text(
+                        confirmLabel,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
               ),
             ),
           ],

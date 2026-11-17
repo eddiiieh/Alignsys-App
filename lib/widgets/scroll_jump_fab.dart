@@ -28,26 +28,42 @@ class _ScrollJumpFabState extends State<ScrollJumpFab> {
     final p = widget.controller.position;
     final show = p.maxScrollExtent > 500;
     final up = p.pixels > p.maxScrollExtent / 2;
-    if (show != _show || up != _up) setState(() { _show = show; _up = up; });
+    if (show != _show || up != _up) {
+      setState(() {
+        _show = show;
+        _up = up;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     WidgetsBinding.instance.addPostFrameCallback((_) => _update());
+
     return AnimatedScale(
       scale: _show ? 1 : 0,
       duration: const Duration(milliseconds: 180),
       child: FloatingActionButton.small(
         heroTag: null,
         elevation: 3,
-        backgroundColor: Colors.white,
-        foregroundColor: AppColors.primary,
+        backgroundColor: c.surfaceElevated,
+        foregroundColor: c.brand,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: c.divider),
+        ),
         onPressed: () {
           final p = widget.controller.position;
-          widget.controller.animateTo(_up ? 0 : p.maxScrollExtent,
-              duration: const Duration(milliseconds: 350), curve: Curves.easeOutCubic);
+          widget.controller.animateTo(
+            _up ? 0 : p.maxScrollExtent,
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic,
+          );
         },
-        child: Icon(_up ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded),
+        child: Icon(_up
+            ? Icons.keyboard_arrow_up_rounded
+            : Icons.keyboard_arrow_down_rounded),
       ),
     );
   }

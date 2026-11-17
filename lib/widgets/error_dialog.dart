@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_colors.dart';
 
 class ErrorDialog extends StatelessWidget {
   final String title;
@@ -14,21 +15,32 @@ class ErrorDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return AlertDialog(
+      backgroundColor: c.surfaceElevated,
       title: Row(
         children: [
-          Icon(Icons.error_outline, color: Colors.red),
+          Icon(Icons.error_outline, color: c.dangerText),
           const SizedBox(width: 8),
-          Text(title),
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(color: c.textPrimary),
+            ),
+          ),
         ],
       ),
-      content: Text(message),
+      content: Text(
+        message,
+        style: TextStyle(color: c.textSecondary),
+      ),
       actions: [
         TextButton(
-          onPressed: () {
-            Navigator.of(context).pop();
-          },
-          child: const Text('OK'),
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(
+            'OK',
+            style: TextStyle(color: c.textSecondary),
+          ),
         ),
         if (onRetry != null)
           ElevatedButton(
@@ -36,6 +48,10 @@ class ErrorDialog extends StatelessWidget {
               Navigator.of(context).pop();
               onRetry!();
             },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: c.brand,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Retry'),
           ),
       ],

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
-/// Represents a single breadcrumb segment
+
 class BreadcrumbSegment {
   final String label;
   final VoidCallback? onTap;
@@ -13,21 +13,22 @@ class BreadcrumbSegment {
   });
 }
 
-/// A breadcrumb navigation bar that shows the navigation path.
-/// Automatically scrolls to the active (last) segment when segments change.
 class BreadcrumbBar extends StatefulWidget {
   final List<BreadcrumbSegment> segments;
-  final Color backgroundColor;
-  final Color textColor;
-  final Color activeTextColor;
+
+  /// Optional overrides. When null, the widget resolves these from
+  /// `context.colors` so it flips automatically with the theme.
+  final Color? backgroundColor;
+  final Color? textColor;
+  final Color? activeTextColor;
   final double fontSize;
 
   const BreadcrumbBar({
     super.key,
     required this.segments,
-    this.backgroundColor = Colors.white,
-    this.textColor = const Color(0xFF666666),
-    this.activeTextColor = AppColors.primary,
+    this.backgroundColor,
+    this.textColor,
+    this.activeTextColor,
     this.fontSize = 13,
   });
 
@@ -47,7 +48,6 @@ class _BreadcrumbBarState extends State<BreadcrumbBar> {
   @override
   void didUpdateWidget(BreadcrumbBar oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Scroll to end whenever segments change (e.g. user navigated deeper)
     if (oldWidget.segments.length != widget.segments.length ||
         oldWidget.segments.lastOrNull?.label !=
             widget.segments.lastOrNull?.label) {
@@ -56,7 +56,6 @@ class _BreadcrumbBarState extends State<BreadcrumbBar> {
   }
 
   void _scrollToEnd() {
-    // Wait for the new frame so the layout is complete before scrolling
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -72,29 +71,35 @@ class _BreadcrumbBarState extends State<BreadcrumbBar> {
   Widget build(BuildContext context) {
     if (widget.segments.isEmpty) return const SizedBox.shrink();
 
+    final c = context.colors;
+    final bg = widget.backgroundColor ?? c.surfaceElevated;
+    final textColor = widget.textColor ?? c.textSecondary;
+    final activeColor = widget.activeTextColor ?? c.brand;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: widget.backgroundColor,
+        color: bg,
         border: Border(
-          bottom: BorderSide(
-            color: Colors.grey.shade200,
-            width: 1,
-          ),
+          bottom: BorderSide(color: c.divider, width: 1),
         ),
       ),
       child: SingleChildScrollView(
         controller: _scrollController,
         scrollDirection: Axis.horizontal,
         child: Row(
-          children: _buildBreadcrumbItems(),
+          children: _buildBreadcrumbItems(c, textColor, activeColor),
         ),
       ),
     );
   }
 
-  List<Widget> _buildBreadcrumbItems() {
+  List<Widget> _buildBreadcrumbItems(
+    AppColorsExtension c,
+    Color textColor,
+    Color activeColor,
+  ) {
     final items = <Widget>[];
     final segments = widget.segments;
 
@@ -102,19 +107,17 @@ class _BreadcrumbBarState extends State<BreadcrumbBar> {
       final segment = segments[i];
       final isLast = i == segments.length - 1;
 
-      // Add icon if this is the first segment and has an icon
       if (i == 0 && segment.icon != null) {
         items.add(
           Icon(
             segment.icon,
             size: 16,
-            color: isLast ? widget.activeTextColor : widget.textColor,
+            color: isLast ? activeColor : textColor,
           ),
         );
         items.add(const SizedBox(width: 6));
       }
 
-      // Add the breadcrumb segment
       items.add(
         InkWell(
           onTap: isLast ? null : segment.onTap,
@@ -126,11 +129,11 @@ class _BreadcrumbBarState extends State<BreadcrumbBar> {
               style: TextStyle(
                 fontSize: widget.fontSize,
                 fontWeight: isLast ? FontWeight.w700 : FontWeight.w500,
-                color: isLast ? widget.activeTextColor : widget.textColor,
+                color: isLast ? activeColor : textColor,
                 decoration: (!isLast && segment.onTap != null)
                     ? TextDecoration.underline
                     : TextDecoration.none,
-                decorationColor: widget.textColor.withOpacity(0.4),
+                decorationColor: textColor.withOpacity(0.4),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -139,7 +142,6 @@ class _BreadcrumbBarState extends State<BreadcrumbBar> {
         ),
       );
 
-      // Add separator if not the last item
       if (!isLast) {
         items.add(
           Padding(
@@ -147,7 +149,7 @@ class _BreadcrumbBarState extends State<BreadcrumbBar> {
             child: Icon(
               Icons.chevron_right_rounded,
               size: 16,
-              color: Colors.grey.shade400,
+              color: c.textTertiary,
             ),
           ),
         );

@@ -53,10 +53,6 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   // M-Files built-in: Class property
   static const _classPropId = 100;
 
-  static const _primaryBlue = AppColors.primary;
-  static const _filledBorder = Color(0xFF2563EB);
-  static const _filledFill = Color(0xFFF0F6FF);
-
   static final _uiDateFmt = DateFormat('dd MMM yyyy');
   static final _apiDateFmt = DateFormat('yyyy-MM-dd');
 
@@ -534,27 +530,27 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
     final existing = _values[propId];
     DateTime initial;
     try {
-      initial =
-          existing != null && existing.toString().isNotEmpty
-              ? _apiDateFmt.parse(existing.toString())
-              : DateTime.now();
+      initial = existing != null && existing.toString().isNotEmpty
+          ? _apiDateFmt.parse(existing.toString())
+          : DateTime.now();
     } catch (_) {
       initial = DateTime.now();
     }
+
     final date = await showDatePicker(
       context: context,
       initialDate: initial,
       firstDate: DateTime(1900),
       lastDate: DateTime(2200),
-      builder:
-          (ctx, child) => Theme(
-            data: Theme.of(ctx).copyWith(
-              colorScheme: Theme.of(
-                ctx,
-              ).colorScheme.copyWith(primary: _primaryBlue),
-            ),
-            child: child!,
+      builder: (ctx, child) => Theme(
+        data: Theme.of(ctx).copyWith(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: ctx.colors.brand,
+            brightness: Theme.of(ctx).brightness,
           ),
+        ),
+        child: child!,
+      ),
     );
     if (date != null) {
       setState(() => _values[propId] = _apiDateFmt.format(date));
@@ -564,7 +560,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: context.colors.surface,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -592,8 +588,8 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
               : Container(
                 padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                 decoration: BoxDecoration(
-                  color: Colors.white,
-                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                  color: context.colors.surfaceElevated,
+                  border: Border(top: BorderSide(color: context.colors.divider)),
                 ),
                 child: SafeArea(
                   top: false,
@@ -626,7 +622,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                         ),
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _primaryBlue,
+                        backgroundColor: context.colors.brand,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
@@ -660,11 +656,11 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.info_outline, size: 40, color: Colors.grey.shade400),
+              Icon(Icons.info_outline, size: 40, color: context.colors.textTertiary),
               const SizedBox(height: 16),
               Text(
                 'No editable fields for this template.',
-                style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+                style: TextStyle(fontSize: 15, color: context.colors.textSecondary),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -685,12 +681,12 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         const SizedBox(height: 12),
         Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.colors.surfaceElevated,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: const Color(0xFFE7EAF0)),
+            border: Border.all(color: context.colors.divider),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.04),
+                color: context.colors.shadow,
                 blurRadius: 14,
                 offset: const Offset(0, 6),
               ),
@@ -700,12 +696,12 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           child: Column(
             children: List.generate(editableProps.length * 2 - 1, (i) {
               if (i.isOdd) {
-                return const Padding(
+                return Padding(
                   padding: EdgeInsets.symmetric(vertical: 12),
                   child: Divider(
                     height: 1,
                     thickness: 1,
-                    color: Color(0xFFE2E8F0),
+                    color: context.colors.divider,
                   ),
                 );
               }
@@ -745,18 +741,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           child: RichText(
             text: TextSpan(
               text: title,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF475569),
+                color: context.colors.textSecondary,
               ),
               children:
                   required
-                      ? const [
+                      ? [
                         TextSpan(
                           text: ' *',
                           style: TextStyle(
-                            color: Colors.red,
+                            color: context.colors.dangerText,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -787,10 +783,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         children: [
           Text(
             title,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF475569),
+              color: context.colors.textSecondary,
             ),
           ),
           const SizedBox(width: 8),
@@ -798,18 +794,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF111827),
+                color: context.colors.textPrimary,
               ),
             ),
           ),
           const SizedBox(width: 8),
-          const Icon(
+          Icon(
             Icons.lock_outline_rounded,
             size: 15,
-            color: Color(0xFF94A3B8),
+            color: context.colors.textTertiary,
           ),
         ],
       ),
@@ -825,18 +821,18 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         children: [
           RichText(
             text: TextSpan(
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF475569),
+                color: context.colors.textSecondary,
               ),
               children: [
                 TextSpan(text: title),
                 if (required)
-                  const TextSpan(
+                  TextSpan(
                     text: ' *',
                     style: TextStyle(
-                      color: Colors.red,
+                      color: context.colors.dangerText,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -853,7 +849,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                 fontSize: 13.5,
                 fontStyle: FontStyle.italic,
                 fontWeight: FontWeight.w400,
-                color: Colors.grey.shade400,
+                color: context.colors.textTertiary,
               ),
             ),
           ),
@@ -882,14 +878,15 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
           controller: ctrl,
           maxLines: type == 'MFDatatypeMultiLineText' ? 4 : 1,
           onChanged: (_) => setState(() {}),
+          cursorColor: context.colors.brand,
           decoration: _textDeco(
             hint: 'Enter ${label.toLowerCase()}...',
             filled: ctrl.text.trim().isNotEmpty,
           ),
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
-            color: Color(0xFF111827),
+            color: context.colors.textPrimary,
           ),
         );
 
@@ -900,18 +897,19 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         );
         return TextField(
           controller: ctrl,
-          keyboardType: TextInputType.number,
-          onChanged: (_) => setState(() {}),
-          decoration: _textDeco(
-            hint: 'Enter number...',
-            filled: ctrl.text.trim().isNotEmpty,
-          ),
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF111827),
-          ),
-        );
+            maxLines: type == 'MFDatatypeMultiLineText' ? 4 : 1,
+            onChanged: (_) => setState(() {}),
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: context.colors.textPrimary,
+            ),
+            cursorColor: context.colors.brand,
+            decoration: _textDeco(
+              hint: 'Enter number...',
+              filled: ctrl.text.trim().isNotEmpty,
+            ),
+          );
 
       case 'MFDatatypeFloating':
         final ctrl = _controllers.putIfAbsent(
@@ -920,16 +918,17 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
         );
         return TextField(
           controller: ctrl,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          maxLines: type == 'MFDatatypeMultiLineText' ? 4 : 1,
           onChanged: (_) => setState(() {}),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: context.colors.textPrimary,
+          ),
+          cursorColor: context.colors.brand,
           decoration: _textDeco(
             hint: 'Enter amount...',
             filled: ctrl.text.trim().isNotEmpty,
-          ),
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF111827),
           ),
         );
 
@@ -950,10 +949,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
             decoration: BoxDecoration(
-              color: has ? _filledFill : AppColors.surfaceLight,
+              color: has ? context.colors.brandTint : context.colors.surfaceSunken,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: has ? _filledBorder : Colors.grey.shade200,
+                color: has ? context.colors.brand : context.colors.border,
                 width: has ? 1.5 : 1,
               ),
             ),
@@ -962,16 +961,17 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                 Container(
                   padding: const EdgeInsets.all(5),
                   decoration: BoxDecoration(
-                    color:
-                        has
-                            ? _primaryBlue.withOpacity(0.1)
-                            : Colors.grey.shade100,
+                    color: has
+                        ? context.colors.brand.withOpacity(0.1)
+                        : context.colors.surfaceSunken,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
                     Icons.calendar_today_rounded,
                     size: 16,
-                    color: has ? _primaryBlue : Colors.grey.shade400,
+                    color: has
+                        ? context.colors.brand
+                        : context.colors.textTertiary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -981,22 +981,17 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: has ? FontWeight.w500 : FontWeight.w400,
-                      color:
-                          has ? const Color(0xFF111827) : Colors.grey.shade400,
+                      color: has
+                          ? context.colors.textPrimary
+                          : context.colors.textTertiary,
                     ),
                   ),
                 ),
                 has
-                    ? const Icon(
-                      Icons.check_circle_rounded,
-                      color: _filledBorder,
-                      size: 18,
-                    )
-                    : Icon(
-                      Icons.keyboard_arrow_down,
-                      color: Colors.grey.shade400,
-                      size: 20,
-                    ),
+                    ? Icon(Icons.check_circle_rounded,
+                        color: context.colors.brand, size: 18)
+                    : Icon(Icons.keyboard_arrow_down,
+                        color: context.colors.textTertiary, size: 20),
               ],
             ),
           ),
@@ -1111,6 +1106,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   Widget _buildBooleanField(int id, bool? current, bool required) {
     Widget pill(String label, bool value) {
       final selected = current == value;
+      final c = context.colors;
       return Expanded(
         child: GestureDetector(
           onTap: () => setState(() => _boolValues[id] = value),
@@ -1119,7 +1115,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             margin: const EdgeInsets.all(4),
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: selected ? _primaryBlue : Colors.transparent,
+              color: selected ? c.brand : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -1128,7 +1124,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
-                color: selected ? Colors.white : Colors.grey.shade600,
+                color: selected ? Colors.white : context.colors.textSecondary,
               ),
             ),
           ),
@@ -1138,14 +1134,14 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surfaceLight,
+        color: context.colors.surfaceSunken,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: context.colors.border),
       ),
       child: Row(
         children: [
           pill('Yes', true),
-          Container(width: 1, height: 36, color: Colors.grey.shade200),
+          Container(width: 1, height: 36, color: context.colors.divider),
           pill('No', false),
         ],
       ),
@@ -1153,33 +1149,34 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   }
 
   InputDecoration _textDeco({required String hint, required bool filled}) {
+    final c = context.colors;
     return InputDecoration(
       hintText: hint,
-      hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+      hintStyle: TextStyle(color: c.textTertiary, fontSize: 13),
       filled: true,
-      fillColor: filled ? _filledFill : AppColors.surfaceLight,
+      fillColor: filled ? c.brandTint : c.inputFill,
       isDense: true,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(
-          color: filled ? _filledBorder : Colors.grey.shade200,
+          color: filled ? c.brand : c.inputBorder,
           width: filled ? 1.5 : 1,
         ),
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade200),
+        borderSide: BorderSide(color: c.inputBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: _primaryBlue, width: 2),
+        borderSide: BorderSide(color: c.brand, width: 2),
       ),
       suffixIcon:
           filled
-              ? const Icon(
+              ? Icon(
                 Icons.check_circle_rounded,
-                color: _filledBorder,
+                color: c.brand,
                 size: 18,
               )
               : null,
@@ -1208,10 +1205,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
-                  color: hasValue ? _filledFill : AppColors.surfaceLight,
+                  color: hasValue ? context.colors.brandTint : context.colors.surfaceSunken,
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: hasValue ? _filledBorder : Colors.grey.shade200,
+                    color: hasValue ? context.colors.brand : context.colors.border,
                     width: hasValue ? 1.5 : 1,
                   ),
                 ),
@@ -1224,11 +1221,11 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                       ),
                     ),
                     if (hasValue)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(right: 12),
                         child: Icon(
                           Icons.check_circle_rounded,
-                          color: _filledBorder,
+                          color: context.colors.brand,
                           size: 18,
                         ),
                       ),
@@ -1254,9 +1251,9 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
+                  color: context.colors.brandTint,
                   borderRadius: BorderRadius.circular(999),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                  border: Border.all(color: context.colors.brand.withOpacity(0.35)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -1265,10 +1262,10 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                       child: Text(
                         selectedTexts[index],
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
-                          color: Color(0xFF1E40AF),
+                          color: context.colors.brand,
                         ),
                       ),
                     ),
@@ -1288,13 +1285,13 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
                         width: 16,
                         height: 16,
                         decoration: BoxDecoration(
-                          color: const Color(0xFF3B82F6).withOpacity(0.2),
+                          color: context.colors.brand.withOpacity(0.2),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.close,
                           size: 10,
-                          color: Color(0xFF1E40AF),
+                          color: context.colors.brand,
                         ),
                       ),
                     ),
@@ -1309,11 +1306,11 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
             padding: const EdgeInsets.only(top: 6),
             child: Row(
               children: [
-                Icon(Icons.error_outline, size: 14, color: Colors.red.shade600),
+                Icon(Icons.error_outline, size: 14, color: context.colors.dangerText),
                 const SizedBox(width: 4),
                 Text(
                   'This field is required',
-                  style: TextStyle(color: Colors.red.shade600, fontSize: 12),
+                  style: TextStyle(color: context.colors.dangerText, fontSize: 12),
                 ),
               ],
             ),
@@ -1326,7 +1323,7 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   /// app's inline quick-create affordance.
   Widget _quickCreateButton(VoidCallback onTap) {
     return Material(
-      color: _primaryBlue,
+      color: context.colors.brand,
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
@@ -1341,25 +1338,26 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   }
 
   Widget _sectionHeader(String title, {String? subtitle}) {
+    final c = context.colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: c.textPrimary,
           ),
         ),
         if (subtitle != null) ...[
           const SizedBox(height: 3),
           Text(
             subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF64748B),
+              color: c.textSecondary,
             ),
           ),
         ],
@@ -1368,32 +1366,34 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
   }
 
   Widget _buildError() {
+    final c = context.colors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.error_outline_rounded,
-              size: 48,
-              color: Colors.red.shade400,
-            ),
+            Icon(Icons.error_outline_rounded,
+                size: 48, color: c.dangerText),
             const SizedBox(height: 16),
-            const Text(
+            Text(
               'Failed to load template',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
             ),
             const SizedBox(height: 8),
             Text(
               humanizeError(_error!),
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 13, color: c.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
             ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: _primaryBlue,
+                backgroundColor: c.brand,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
@@ -1539,95 +1539,95 @@ class _TemplateFormScreenState extends State<TemplateFormScreen> {
 
     final name = await showDialog<String>(
       context: context,
-      builder:
-          (dialogContext) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 40,
-            ),
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.transparent,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Add new $label',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
+      builder: (dialogContext) {
+        final c = context.colors;
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+          backgroundColor: c.surfaceElevated,
+          surfaceTintColor: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add new $label',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: c.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  style: TextStyle(color: c.textPrimary),
+                  cursorColor: c.brand,
+                  decoration: InputDecoration(
+                    hintText: 'Enter ${label.toLowerCase()}',
+                    hintStyle: TextStyle(color: c.textTertiary),
+                    filled: true,
+                    fillColor: c.inputFill,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.inputBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.inputBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.brand, width: 2),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: 'Enter ${label.toLowerCase()}',
-                      filled: true,
-                      fillColor: AppColors.surfaceLight,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                          color: _primaryBlue,
-                          width: 2,
-                        ),
+                  onSubmitted: (v) =>
+                      Navigator.pop(dialogContext, v.trim()),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(color: c.textSecondary),
                       ),
                     ),
-                    onSubmitted: (v) => Navigator.pop(dialogContext, v.trim()),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(color: Colors.grey.shade700),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: () =>
+                          Navigator.pop(dialogContext, controller.text.trim()),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: c.brand,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed:
-                            () => Navigator.pop(
-                              dialogContext,
-                              controller.text.trim(),
-                            ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryBlue,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                        ),
-                        child: const Text('Add'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                      child: const Text('Add'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
+        );
+      },
     );
 
     if (name == null || name.isEmpty || !mounted) return;

@@ -473,7 +473,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     return Stack(
       children: [
         Scaffold(
-          backgroundColor: AppColors.surfaceLight,
+          backgroundColor: context.colors.surface,
           appBar: _buildAppBar(),
           body: NetworkBanner(
             child: Column(
@@ -490,7 +490,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         if (_isProcessing)
           Positioned.fill(
             child: ColoredBox(
-              color: Colors.black45,
+              color: context.colors.scrim,
               child: Center(
                 child: ProcessingDialog(operation: _processingText),
               ),
@@ -534,17 +534,43 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
         focusNode: _focusNode,
         autofocus: false,
         textInputAction: TextInputAction.search,
-        style: const TextStyle(color: Colors.white, fontSize: 16),
-        cursorColor: Colors.white70,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.w400,
+        ),
+        cursorColor: Colors.white,
         decoration: InputDecoration(
           hintText: 'Search repository…',
           hintStyle: TextStyle(
-            color: Colors.white.withOpacity(0.5),
+            color: Colors.white.withOpacity(0.55),
             fontSize: 16,
+            fontWeight: FontWeight.w400,
           ),
+
+          // 👇 This is the whole fix — kill the theme's fill + border
+          filled: false,
+          fillColor: Colors.transparent,
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          disabledBorder: InputBorder.none,
+          errorBorder: InputBorder.none,
+          focusedErrorBorder: InputBorder.none,
+
           isDense: true,
           contentPadding: EdgeInsets.zero,
+
+          // Optional but nice — a soft search icon as a left affordance
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            size: 20,
+            color: Colors.white.withOpacity(0.55),
+          ),
+          prefixIconConstraints: const BoxConstraints(
+            minWidth: 28,
+            minHeight: 28,
+          ),
         ),
         onChanged: _onQueryChanged,
         onSubmitted: (v) {
@@ -706,9 +732,9 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     child: SizedBox(
                       width: sheetWidth,
                       child: Container(
-                        decoration: const BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.vertical(
+                        decoration: BoxDecoration(
+                          color: context.colors.surfaceElevated,
+                          borderRadius: const BorderRadius.vertical(
                             top: Radius.circular(20),
                           ),
                         ),
@@ -719,7 +745,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                               width: 36,
                               height: 5,
                               decoration: BoxDecoration(
-                                color: Colors.grey.shade300,
+                                color: context.colors.divider,
                                 borderRadius: BorderRadius.circular(2.5),
                               ),
                             ),
@@ -984,9 +1010,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                 MediaQuery.of(ctx).viewInsets.bottom + 16,
                               ),
                               decoration: BoxDecoration(
-                                color: Colors.white,
+                                color: context.colors.surfaceElevated,
                                 border: Border(
-                                  top: BorderSide(color: Colors.grey.shade100),
+                                  top: BorderSide(
+                                    color: context.colors.divider,
+                                  ),
                                 ),
                               ),
                               child: Row(
@@ -1003,7 +1031,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                                 });
                                               },
                                       style: TextButton.styleFrom(
-                                        foregroundColor: Colors.grey.shade700,
+                                        foregroundColor:
+                                            context.colors.textPrimary,
                                         padding: const EdgeInsets.symmetric(
                                           vertical: 14,
                                         ),
@@ -1040,7 +1069,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                       },
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: AppColors.primary,
-                                        foregroundColor: Colors.white,
+                                        foregroundColor: context.colors.brand,
                                         elevation: 0,
                                         padding: const EdgeInsets.symmetric(
                                           vertical: 14,
@@ -1082,29 +1111,23 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildFilterNoResults(String query) {
+    final c = context.colors;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
           width: 64,
           height: 64,
-          decoration: BoxDecoration(
-            color: const Color(0xFF767680).withOpacity(0.10),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.search_off_rounded,
-            size: 28,
-            color: Color(0xFF8E8E93),
-          ),
+          decoration: BoxDecoration(color: c.brandTint, shape: BoxShape.circle),
+          child: Icon(Icons.search_off_rounded, size: 28, color: c.brand),
         ),
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'No matches',
           style: TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: Color(0xFF1C1C1E),
+            color: c.textPrimary,
           ),
         ),
         const SizedBox(height: 4),
@@ -1113,11 +1136,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           child: Text(
             'No object types or classes match "$query".',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              color: const Color(0xFF8E8E93).withOpacity(0.9),
-              height: 1.4,
-            ),
+            style: TextStyle(fontSize: 13, color: c.textSecondary, height: 1.4),
           ),
         ),
       ],
@@ -1129,10 +1148,11 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     String query,
     bool selected,
   ) {
+    final c = context.colors;
     final baseStyle = TextStyle(
       fontSize: 15,
       fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-      color: selected ? AppColors.primary : const Color(0xFF1E293B),
+      color: selected ? c.brand : c.textPrimary,
     );
 
     final q = query.trim().toLowerCase();
@@ -1180,37 +1200,35 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     required ValueChanged<String> onChanged,
     required VoidCallback onClear,
   }) {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
       child: Container(
         height: 40,
         decoration: BoxDecoration(
-          color: const Color(0xFF767680).withOpacity(0.10),
+          color: c.surfaceSunken,
           borderRadius: BorderRadius.circular(10),
         ),
         child: Row(
           children: [
             const SizedBox(width: 10),
-            Icon(
-              Icons.search_rounded,
-              size: 18,
-              color: const Color(0xFF8E8E93).withOpacity(0.9),
-            ),
+            Icon(Icons.search_rounded, size: 18, color: c.textTertiary),
             const SizedBox(width: 6),
             Expanded(
               child: TextField(
                 controller: controller,
                 onChanged: onChanged,
-                style: const TextStyle(fontSize: 16, color: Color(0xFF1C1C1E)),
-                cursorColor: AppColors.primary,
+                style: TextStyle(fontSize: 16, color: c.textPrimary),
+                cursorColor: c.brand,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   hintText: 'Search types and classes',
-                  hintStyle: TextStyle(
-                    fontSize: 16,
-                    color: const Color(0xFF8E8E93).withOpacity(0.7),
-                  ),
+                  hintStyle: TextStyle(fontSize: 16, color: c.textTertiary),
+                  filled: false,
+                  fillColor: Colors.transparent,
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                 ),
@@ -1222,11 +1240,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 onTap: onClear,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Icon(
-                    Icons.cancel,
-                    size: 18,
-                    color: const Color(0xFF8E8E93).withOpacity(0.8),
-                  ),
+                  child: Icon(Icons.cancel, size: 18, color: c.textTertiary),
                 ),
               )
             else
@@ -1244,6 +1258,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     required VoidCallback? onToggle,
   }) {
     final enabled = onToggle != null;
+    final c = context.colors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1255,10 +1270,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             children: [
               Text(
                 title,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF1A1A1A),
+                  color: c.textPrimary,
                 ),
               ),
               if (count > 0) ...[
@@ -1269,15 +1284,15 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                     vertical: 2,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.1),
+                    color: c.brandTint,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     '$count',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: c.brand,
                     ),
                   ),
                 ),
@@ -1290,7 +1305,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   child: Icon(
                     Icons.keyboard_arrow_down_rounded,
                     size: 22,
-                    color: Colors.grey.shade400,
+                    color: c.textTertiary,
                   ),
                 ),
             ],
@@ -1307,6 +1322,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
     required VoidCallback onTap,
     String query = '',
   }) {
+    final c = context.colors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1326,11 +1342,10 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   width: 22,
                   height: 22,
                   decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : Colors.transparent,
+                    color: selected ? c.brand : Colors.transparent,
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color:
-                          selected ? AppColors.primary : Colors.grey.shade300,
+                      color: selected ? c.brand : c.border,
                       width: 1.5,
                     ),
                   ),
@@ -1345,11 +1360,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                 )
               else
                 selected
-                    ? const Icon(
-                      Icons.check_rounded,
-                      size: 22,
-                      color: AppColors.primary,
-                    )
+                    ? Icon(Icons.check_rounded, size: 22, color: c.brand)
                     : const SizedBox(width: 22),
             ],
           ),
@@ -1616,34 +1627,33 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 
   Widget _buildStatusBar() {
     final query = _controller.text.trim();
+    if (query.isEmpty) return const SizedBox.shrink();
 
-    if (query.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    final c = context.colors;
 
     return Container(
       width: double.infinity,
-      color: Colors.white,
+      color: c.surfaceElevated,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
+              color: c.brandTint,
               borderRadius: BorderRadius.circular(20),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.search, size: 13, color: AppColors.primary),
+                Icon(Icons.search, size: 13, color: c.brand),
                 const SizedBox(width: 5),
                 Text(
                   '"$query"',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+                    color: c.brand,
                   ),
                 ),
               ],
@@ -1660,14 +1670,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      AppColors.primary.withOpacity(0.6),
+                      c.brand.withOpacity(0.6),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'Searching…',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 12, color: c.textSecondary),
                 ),
               ],
             )
@@ -1680,14 +1690,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation<Color>(
-                      Colors.orange.withOpacity(0.7),
+                      c.warningText.withOpacity(0.7),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'Loading more results…',
-                  style: TextStyle(fontSize: 12, color: Colors.orange.shade600),
+                  style: TextStyle(fontSize: 12, color: c.warningText),
                 ),
               ],
             )
@@ -1698,10 +1708,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                   : '${_results.length} result${_results.length == 1 ? '' : 's'}',
               style: TextStyle(
                 fontSize: 12,
-                color:
-                    _errorMessage != null
-                        ? Colors.red.shade600
-                        : Colors.grey.shade600,
+                color: _errorMessage != null ? c.dangerText : c.textSecondary,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -1711,36 +1718,32 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildSelectionSummary() {
+    final c = context.colors;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color:
-            _showSelectedOnly
-                ? Colors.green.shade50
-                : AppColors.primary.withOpacity(0.05),
-        border: Border(bottom: BorderSide(color: Colors.grey.shade300)),
+        color: _showSelectedOnly ? c.successSurface : c.brandTint,
+        border: Border(bottom: BorderSide(color: c.divider)),
       ),
       child: Row(
         children: [
-          const Icon(Icons.check_circle, color: AppColors.primary, size: 18),
-
+          Icon(Icons.check_circle, color: c.brand, size: 18),
           const SizedBox(width: 8),
-
           Expanded(
             child: Text(
               _showSelectedOnly
                   ? 'Reviewing ${_selectedIds.length} selected items'
                   : '${_selectedIds.length} items selected across searches',
-              style: const TextStyle(fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
             ),
           ),
-
           TextButton(
             onPressed: () {
-              setState(() {
-                _showSelectedOnly = !_showSelectedOnly;
-              });
+              setState(() => _showSelectedOnly = !_showSelectedOnly);
             },
             child: Text(_showSelectedOnly ? 'Show All' : 'Review'),
           ),
@@ -1776,6 +1779,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildIdleState() {
+    final c = context.colors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -1785,22 +1789,18 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.06),
+                color: c.brandTint,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.search_rounded,
-                size: 48,
-                color: AppColors.primary,
-              ),
+              child: Icon(Icons.search_rounded, size: 48, color: c.brand),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Search the repository',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1A1A),
+                color: c.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -1809,7 +1809,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: AppColors.surfaceLight,
+                color: c.textSecondary,
                 height: 1.5,
               ),
             ),
@@ -1834,6 +1834,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildEmptyState(String query) {
+    final c = context.colors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -1843,22 +1844,22 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: c.surfaceSunken,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.search_off_rounded,
                 size: 48,
-                color: Colors.grey.shade400,
+                color: c.textTertiary,
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'No results found',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1A1A),
+                color: c.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
@@ -1867,7 +1868,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 14,
-                color: AppColors.surfaceLight,
+                color: c.textSecondary,
                 height: 1.5,
               ),
             ),
@@ -1878,6 +1879,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
   }
 
   Widget _buildErrorState(String error) {
+    final c = context.colors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(40),
@@ -1887,29 +1889,29 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.red.shade50,
+                color: c.dangerSurface,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.error_outline_rounded,
                 size: 48,
-                color: Colors.red.shade400,
+                color: c.dangerText,
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Search failed',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
-                color: Color(0xFF1A1A1A),
+                color: c.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               error,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 13, color: c.textSecondary),
             ),
             const SizedBox(height: 20),
             OutlinedButton.icon(
@@ -1917,8 +1919,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Try again'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: BorderSide(color: AppColors.primary.withOpacity(0.4)),
+                foregroundColor: c.brand,
+                side: BorderSide(color: c.brand.withOpacity(0.4)),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 12,
@@ -1990,28 +1992,26 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
       decoration: BoxDecoration(
         color:
             _isSelected(obj.id)
-                ? AppColors.primary.withOpacity(0.08)
-                : Colors.white,
+                ? context.colors.brandTintStrong
+                : context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
-
-        // ADDED: Softer, multi-layered elevation for the expanded state
         boxShadow:
             (infoExpanded || relationshipsExpanded)
                 ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
+                    color: context.colors.shadow,
                     blurRadius: 24,
                     offset: const Offset(0, 8),
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: context.colors.shadow,
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ]
                 : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: context.colors.shadow,
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
@@ -2074,7 +2074,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                   ? Icons.expand_more
                                   : Icons.chevron_right,
                               size: 18,
-                              color: AppColors.primary,
+                              color: context.colors.brand,
                             ),
                           ),
                         ),
@@ -2167,7 +2167,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade600,
+                              color: context.colors.textSecondary,
                             ),
                           ),
                         ],
@@ -2183,7 +2183,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                         child: Container(
                           padding: const EdgeInsets.all(6),
                           decoration: BoxDecoration(
-                            color: Colors.blueGrey.withOpacity(0.08),
+                            color: context.colors.brandTint,
                             shape: BoxShape.circle,
                           ),
                           child:
@@ -2194,14 +2194,14 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                     child: CircularProgressIndicator(
                                       strokeWidth: 2,
                                       valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.blueGrey.shade400,
+                                        context.colors.brand,
                                       ),
                                     ),
                                   )
                                   : Icon(
                                     Icons.remove_red_eye_outlined,
                                     size: 18,
-                                    color: Colors.blueGrey.shade400,
+                                    color: context.colors.brand,
                                   ),
                         ),
                       ),
@@ -2227,8 +2227,8 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                             decoration: BoxDecoration(
                               color:
                                   infoExpanded
-                                      ? AppColors.primary.withOpacity(0.15)
-                                      : AppColors.primary.withOpacity(0.08),
+                                      ? context.colors.brandTintStrong
+                                      : context.colors.brandTint,
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -2236,7 +2236,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                                   ? Icons.keyboard_arrow_up_rounded
                                   : Icons.info_outline,
                               size: 18,
-                              color: AppColors.primary,
+                              color: context.colors.brand,
                             ),
                           ),
                         ),
@@ -2245,7 +2245,7 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
                       Icon(
                         Icons.chevron_right_rounded,
                         size: 20,
-                        color: Colors.grey.shade400,
+                        color: context.colors.textSecondary,
                       ),
                   ],
                 ),
@@ -2254,12 +2254,12 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
           ),
 
           if (infoExpanded && canExpand) ...[
-            Divider(height: 1, color: Colors.grey.shade200),
+            Divider(height: 1, color: context.colors.divider),
             ObjectInfoDropdown(obj: obj),
           ],
 
           if (relationshipsExpanded && canExpand) ...[
-            Divider(height: 1, color: Colors.grey.shade200),
+            Divider(height: 1, color: context.colors.divider),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
               child: RelationshipsDropdown(
@@ -2280,22 +2280,24 @@ class _SearchResultsScreenState extends State<SearchResultsScreen> {
 class _HighlightedText extends StatelessWidget {
   final String text;
   final String query;
-
   const _HighlightedText({required this.text, required this.query});
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final baseStyle = TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      color: c.textPrimary,
+      height: 1.2,
+    );
+
     if (query.isEmpty) {
       return Text(
         text,
         maxLines: 3,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF1A1A1A),
-          height: 1.2,
-        ),
+        style: baseStyle,
       );
     }
 
@@ -2316,10 +2318,10 @@ class _HighlightedText extends StatelessWidget {
       spans.add(
         TextSpan(
           text: text.substring(index, index + query.length),
-          style: const TextStyle(
-            color: AppColors.primary,
+          style: TextStyle(
+            color: c.brand,
             fontWeight: FontWeight.w800,
-            backgroundColor: Color(0xFFDCEAFF),
+            backgroundColor: c.brandTintStrong,
           ),
         ),
       );
@@ -2327,15 +2329,7 @@ class _HighlightedText extends StatelessWidget {
     }
 
     return Text.rich(
-      TextSpan(
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF1A1A1A),
-          height: 1.2,
-        ),
-        children: spans,
-      ),
+      TextSpan(style: baseStyle, children: spans),
       maxLines: 3,
       overflow: TextOverflow.ellipsis,
     );
@@ -2381,6 +2375,7 @@ class _ShimmerRowState extends State<_ShimmerRow>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return AnimatedBuilder(
       animation: _anim,
       builder:
@@ -2388,11 +2383,11 @@ class _ShimmerRowState extends State<_ShimmerRow>
             margin: const EdgeInsets.only(bottom: 8),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: c.surfaceElevated,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.04),
+                  color: c.shadow,
                   blurRadius: 8,
                   offset: const Offset(0, 2),
                 ),
@@ -2404,7 +2399,7 @@ class _ShimmerRowState extends State<_ShimmerRow>
                   width: 28,
                   height: 28,
                   decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(_anim.value),
+                    color: c.textTertiary.withOpacity(_anim.value),
                     borderRadius: BorderRadius.circular(6),
                   ),
                 ),
@@ -2418,7 +2413,7 @@ class _ShimmerRowState extends State<_ShimmerRow>
                         child: Container(
                           height: 13,
                           decoration: BoxDecoration(
-                            color: Colors.grey.withOpacity(_anim.value),
+                            color: c.textTertiary.withOpacity(_anim.value),
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
@@ -2429,7 +2424,9 @@ class _ShimmerRowState extends State<_ShimmerRow>
                         child: Container(
                           height: 10,
                           decoration: BoxDecoration(
-                            color: Colors.grey.withOpacity(_anim.value * 0.6),
+                            color: c.textTertiary.withOpacity(
+                              _anim.value * 0.6,
+                            ),
                             borderRadius: BorderRadius.circular(4),
                           ),
                         ),
@@ -2442,7 +2439,7 @@ class _ShimmerRowState extends State<_ShimmerRow>
                   width: 34,
                   height: 34,
                   decoration: BoxDecoration(
-                    color: Colors.grey.withOpacity(_anim.value * 0.4),
+                    color: c.textTertiary.withOpacity(_anim.value * 0.4),
                     shape: BoxShape.circle,
                   ),
                 ),
