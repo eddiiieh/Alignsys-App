@@ -92,7 +92,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     final svc = context.read<MFilesService>();
 
     if (widget.versionId != null) {
-      debugPrint('📥 Fetching version ${widget.versionId} for fileId=${widget.fileId}');
+      debugPrint(
+          '📥 Fetching version ${widget.versionId} for fileId=${widget.fileId}');
 
       final result = await svc.fetchObjectFileVersion(
         displayObjectId: widget.displayObjectId,
@@ -167,7 +168,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Downloaded to: $savedPath'),
-          backgroundColor: Colors.green.shade600,
+          backgroundColor: context.colors.successText,
           duration: const Duration(seconds: 3),
         ),
       );
@@ -176,7 +177,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Download failed: $e'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
     } finally {
@@ -198,7 +199,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Open failed: $e'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
     }
@@ -221,6 +222,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
     required bool enabled,
     required VoidCallback onTap,
   }) {
+    final c = context.colors;
     return Tooltip(
       message: tooltip,
       child: InkWell(
@@ -230,13 +232,13 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: enabled ? AppColors.primary : Colors.grey.shade200,
+            color: enabled ? c.brand : c.surfaceSunken,
             shape: BoxShape.circle,
           ),
           child: Icon(
             icon,
             size: 20,
-            color: enabled ? Colors.white : Colors.grey.shade400,
+            color: enabled ? Colors.white : c.textTertiary,
           ),
         ),
       ),
@@ -268,14 +270,16 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (sheetContext) {
+        final c = sheetContext.colors;
         return Padding(
           padding: EdgeInsets.only(
             bottom: MediaQuery.of(sheetContext).viewInsets.bottom,
           ),
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            decoration: BoxDecoration(
+              color: c.surfaceElevated,
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
             ),
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 20),
             child: Column(
@@ -285,12 +289,13 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
+                    color: c.divider,
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 const SizedBox(height: 14),
 
+                // Branded header — consistent with other sheets in the app.
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
@@ -330,11 +335,13 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                       ),
                       Text(
                         'of $_totalPages',
-                        style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white70),
                       ),
                       const SizedBox(width: 8),
                       IconButton(
-                        icon: const Icon(Icons.close, color: Colors.white70),
+                        icon:
+                            const Icon(Icons.close, color: Colors.white70),
                         onPressed: () => Navigator.pop(sheetContext),
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
@@ -351,30 +358,29 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                   autofocus: true,
                   keyboardType: TextInputType.number,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 22,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF1E293B),
+                    color: c.textPrimary,
                   ),
                   decoration: InputDecoration(
-                    contentPadding: const EdgeInsets.symmetric(vertical: 16),
+                    contentPadding:
+                        const EdgeInsets.symmetric(vertical: 16),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
+                      borderSide: BorderSide(color: c.inputBorder),
                     ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(color: Colors.grey.shade200),
+                      borderSide: BorderSide(color: c.inputBorder),
                     ),
                     focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                        color: AppColors.primary,
-                        width: 2,
-                      ),
+                      borderSide: BorderSide(color: c.brand, width: 2),
                     ),
                   ),
-                  onSubmitted: (_) => _submitJumpToPage(sheetContext, controller.text),
+                  onSubmitted: (_) =>
+                      _submitJumpToPage(sheetContext, controller.text),
                 ),
 
                 const SizedBox(height: 20),
@@ -385,8 +391,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                       child: OutlinedButton(
                         onPressed: () => Navigator.pop(sheetContext),
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.grey.shade700,
-                          side: BorderSide(color: Colors.grey.shade300),
+                          foregroundColor: c.textPrimary,
+                          side: BorderSide(color: c.border),
                           padding: const EdgeInsets.symmetric(vertical: 13),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -401,9 +407,10 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                     const SizedBox(width: 10),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () => _submitJumpToPage(sheetContext, controller.text),
+                        onPressed: () =>
+                            _submitJumpToPage(sheetContext, controller.text),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
+                          backgroundColor: c.brand,
                           foregroundColor: Colors.white,
                           elevation: 0,
                           padding: const EdgeInsets.symmetric(vertical: 13),
@@ -440,6 +447,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
   }
 
   Widget _buildOpenedExternallyCard(File file) {
+    final c = context.colors;
     final ext = _cleanExt(file.path.split('.').last).toUpperCase();
     return Center(
       child: Padding(
@@ -450,13 +458,13 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.08),
+                color: c.brandTint,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.open_in_new_rounded,
                 size: 52,
-                color: AppColors.primary,
+                color: c.brand,
               ),
             ),
             const SizedBox(height: 20),
@@ -465,7 +473,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: Colors.grey.shade800,
+                color: c.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
@@ -477,7 +485,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey.shade600,
+                color: c.textSecondary,
                 height: 1.5,
               ),
             ),
@@ -487,7 +495,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
               icon: const Icon(Icons.open_in_new_rounded, size: 16),
               label: const Text('Open again'),
               style: TextButton.styleFrom(
-                backgroundColor: AppColors.primary,
+                backgroundColor: c.brand,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(18)),
@@ -499,7 +507,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
               icon: const Icon(Icons.arrow_back_rounded, size: 16),
               label: const Text('Go back'),
               style: TextButton.styleFrom(
-                foregroundColor: Colors.grey.shade700,
+                foregroundColor: c.textSecondary,
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
@@ -537,8 +545,9 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
         imageProvider: FileImage(file),
         minScale: PhotoViewComputedScale.contained,
         maxScale: PhotoViewComputedScale.covered * 3,
-        backgroundDecoration:
-            BoxDecoration(color: AppColors.surfaceLight),
+        backgroundDecoration: BoxDecoration(
+          color: context.colors.surfaceSunken,
+        ),
         loadingBuilder: (context, event) => Center(
           child: CircularProgressIndicator(
             value: event == null
@@ -566,7 +575,11 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
             padding: const EdgeInsets.all(16),
             child: SelectableText(
               snap.data ?? '',
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
+              style: TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 13,
+                color: context.colors.textPrimary,
+              ),
             ),
           );
         },
@@ -575,6 +588,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
     WidgetsBinding.instance
         .addPostFrameCallback((_) => _openExternally(file));
+    final c = context.colors;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -583,12 +597,12 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
           const SizedBox(height: 16),
           Text(
             'Opening file…',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 14, color: c.textSecondary),
           ),
           const SizedBox(height: 8),
           Text(
             'Launching external app',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+            style: TextStyle(fontSize: 12, color: c.textTertiary),
           ),
         ],
       ),
@@ -597,12 +611,13 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final bannerExt = widget.extension.isEmpty
         ? ''
         : '.${_cleanExt(widget.extension)}';
 
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: c.surface,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -623,7 +638,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
           if (_cleanExt(widget.extension) == 'pdf')
             IconButton(
               onPressed: _toggleSearch,
-              icon: Icon(_searchActive ? Icons.close : Icons.find_in_page_outlined),
+              icon: Icon(
+                  _searchActive ? Icons.close : Icons.find_in_page_outlined),
               tooltip: _searchActive ? 'Close search' : 'Search text',
             ),
           if (widget.canDownload)
@@ -656,7 +672,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
                       horizontal: 16, vertical: 10),
-                  color: Colors.white,
+                  color: c.surfaceElevated,
                   child: Row(
                     children: [
                       FileTypeBadge(
@@ -667,8 +683,10 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                       Expanded(
                         child: Text(
                           '${widget.fileTitle}$bannerExt',
-                          style: const TextStyle(
-                              fontSize: 13, fontWeight: FontWeight.w500),
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: c.textPrimary),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -686,8 +704,8 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                                 horizontal: 12, vertical: 7),
                             decoration: BoxDecoration(
                               color: fileReady
-                                  ? AppColors.primary
-                                  : Colors.grey.shade100,
+                                  ? c.brand
+                                  : c.surfaceSunken,
                               borderRadius: BorderRadius.circular(20),
                             ),
                             child: Row(
@@ -698,7 +716,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                                   size: 14,
                                   color: fileReady
                                       ? Colors.white
-                                      : Colors.grey.shade400,
+                                      : c.textTertiary,
                                 ),
                                 const SizedBox(width: 5),
                                 Text(
@@ -708,7 +726,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                                     fontWeight: FontWeight.w600,
                                     color: fileReady
                                         ? Colors.white
-                                        : Colors.grey.shade400,
+                                        : c.textTertiary,
                                   ),
                                 ),
                               ],
@@ -721,25 +739,25 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                 );
               },
             ),
-            const Divider(height: 1),
+            Divider(height: 1, color: c.divider),
 
             if (_searchActive)
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-                color: Colors.white,
+                color: c.surfaceElevated,
                 child: Row(
                   children: [
                     Expanded(
                       child: Container(
                         height: 44,
                         decoration: BoxDecoration(
-                          color: AppColors.surfaceLight,
+                          color: c.inputFill,
                           borderRadius: BorderRadius.circular(22),
                           border: Border.all(
                             color: _searchFieldFocus.hasFocus
-                                ? AppColors.primary
-                                : Colors.grey.shade200,
+                                ? c.brand
+                                : c.inputBorder,
                             width: _searchFieldFocus.hasFocus ? 1.5 : 1,
                           ),
                         ),
@@ -748,22 +766,27 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                           focusNode: _searchFieldFocus,
                           autofocus: true,
                           textInputAction: TextInputAction.search,
-                          style: const TextStyle(fontSize: 14),
+                          style: TextStyle(
+                              fontSize: 14, color: c.textPrimary),
+                          cursorColor: c.brand,
                           decoration: InputDecoration(
                             hintText: 'Find in document',
                             hintStyle: TextStyle(
                               fontSize: 14,
-                              color: Colors.grey.shade400,
+                              color: c.textTertiary,
                             ),
                             isDense: true,
                             border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(vertical: 11),
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            contentPadding:
+                                const EdgeInsets.symmetric(vertical: 11),
                             prefixIcon: Icon(
                               Icons.search,
                               size: 18,
                               color: _searchFieldFocus.hasFocus
-                                  ? AppColors.primary
-                                  : Colors.grey.shade400,
+                                  ? c.brand
+                                  : c.textTertiary,
                             ),
                             prefixIconConstraints: const BoxConstraints(
                               minWidth: 40,
@@ -778,25 +801,28 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
                     if (_searchResult != null && _searchResult!.hasResult)
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 2),
                         child: Text(
                           '${_searchResult!.currentInstanceIndex}/${_searchResult!.totalInstanceCount}',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w600,
-                            color: Colors.grey.shade700,
+                            color: c.textSecondary,
                           ),
                         ),
                       )
-                    else if (_searchResult != null && _searchResult!.isSearchCompleted)
+                    else if (_searchResult != null &&
+                        _searchResult!.isSearchCompleted)
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 2),
                         child: Text(
                           'No results',
                           style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w500,
-                            color: Colors.grey.shade500,
+                            color: c.textTertiary,
                           ),
                         ),
                       ),
@@ -807,14 +833,16 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                       icon: Icons.keyboard_arrow_up,
                       tooltip: 'Previous match',
                       enabled: _searchResult?.hasResult ?? false,
-                      onTap: () => setState(() => _searchResult!.previousInstance()),
+                      onTap: () =>
+                          setState(() => _searchResult!.previousInstance()),
                     ),
                     const SizedBox(width: 6),
                     _buildSearchNavButton(
                       icon: Icons.keyboard_arrow_down,
                       tooltip: 'Next match',
                       enabled: _searchResult?.hasResult ?? false,
-                      onTap: () => setState(() => _searchResult!.nextInstance()),
+                      onTap: () =>
+                          setState(() => _searchResult!.nextInstance()),
                     ),
                   ],
                 ),
@@ -831,23 +859,25 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
 
                   if (snap.hasError) {
                     final svc = context.read<MFilesService>();
-                    final isTrashed = svc.isObjectDeleted(widget.displayObjectId);
+                    final isTrashed =
+                        svc.isObjectDeleted(widget.displayObjectId);
                     final errStr = snap.error.toString().toLowerCase();
 
                     // ── Existing error classifications ──
-                    final isCommitError = errStr.contains('not been committed') ||
+                    final isCommitError = errStr
+                            .contains('not been committed') ||
                         errStr.contains('not committed');
 
-                    // ── NEW: checked-out detection ──
-                    // M-Files error text for a checked-out file typically
-                    // contains "checked out" or "is checked out".
-                    final isCheckedOut = errStr.contains('checked out') ||
-                        errStr.contains('checkedout') ||
-                        errStr.contains('check out');
+                    // ── Checked-out detection ──
+                    final isCheckedOut =
+                        errStr.contains('checked out') ||
+                            errStr.contains('checkedout') ||
+                            errStr.contains('check out');
 
-                    final isCorruptError = errStr.contains('could not find') ||
-                        errStr.contains('file signature') ||
-                        errStr.contains('corrupted');
+                    final isCorruptError =
+                        errStr.contains('could not find') ||
+                            errStr.contains('file signature') ||
+                            errStr.contains('corrupted');
 
                     // ── Icon ──
                     final icon = isTrashed
@@ -860,16 +890,30 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                                     ? Icons.broken_image_outlined
                                     : Icons.cloud_off_rounded;
 
-                    // ── Color ──
-                    final color = isTrashed
-                        ? Colors.red.shade400
+                    // ── Colors (semantic tokens, tuned per classification) ──
+                    // Purple for corruption uses a fixed soft tone that reads
+                    // on both light and dark surfaces.
+                    const corruptColor = Color(0xFFC084FC);
+
+                    final Color color = isTrashed
+                        ? c.dangerText
                         : isCheckedOut
-                            ? Colors.blue.shade400
+                            ? c.brand
                             : isCommitError
-                                ? Colors.orange.shade400
+                                ? c.warningText
                                 : isCorruptError
-                                    ? Colors.purple.shade300
-                                    : Colors.grey.shade400;
+                                    ? corruptColor
+                                    : c.textTertiary;
+
+                    final Color circleBg = isTrashed
+                        ? c.dangerSurface
+                        : isCheckedOut
+                            ? c.brandTint
+                            : isCommitError
+                                ? c.warningSurface
+                                : isCorruptError
+                                    ? corruptColor.withOpacity(0.15)
+                                    : c.surfaceSunken;
 
                     // ── Title ──
                     final title = isTrashed
@@ -902,7 +946,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                             Container(
                               padding: const EdgeInsets.all(20),
                               decoration: BoxDecoration(
-                                color: color.withOpacity(0.1),
+                                color: circleBg,
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(icon, size: 52, color: color),
@@ -913,7 +957,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
-                                color: Colors.grey.shade800,
+                                color: c.textPrimary,
                               ),
                               textAlign: TextAlign.center,
                             ),
@@ -923,7 +967,7 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.grey.shade600,
+                                color: c.textSecondary,
                                 height: 1.5,
                               ),
                             ),
@@ -931,13 +975,17 @@ class _DocumentPreviewScreenState extends State<DocumentPreviewScreen>
                               const SizedBox(height: 24),
                               OutlinedButton.icon(
                                 onPressed: () => Navigator.pop(context),
-                                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                                icon: const Icon(
+                                    Icons.arrow_back_rounded,
+                                    size: 16),
                                 label: const Text('Go Back'),
                                 style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.red.shade600,
-                                  side: BorderSide(color: Colors.red.shade300),
+                                  foregroundColor: c.dangerText,
+                                  side: BorderSide(
+                                      color: c.dangerBorder),
                                   shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(10)),
+                                      borderRadius:
+                                          BorderRadius.circular(10)),
                                 ),
                               ),
                             ],

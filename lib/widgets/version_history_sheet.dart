@@ -66,22 +66,21 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder:
-              (_) => DocumentPreviewScreen(
-                displayObjectId: _displayObjectId,
-                classId: widget.obj.classId,
-                fileId: file.fileId,
-                objectTypeId: widget.obj.objectTypeId,
-                fileTitle: file.fileTitle,
-                extension: file.extension,
-                reportGuid: file.reportGuid ?? '',
-                versionId: v.versionId,
-                canDownload: false,
-              ),
+          builder: (_) => DocumentPreviewScreen(
+            displayObjectId: _displayObjectId,
+            classId: widget.obj.classId,
+            fileId: file.fileId,
+            objectTypeId: widget.obj.objectTypeId,
+            fileTitle: file.fileTitle,
+            extension: file.extension,
+            reportGuid: file.reportGuid ?? '',
+            versionId: v.versionId,
+            canDownload: false,
+          ),
         ),
       );
     } else {
-      await _openVersion(v); // non-PDF: existing external-open flow
+      await _openVersion(v);
     }
   }
 
@@ -125,13 +124,10 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
 
     setState(() => _rollingBack = true);
 
-    // Show the processing indicator on top of the sheet while the
-    // rollback request is in flight.
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder:
-          (_) => const ProcessingDialog(operation: 'Rolling back document'),
+      builder: (_) => const ProcessingDialog(operation: 'Rolling back document'),
     );
 
     try {
@@ -144,10 +140,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
       );
 
       if (!mounted) return;
-      Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pop(); // close processing dialog
+      Navigator.of(context, rootNavigator: true).pop();
 
       if (ok) {
         SnackbarHelper.showSuccess(
@@ -155,7 +148,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
           'Rolled back to version ${version.versionId}',
         );
         widget.onRolledBack?.call();
-        Navigator.pop(context); // close the sheet
+        Navigator.pop(context);
       } else {
         SnackbarHelper.showError(context, svc.error ?? 'Rollback failed');
       }
@@ -176,8 +169,8 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
     return '$hour:$minute $period';
   }
 
-  // Widget to display the metadata of a version, including version ID, modified date, modified by, and file details if available.
   Widget _versionMetadataPanel(ObjectVersion v) {
+    final c = context.colors;
     final file = v.firstFile;
     final dt = v.lastModifiedUtcParsed;
     final dateStr = dt != null
@@ -191,12 +184,19 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
         children: [
           SizedBox(
             width: 110,
-            child: Text(label, style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 12, color: c.textSecondary),
+            ),
           ),
           Expanded(
             child: Text(
               value.isEmpty ? '-' : value,
-              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
             ),
           ),
         ],
@@ -210,12 +210,16 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
         children: [
           Text(
             property.propName.isEmpty ? 'Unnamed property' : property.propName,
-            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+            style: TextStyle(fontSize: 11, color: c.textSecondary),
           ),
           const SizedBox(height: 2),
           Text(
             property.displayText.isEmpty ? '-' : property.displayText,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: c.textPrimary,
+            ),
           ),
         ],
       ),
@@ -226,9 +230,9 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
     return Container(
       margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: c.surfaceSunken,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: c.border),
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: panelMaxHeight),
@@ -254,13 +258,17 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                   padding: const EdgeInsets.only(bottom: 6),
                   child: Text(
                     'Metadata Properties',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primary),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: c.brand,
+                    ),
                   ),
                 ),
                 if (v.properties.isEmpty)
                   Text(
                     'No metadata properties were returned for this version.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                    style: TextStyle(fontSize: 12, color: c.textSecondary),
                   )
                 else
                   ...v.properties.map(propertyTile),
@@ -274,17 +282,17 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return DraggableScrollableSheet(
       initialChildSize: 0.6,
       minChildSize: 0.35,
       maxChildSize: 0.9,
       expand: false,
       builder: (context, scrollController) {
-        // NEW
         return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          decoration: BoxDecoration(
+            color: c.surfaceElevated,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
             children: [
@@ -293,7 +301,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: c.divider,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -311,7 +319,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                             style: TextStyle(
                               fontSize: 20,
                               fontWeight: FontWeight.w600,
-                              color: AppColors.primary,
+                              color: c.brand,
                               letterSpacing: 0.1,
                             ),
                           ),
@@ -323,14 +331,14 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                                 width: 32,
                                 height: 32,
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.1),
+                                  color: c.brandTint,
                                   borderRadius: BorderRadius.circular(9),
                                 ),
                                 child: Icon(
                                   context
                                       .read<MFilesService>()
                                       .iconForViewObject(widget.obj),
-                                  color: AppColors.primary,
+                                  color: c.brand,
                                   size: 17,
                                 ),
                               ),
@@ -341,7 +349,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                                   style: TextStyle(
                                     fontSize: 15,
                                     fontWeight: FontWeight.w700,
-                                    color: Colors.grey.shade900,
+                                    color: c.textPrimary,
                                     height: 1.25,
                                   ),
                                   maxLines: 4,
@@ -354,7 +362,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                       ),
                     ),
                     IconButton(
-                      icon: Icon(Icons.close, color: Colors.grey.shade500),
+                      icon: Icon(Icons.close, color: c.textSecondary),
                       onPressed: () => Navigator.pop(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -362,7 +370,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                   ],
                 ),
               ),
-              Divider(height: 1, color: Colors.grey.shade100),
+              Divider(height: 1, color: c.divider),
               Expanded(
                 child: FutureBuilder<List<ObjectVersion>>(
                   future: _future,
@@ -378,7 +386,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                             'Could not load version history: ${snap.error}',
                             textAlign: TextAlign.center,
                             style: TextStyle(
-                              color: Colors.grey.shade600,
+                              color: c.textSecondary,
                               fontSize: 13,
                             ),
                           ),
@@ -392,7 +400,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                         child: Text(
                           'No version history available',
                           style: TextStyle(
-                            color: Colors.grey.shade500,
+                            color: c.textTertiary,
                             fontSize: 13,
                           ),
                         ),
@@ -412,9 +420,8 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                           vertical: 8,
                         ),
                         itemCount: versions.length,
-                        separatorBuilder:
-                            (_, __) =>
-                                Divider(height: 1, color: Colors.grey.shade100),
+                        separatorBuilder: (_, __) =>
+                            Divider(height: 1, color: c.divider),
                         itemBuilder: (context, index) {
                           final v = versions[index];
                           final isCurrent = v.versionId == currentVersionId;
@@ -425,10 +432,9 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                             v.versionId,
                           );
                           final dt = v.lastModifiedUtcParsed;
-                          final dateStr =
-                              dt != null
-                                  ? '${dt.day}/${dt.month}/${dt.year} • ${_formatTime(dt)}'
-                                  : v.lastModifiedUtc;
+                          final dateStr = dt != null
+                              ? '${dt.day}/${dt.month}/${dt.year} • ${_formatTime(dt)}'
+                              : v.lastModifiedUtc;
 
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -443,44 +449,40 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                                   width: 36,
                                   height: 36,
                                   decoration: BoxDecoration(
-                                    color:
-                                        isCurrent
-                                            ? AppColors.primary.withOpacity(
-                                              0.12,
-                                            )
-                                            : Colors.grey.shade100,
+                                    color: isCurrent
+                                        ? c.brandTint
+                                        : c.surfaceSunken,
                                     shape: BoxShape.circle,
                                   ),
                                   child: Center(
-                                    child:
-                                        isOpening
-                                            ? const SizedBox(
-                                              width: 16,
-                                              height: 16,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                              ),
-                                            )
-                                            : Text(
-                                              'v${v.versionId}',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color:
-                                                    isCurrent
-                                                        ? AppColors.primary
-                                                        : Colors.grey.shade600,
-                                              ),
+                                    child: isOpening
+                                        ? const SizedBox(
+                                            width: 16,
+                                            height: 16,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
                                             ),
+                                          )
+                                        : Text(
+                                            'v${v.versionId}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700,
+                                              color: isCurrent
+                                                  ? c.brand
+                                                  : c.textSecondary,
+                                            ),
+                                          ),
                                   ),
                                 ),
                                 title: Row(
                                   children: [
                                     Text(
                                       'Version ${v.versionId}',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 14,
                                         fontWeight: FontWeight.w600,
+                                        color: c.textPrimary,
                                       ),
                                     ),
                                     if (isCurrent) ...[
@@ -491,19 +493,16 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                                           vertical: 1,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: AppColors.primary.withOpacity(
-                                            0.1,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            8,
-                                          ),
+                                          color: c.brandTint,
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
-                                        child: const Text(
+                                        child: Text(
                                           'Current',
                                           style: TextStyle(
                                             fontSize: 10,
                                             fontWeight: FontWeight.w700,
-                                            color: AppColors.primary,
+                                            color: c.brand,
                                           ),
                                         ),
                                       ),
@@ -514,7 +513,7 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                                   '$dateStr • ${v.lastModifiedBy}',
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Colors.grey.shade500,
+                                    color: c.textSecondary,
                                   ),
                                 ),
                                 onTap:
@@ -524,61 +523,53 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
                                   children: [
                                     if (v.firstFile != null)
                                       IconButton(
-                                        icon: const Icon(
+                                        icon: Icon(
                                           Icons.visibility_outlined,
                                           size: 20,
-                                          color: AppColors.primary,
+                                          color: c.brand,
                                         ),
                                         tooltip: 'Preview',
-                                        onPressed:
-                                            isOpening
-                                                ? null
-                                                : () => _previewVersion(v),
+                                        onPressed: isOpening
+                                            ? null
+                                            : () => _previewVersion(v),
                                       ),
-
                                     IconButton(
                                       icon: Icon(
                                         isExpanded
                                             ? Icons.expand_less_rounded
                                             : Icons.info_outline_rounded,
                                         size: 20,
-                                        color: AppColors.primary,
+                                        color: c.brand,
                                       ),
                                       tooltip: 'Details',
-                                      onPressed:
-                                          () => setState(() {
-                                            if (!_expandedVersionIds.remove(
-                                              v.versionId,
-                                            )) {
-                                              _expandedVersionIds.add(
-                                                v.versionId,
-                                              );
-                                            }
-                                          }),
+                                      onPressed: () => setState(() {
+                                        if (!_expandedVersionIds.remove(
+                                          v.versionId,
+                                        )) {
+                                          _expandedVersionIds.add(v.versionId);
+                                        }
+                                      }),
                                     ),
-
                                     if (!isCurrent)
                                       IconButton(
                                         icon: Icon(
                                           Icons.settings_backup_restore_rounded,
                                           size: 20,
-                                          color: Colors.grey.shade500,
+                                          color: c.textSecondary,
                                         ),
                                         tooltip: 'Rollback to this version',
-                                        onPressed:
-                                            _rollingBack
-                                                ? null
-                                                : () => _rollback(v),
+                                        onPressed: _rollingBack
+                                            ? null
+                                            : () => _rollback(v),
                                       ),
                                   ],
                                 ),
                               ),
                               AnimatedSize(
                                 duration: const Duration(milliseconds: 180),
-                                child:
-                                    isExpanded
-                                        ? _versionMetadataPanel(v)
-                                        : const SizedBox.shrink(),
+                                child: isExpanded
+                                    ? _versionMetadataPanel(v)
+                                    : const SizedBox.shrink(),
                               ),
                             ],
                           );
@@ -596,9 +587,6 @@ class _VersionHistorySheetState extends State<_VersionHistorySheet> {
   }
 }
 
-/// Confirmation dialog for rolling back to a version, styled to match
-/// [_ActionDialog] in delete_object_helper.dart (icon circle, title,
-/// subtitle, Cancel/Confirm button row).
 class _RollbackConfirmDialog extends StatelessWidget {
   final ObjectVersion version;
 
@@ -606,8 +594,9 @@ class _RollbackConfirmDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return AlertDialog(
-      backgroundColor: Colors.white,
+      backgroundColor: c.surfaceElevated,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
       actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -617,19 +606,23 @@ class _RollbackConfirmDialog extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
+              color: c.brandTint,
               shape: BoxShape.circle,
             ),
-            child: const Icon(
+            child: Icon(
               Icons.settings_backup_restore_rounded,
               size: 28,
-              color: AppColors.primary,
+              color: c.brand,
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Rollback Version',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: c.textPrimary,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
@@ -639,7 +632,7 @@ class _RollbackConfirmDialog extends StatelessWidget {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey.shade700,
+              color: c.textSecondary,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -647,7 +640,7 @@ class _RollbackConfirmDialog extends StatelessWidget {
           Text(
             'This will replace the current version. This action cannot be undone.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 12, color: c.textTertiary),
           ),
           const SizedBox(height: 4),
         ],
@@ -659,8 +652,8 @@ class _RollbackConfirmDialog extends StatelessWidget {
               child: OutlinedButton(
                 onPressed: () => Navigator.pop(context, false),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: Colors.grey.shade700,
-                  side: BorderSide(color: Colors.grey.shade300),
+                  foregroundColor: c.textPrimary,
+                  side: BorderSide(color: c.border),
                   padding: const EdgeInsets.symmetric(vertical: 11),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -677,7 +670,7 @@ class _RollbackConfirmDialog extends StatelessWidget {
               child: ElevatedButton(
                 onPressed: () => Navigator.pop(context, true),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: c.brand,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   padding: const EdgeInsets.symmetric(vertical: 11),

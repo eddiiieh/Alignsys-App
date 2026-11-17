@@ -115,10 +115,6 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   bool _commentsExpanded = true;
   bool _showCommentSend = false;
 
-  // ── Design constants ──
-  static const _filledBorder = Color(0xFF2563EB);
-  static const _filledFill = Color(0xFFF0F6FF);
-
   // ── Design constant — fields visible before "Show all" ──
   static const int _metaPreviewCount = 5;
 
@@ -361,7 +357,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               Text('Saved'),
             ],
           ),
-          backgroundColor: Colors.green.shade600,
+          backgroundColor: context.colors.successText,
           behavior: SnackBarBehavior.floating,
           duration: const Duration(seconds: 2),
           shape: RoundedRectangleBorder(
@@ -732,6 +728,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
+              backgroundColor: context.colors.surfaceElevated,
               title: const Text(
                 'Signing already in progress',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -744,7 +741,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 'To send to multiple people, include all their emails the first '
                 'time you send for signing.',
                 style: TextStyle(
-                  color: Colors.grey.shade700,
+                  color: context.colors.textSecondary,
                   fontSize: 13.5,
                   height: 1.4,
                 ),
@@ -752,7 +749,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               actions: [
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
+                    backgroundColor: context.colors.brand,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -813,7 +810,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               ),
             ],
           ),
-          backgroundColor: Colors.green.shade600,
+          backgroundColor: context.colors.successText,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
@@ -846,6 +843,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
               ),
+              backgroundColor: context.colors.surfaceElevated,
               title: const Text(
                 'Signing already in progress',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -856,7 +854,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 '${alreadySent.join(', ')} and cannot be signed by anyone else '
                 'until that request is completed or cancelled.',
                 style: TextStyle(
-                  color: Colors.grey.shade700,
+                  color: context.colors.textSecondary,
                   fontSize: 13.5,
                   height: 1.4,
                 ),
@@ -864,7 +862,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               actions: [
                 ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
+                    backgroundColor: context.colors.brand,
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10),
@@ -922,7 +920,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   // WORKFLOW CARD HELPERS
   // ─────────────────────────────────────────────────────────────────────────
-  Widget _descriptionBox({required String desc, required bool isAssignedToMe}) {
+  Widget _descriptionBox({
+    required String desc, 
+    required bool isAssignedToMe
+    }) {
+
+    final c = context.colors;
+
     if (isAssignedToMe) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -931,27 +935,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             margin: const EdgeInsets.only(bottom: 6),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFCC02).withOpacity(0.25),
+              color: c.warningSurface,
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                color: const Color(0xFFFFCC02).withOpacity(0.7),
+                color: c.warningBorder,
               ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
+                Icon(
                   Icons.person_pin_outlined,
                   size: 11,
-                  color: Color(0xFF92700A),
+                  color: c.warningText,
                 ),
                 const SizedBox(width: 4),
-                const Text(
+                Text(
                   'Assigned to you',
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF92700A),
+                    color: c.warningText,
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -962,28 +966,28 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             width: double.infinity,
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: const Color(0xFFFFF8E1),
+              color: c.warningSurface,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: const Color(0xFFFFCC02).withOpacity(0.5),
+                color: c.warningBorder.withOpacity(0.5),
               ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
+                Icon(
                   Icons.assignment_ind_outlined,
                   size: 15,
-                  color: Color(0xFF92700A),
+                  color: c.warningText,
                 ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     desc,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF5C4A00),
+                      color: c.warningText,
                       height: 1.5,
                     ),
                   ),
@@ -999,22 +1003,22 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       width: double.infinity,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.04),
+        color: c.brandTint,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+        border: Border.all(color: c.brand.withOpacity(0.15)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, size: 15, color: Colors.grey.shade600),
+          Icon(Icons.info_outline, size: 15, color: c.textSecondary),
           const SizedBox(width: 6),
           Expanded(
             child: Text(
               desc,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF334155),
+                color: c.textPrimary,
                 height: 1.5,
               ),
             ),
@@ -1145,8 +1149,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             ),
             backgroundColor:
                 !currentlyApproved
-                    ? Colors.green.shade600
-                    : Colors.orange.shade600,
+                    ? context.colors.successText
+                    : context.colors.warningText,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -1199,18 +1203,20 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor:
                 _assignmentCompleted
-                    ? const Color(0xFFE8F5E9)
-                    : AppColors.primary,
+                    ? context.colors.successSurface
+                    : context.colors.brand,
             foregroundColor:
-                _assignmentCompleted ? const Color(0xFF2E7D32) : Colors.white,
+                _assignmentCompleted
+                    ? context.colors.successText
+                    : Colors.white,
             disabledBackgroundColor:
                 _assignmentCompleted
-                    ? const Color(0xFFE8F5E9)
-                    : Colors.grey.shade200,
+                    ? context.colors.successSurface
+                    : context.colors.surfaceSunken,
             disabledForegroundColor:
                 _assignmentCompleted
-                    ? const Color(0xFF2E7D32)
-                    : Colors.grey.shade400,
+                    ? context.colors.successText
+                    : context.colors.textTertiary,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
@@ -1248,12 +1254,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
+        Text(
           'APPROVALS',
           style: TextStyle(
             fontSize: 11,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF475569),
+            color: context.colors.textSecondary,
             letterSpacing: 1.0,
           ),
         ),
@@ -1280,18 +1286,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             decoration: BoxDecoration(
               color:
                   isApproved
-                      ? const Color(0xFFE8F5E9)
+                      ? context.colors.successSurface
                       : isMe
-                      ? const Color(0xFFF0F6FF)
-                      : AppColors.surfaceLight,
+                        ? context.colors.brandTint
+                      : context.colors.surfaceSunken,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
                 color:
                     isApproved
-                        ? const Color(0xFF4CAF50).withOpacity(0.4)
+                        ? context.colors.successBorder
                         : isMe
-                        ? const Color(0xFF2563EB).withOpacity(0.3)
-                        : Colors.grey.shade200,
+                        ? context.colors.brand.withOpacity(0.35)
+                        : context.colors.border,
               ),
             ),
             child: Row(
@@ -1300,7 +1306,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: isMe ? AppColors.primary : Colors.grey.shade300,
+                    color: isMe ? context.colors.brand : context.colors.surfaceSunken,
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -1309,7 +1315,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: isMe ? Colors.white : Colors.grey.shade600,
+                        color: isMe ? Colors.white : context.colors.textSecondary,
                       ),
                     ),
                   ),
@@ -1330,8 +1336,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 fontWeight: FontWeight.w600,
                                 color:
                                     isMe
-                                        ? AppColors.primary
-                                        : const Color(0xFF334155),
+                                        ? context.colors.brand
+                                        : context.colors.textPrimary,
                               ),
                             ),
                           ),
@@ -1343,15 +1349,15 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.10),
+                                color: context.colors.brandTint,
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: const Text(
+                              child: Text(
                                 'You',
                                 style: TextStyle(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w700,
-                                  color: AppColors.primary,
+                                  color: context.colors.brand,
                                 ),
                               ),
                             ),
@@ -1366,8 +1372,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           fontWeight: FontWeight.w500,
                           color:
                               isApproved
-                                  ? Colors.green.shade600
-                                  : AppColors.surfaceLight,
+                                  ? context.colors.successText
+                                  : context.colors.textTertiary,
                         ),
                       ),
                     ],
@@ -1388,8 +1394,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     size: 24,
                     color:
                         isApproved
-                            ? Colors.green.shade500
-                            : Colors.grey.shade300,
+                            ? context.colors.successText
+                            : context.colors.textTertiary,
                   )
                 else
                   Tooltip(
@@ -1409,23 +1415,23 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         height: 28,
                         decoration: BoxDecoration(
                           color:
-                              isApproved ? Colors.green.shade500 : Colors.white,
+                              isApproved ? context.colors.successText : context.colors.surfaceElevated,
                           shape: BoxShape.circle,
                           border: Border.all(
                             color:
                                 isBusyGlobal
-                                    ? Colors.grey.shade300
+                                    ? context.colors.textTertiary
                                     : isApproved
-                                    ? Colors.green.shade500
-                                    : const Color(0xFF2563EB),
+                                    ? context.colors.successText
+                                    : context.colors.brand,
                             width: 2,
                           ),
                           boxShadow:
                               isMe && !isApproved
                                   ? [
                                     BoxShadow(
-                                      color: AppColors.primary.withOpacity(
-                                        0.15,
+                                      color: context.colors.brand.withOpacity(
+                                        0.2
                                       ),
                                       blurRadius: 6,
                                       offset: const Offset(0, 2),
@@ -1466,9 +1472,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: context.colors.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1477,27 +1483,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.04),
+              color: context.colors.brandTint,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
-              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+              border: Border(bottom: BorderSide(color: context.colors.divider)),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.account_tree_outlined,
                   size: 16,
-                  color: AppColors.primary,
+                  color: context.colors.brand,
                 ),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Workflow',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: context.colors.brand,
                     ),
                   ),
                 ),
@@ -1519,18 +1525,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 // ── Assign section ────────────────────────────────────────
                 Row(
                   children: [
-                    const Icon(
+                    Icon(
                       Icons.add_circle_outline_rounded,
                       size: 14,
-                      color: AppColors.primary,
+                      color: context.colors.brand,
                     ),
                     const SizedBox(width: 6),
-                    const Text(
+                    Text(
                       'ASSIGN WORKFLOW',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
+                        color: context.colors.brand,
                         letterSpacing: 0.8,
                       ),
                     ),
@@ -1554,16 +1560,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.orange.shade50,
+                          color: context.colors.warningSurface,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.orange.shade200),
+                          border: Border.all(color: context.colors.warningBorder),
                         ),
                         child: Row(
                           children: [
                             Icon(
                               Icons.error_outline_rounded,
                               size: 15,
-                              color: Colors.orange.shade700,
+                              color: context.colors.warningText,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -1571,7 +1577,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 "Couldn't load workflows. Pull to refresh or try again.",
                                 style: TextStyle(
                                   fontSize: 13,
-                                  color: Colors.orange.shade800,
+                                  color: context.colors.warningText,
                                   fontWeight: FontWeight.w500,
                                 ),
                               ),
@@ -1588,23 +1594,23 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           vertical: 10,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                          color: context.colors.surfaceSunken,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(color: context.colors.border),
                         ),
                         child: Row(
                           children: [
                             Icon(
                               Icons.info_outline_rounded,
                               size: 15,
-                              color: Colors.grey.shade400,
+                              color: context.colors.textTertiary,
                             ),
                             const SizedBox(width: 8),
                             Text(
                               "No workflow available for this item",
                               style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.grey.shade600,
+                                color: context.colors.textSecondary,
                                 fontWeight: FontWeight.w500,
                               ),
                             ),
@@ -1661,9 +1667,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                               ),
-                              color: const Color(
-                                0xFFEAF3FF,
-                              ), // Light blue background from screenshot
+                              color: context.colors.surfaceElevated, // Light blue background from screenshot
                               elevation: 8,
                               constraints: const BoxConstraints(
                                 maxHeight: 345,
@@ -1690,7 +1694,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                       decoration: BoxDecoration(
                                         color:
                                             isSelected
-                                                ? Colors.grey.shade300
+                                                ? context.colors.brandTintStrong
                                                 : Colors
                                                     .transparent, // Grey highlight for selected item
                                         borderRadius: BorderRadius.circular(6),
@@ -1705,8 +1709,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                                   : FontWeight.w500,
                                           color:
                                               isSelected
-                                                  ? Colors.black87
-                                                  : const Color(0xFF1E293B),
+                                                  ? context.colors.brand
+                                                  : context.colors.textPrimary,
                                         ),
                                       ),
                                     ),
@@ -1721,11 +1725,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 decoration: BoxDecoration(
                                   color:
                                       canInteract
-                                          ? const Color(0xFFF8FAFC)
-                                          : Colors.grey.shade100,
+                                          ? context.colors.inputFill
+                                          : context.colors.surfaceSunken,
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(
-                                    color: Colors.grey.shade200,
+                                    color: context.colors.border,
                                   ),
                                 ),
                                 child: Row(
@@ -1742,16 +1746,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                             )
                                             .title,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                           fontSize: 13.5,
                                           fontWeight: FontWeight.w500,
-                                          color: Color(0xFF1E293B),
+                                          color: context.colors.textPrimary,
                                         ),
                                       ),
                                     ),
                                     Icon(
                                       Icons.keyboard_arrow_down_rounded,
-                                      color: Colors.grey.shade500,
+                                      color: context.colors.textSecondary,
                                       size: 20,
                                     ),
                                   ],
@@ -1764,18 +1768,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               const SizedBox(height: 10),
                               Row(
                                 children: [
-                                  const Icon(
+                                  Icon(
                                     Icons.flag_outlined,
                                     size: 14,
-                                    color: AppColors.primary,
+                                    color: context.colors.brand,
                                   ),
                                   const SizedBox(width: 6),
-                                  const Text(
+                                   Text(
                                     'STATE',
                                     style: TextStyle(
                                       fontSize: 11,
                                       fontWeight: FontWeight.w800,
-                                      color: AppColors.primary,
+                                      color: context.colors.brand,
                                       letterSpacing: 0.8,
                                     ),
                                   ),
@@ -1817,7 +1821,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                             decoration: BoxDecoration(
                                               color:
                                                   isSelected
-                                                      ? Colors.grey.shade300
+                                                      ? context.colors.brandTintStrong
                                                       : Colors.transparent,
                                               borderRadius:
                                                   BorderRadius.circular(6),
@@ -1832,10 +1836,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                                         : FontWeight.w500,
                                                 color:
                                                     isSelected
-                                                        ? Colors.black87
-                                                        : const Color(
-                                                          0xFF1E293B,
-                                                        ),
+                                                        ? context.colors.brand
+                                                        : context.colors.textPrimary,
                                               ),
                                             ),
                                           ),
@@ -1851,11 +1853,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   decoration: BoxDecoration(
                                     color:
                                         canInteract
-                                            ? const Color(0xFFF8FAFC)
-                                            : Colors.grey.shade100,
+                                            ? context.colors.inputFill
+                                            : context.colors.surfaceSunken,
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: Colors.grey.shade200,
+                                      color: context.colors.border,
                                     ),
                                   ),
                                   child: Row(
@@ -1882,16 +1884,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                               )
                                               .name,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13.5,
                                             fontWeight: FontWeight.w500,
-                                            color: Color(0xFF1E293B),
+                                            color: context.colors.textPrimary,
                                           ),
                                         ),
                                       ),
                                       Icon(
                                         Icons.keyboard_arrow_down_rounded,
-                                        color: Colors.grey.shade500,
+                                        color: context.colors.textSecondary,
                                         size: 20,
                                       ),
                                     ],
@@ -1966,10 +1968,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                           }
                                         },
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: AppColors.primary,
+                                  backgroundColor: context.colors.brand,
                                   foregroundColor: Colors.white,
-                                  disabledBackgroundColor: Colors.grey.shade200,
-                                  disabledForegroundColor: Colors.grey.shade400,
+                                  disabledBackgroundColor: context.colors.surfaceSunken,
+                                  disabledForegroundColor: context.colors.textTertiary,
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(10),
                                   ),
@@ -2073,25 +2075,26 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
+            backgroundColor: context.colors.surfaceElevated,
             title: const Text(
               'Complete assignment?',
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
             ),
             content: Text(
               'Mark this assignment as complete?\nThis cannot be undone.',
-              style: TextStyle(color: Colors.grey.shade700, fontSize: 14),
+              style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: Text(
                   'Cancel',
-                  style: TextStyle(color: Colors.grey.shade700),
+                  style: TextStyle(color: context.colors.textSecondary),
                 ),
               ),
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: context.colors.brand,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
@@ -2199,8 +2202,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       builder:
           (ctx, child) => Theme(
             data: Theme.of(ctx).copyWith(
-              colorScheme: const ColorScheme.light(primary: AppColors.primary),
+              colorScheme: ColorScheme.fromSeed(
+              seedColor: context.colors.brand,
+              brightness: Theme.of(ctx).brightness,
             ),
+          ),
             child: child!,
           ),
     );
@@ -2216,8 +2222,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         builder:
             (ctx, child) => Theme(
               data: Theme.of(ctx).copyWith(
-                colorScheme: const ColorScheme.light(
-                  primary: AppColors.primary,
+                colorScheme: ColorScheme.fromSeed(
+                  seedColor: context.colors.brand,
+                  brightness: Theme.of(ctx).brightness,
                 ),
               ),
               child: child!,
@@ -2244,7 +2251,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget build(BuildContext context) {
     final obj = widget.obj;
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: context.colors.surface,
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
@@ -2400,7 +2407,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   Icon(
                                     Icons.info_outline_rounded,
                                     size: 16,
-                                    color: Colors.grey.shade400,
+                                    color: context.colors.textTertiary,
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
@@ -2408,7 +2415,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                       'Object details aren\'t available right now. Pull to refresh to try again.',
                                       style: TextStyle(
                                         fontSize: 13,
-                                        color: Colors.grey.shade500,
+                                        color: context.colors.textSecondary,
                                       ),
                                     ),
                                   ),
@@ -2596,9 +2603,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: context.colors.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2607,27 +2614,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.04),
+              color: context.colors.brandTint,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
-              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+              border: Border(bottom: BorderSide(color: context.colors.divider)),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.draw_rounded,
                   size: 16,
-                  color: AppColors.primary,
+                  color: context.colors.brand,
                 ),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'e-Sign options',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: context.colors.brand,
                     ),
                   ),
                 ),
@@ -2663,12 +2670,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.info_outline, size: 13, color: Colors.grey.shade400),
+            Icon(Icons.info_outline, size: 13, color: context.colors.textTertiary),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 'Optionally sign or send "$fileName" for signing.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                style: TextStyle(fontSize: 12, color: context.colors.textSecondary),
               ),
             ),
           ],
@@ -2680,7 +2687,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               child: ElevatedButton.icon(
                 onPressed: busy ? null : () => _selfSign(file),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
+                  backgroundColor: context.colors.brand,
                   foregroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
@@ -2713,8 +2720,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               child: OutlinedButton.icon(
                 onPressed: busy ? null : () => _showSendForSigningDialog(file),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.primary,
-                  side: const BorderSide(color: AppColors.primary),
+                  foregroundColor: context.colors.brand,
+                  side: BorderSide(color: context.colors.brand),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -2746,13 +2753,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             Icon(
               Icons.lock_outline_rounded,
               size: 13,
-              color: Colors.grey.shade400,
+              color: context.colors.textTertiary,
             ),
             const SizedBox(width: 6),
             Expanded(
               child: Text(
                 'Convert this file to PDF to enable e-signing.',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                style: TextStyle(fontSize: 12, color: context.colors.textSecondary),
               ),
             ),
           ],
@@ -2764,8 +2771,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             onPressed:
                 busy ? null : () => _convertToPdf(widget.obj, conversionTarget),
             style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.primary,
-              side: const BorderSide(color: AppColors.primary),
+              foregroundColor: context.colors.brand,
+              side: BorderSide(color: context.colors.brand),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -2799,9 +2806,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: context.colors.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2810,27 +2817,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.04),
+              color: context.colors.brandTint,
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
-              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+              border: Border(bottom: BorderSide(color: context.colors.divider)),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.account_tree_outlined,
                   size: 16,
-                  color: AppColors.primary,
+                  color: context.colors.brand,
                 ),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Workflow',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: context.colors.brand,
                     ),
                   ),
                 ),
@@ -2852,10 +2859,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 // ── Workflow name ──────────────────────────────────────────
                 Text(
                   info.workflowTitle,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF0F172A),
+                    color: context.colors.textPrimary,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -2868,7 +2875,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        color: Colors.grey.shade500,
+                        color: context.colors.textSecondary,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -2878,18 +2885,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.10),
+                        color: context.colors.brandTint,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: AppColors.primary.withOpacity(0.25),
+                          color: context.colors.brand.withOpacity(0.3),
                         ),
                       ),
                       child: Text(
                         info.currentStateTitle,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                         ),
                       ),
                     ),
@@ -2914,23 +2921,23 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       vertical: 10,
                     ),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade50,
+                      color: context.colors.surfaceSunken,
                       borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade200),
+                      border: Border.all(color: context.colors.border),
                     ),
                     child: Row(
                       children: [
                         Icon(
                           Icons.lock_outline_rounded,
                           size: 15,
-                          color: Colors.grey.shade400,
+                          color: context.colors.textTertiary,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           'No further steps available',
                           style: TextStyle(
                             fontSize: 13,
-                            color: Colors.grey.shade500,
+                            color: context.colors.textSecondary,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
@@ -2939,22 +2946,22 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   ),
                 ] else ...[
                   const SizedBox(height: 16),
-                  Divider(height: 1, color: Colors.grey.shade100),
+                  Divider(height: 1, color: context.colors.divider),
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      const Icon(
+                      Icon(
                         Icons.arrow_circle_right_outlined,
                         size: 14,
-                        color: AppColors.primary,
+                        color: context.colors.brand,
                       ),
                       const SizedBox(width: 6),
-                      const Text(
+                      Text(
                         'ADVANCE TO',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                           letterSpacing: 0.8,
                         ),
                       ),
@@ -2967,9 +2974,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       Expanded(
                         child: Container(
                           decoration: BoxDecoration(
-                            color: const Color(0xFFF8FAFC),
+                            color: context.colors.inputFill,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade200),
+                            border: Border.all(color: context.colors.inputBorder),
                           ),
                           child: DropdownButtonHideUnderline(
                             child: ButtonTheme(
@@ -2978,14 +2985,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                 value: _selectedNextStateId,
                                 isExpanded: true,
                                 isDense: true,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w500,
-                                  color: Color(0xFF1E293B),
+                                  color: context.colors.textPrimary,
                                 ),
                                 icon: Icon(
                                   Icons.keyboard_arrow_down_rounded,
-                                  color: Colors.grey.shade500,
+                                  color: context.colors.textSecondary,
                                   size: 20,
                                 ),
                                 padding: const EdgeInsets.symmetric(
@@ -2993,7 +3000,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   vertical: 10,
                                 ),
                                 borderRadius: BorderRadius.circular(10),
-                                dropdownColor: const Color(0xFFEAF3FF),
+                                dropdownColor: context.colors.surfaceElevated,
                                 menuMaxHeight: 400,
                                 elevation: 8,
                                 items:
@@ -3004,10 +3011,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                             child: Text(
                                               s.title,
                                               overflow: TextOverflow.ellipsis,
-                                              style: const TextStyle(
+                                              style: TextStyle(
                                                 fontSize: 13.5,
                                                 fontWeight: FontWeight.w500,
-                                                color: Color(0xFF1E293B),
+                                                color: context.colors.textPrimary,
                                               ),
                                             ),
                                           ),
@@ -3075,10 +3082,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                     }
                                   },
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
+                            backgroundColor: context.colors.brand,
                             foregroundColor: Colors.white,
-                            disabledBackgroundColor: Colors.grey.shade200,
-                            disabledForegroundColor: Colors.grey.shade400,
+                            disabledBackgroundColor: context.colors.brand.withOpacity(0.3),
+                            disabledForegroundColor: context.colors.textTertiary,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -3106,173 +3113,168 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   Widget _headerCard(ViewObject obj, {ObjectFile? firstFile}) {
-    return Consumer<MFilesService>(
-      builder: (context, svc, _) {
-        final isMultiFileObj = svc.isMultiFile(
-          objectTypeId: obj.objectTypeId,
-          isSingleFile: obj.isSingleFile,
-        );
+return Consumer<MFilesService>(
+          builder: (context, svc, _) {
+            final c = context.colors;
+            final isMultiFileObj = svc.isMultiFile(
+              objectTypeId: obj.objectTypeId,
+              isSingleFile: obj.isSingleFile,
+            );
 
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Column(
-            children: [
-              Row(
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: c.surfaceElevated,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: c.divider),
+              ),
+              child: Column(
                 children: [
-                  (firstFile != null && !isMultiFileObj)
-                      ? CheckoutBadge(
-                        isCheckedOut:
-                            svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
-                        checkoutUserId:
-                            svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
-                        child: FileTypeBadge(
-                          extension: firstFile.extension,
-                          size: 36,
-                        ),
-                      )
-                      : CheckoutBadge(
-                        isCheckedOut:
-                            svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
-                        checkoutUserId:
-                            svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
-                        child: Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(8),
+                  Row(
+                    children: [
+                      (firstFile != null && !isMultiFileObj)
+                          ? CheckoutBadge(
+                              isCheckedOut:
+                                  svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+                              checkoutUserId:
+                                  svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
+                              child: FileTypeBadge(
+                                extension: firstFile.extension,
+                                size: 36,
+                              ),
+                            )
+                          : CheckoutBadge(
+                              isCheckedOut:
+                                  svc.isCheckedOutLocally(obj.id) || obj.isCheckedOut,
+                              checkoutUserId:
+                                  svc.checkoutOwnerId(obj.id) ?? obj.checkoutUserId,
+                              child: Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: c.brandTint,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Center(
+                                  child: Icon(
+                                    isMultiFileObj
+                                        ? Icons.folder_copy_rounded
+                                        : svc.iconForViewObject(obj),
+                                    size: 20,
+                                    color: isMultiFileObj
+                                        ? const Color(0xFF4CAF50)
+                                        : c.brand,
+                                  ),
+                                ),
+                              ),
+                            ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          _title.isEmpty ? obj.title : _title,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w700,
+                            height: 1.3,
+                            color: c.textPrimary,
                           ),
-                          child: Center(
+                        ),
+                      ),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(20),
+                          onTap: () => setState(
+                            () => _headerDetailsExpanded = !_headerDetailsExpanded,
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
                             child: Icon(
-                              isMultiFileObj
-                                  ? Icons.folder_copy_rounded
-                                  : svc.iconForViewObject(obj),
-                              size: 20,
-                              color:
-                                  isMultiFileObj
-                                      ? const Color(
-                                        0xFF4CAF50,
-                                      ) // green only for multi-file
-                                      : AppColors
-                                          .primary, // blue / brand for single-file fallback
+                              _headerDetailsExpanded
+                                  ? Icons.keyboard_arrow_up
+                                  : Icons.keyboard_arrow_down,
+                              color: c.textSecondary,
                             ),
                           ),
                         ),
                       ),
-                  const SizedBox(width: 10),
-                  Expanded(
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
                     child: Text(
-                      _title.isEmpty ? obj.title : _title,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        height: 1.3,
-                      ),
+                      '${obj.classTypeName} • ID ${obj.displayId} • v${obj.versionId}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 12, color: c.textSecondary),
                     ),
                   ),
-                  Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(20),
-                      onTap:
-                          () => setState(
-                            () =>
-                                _headerDetailsExpanded =
-                                    !_headerDetailsExpanded,
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: GestureDetector(
+                      onTap: _showPermissionsSheet,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: c.brandTint,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: c.brand.withOpacity(0.25),
                           ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(4),
-                        child: Icon(
-                          _headerDetailsExpanded
-                              ? Icons.keyboard_arrow_up
-                              : Icons.keyboard_arrow_down,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.lock_outline_rounded,
+                              size: 13,
+                              color: c.brand,
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Permissions',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: c.brand,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
+                  ),
+                  AnimatedCrossFade(
+                    firstChild: const SizedBox.shrink(),
+                    secondChild: Padding(
+                      padding: const EdgeInsets.only(top: 10),
+                      child: Column(
+                        children: [
+                          _kv('Object ID', obj.id.toString()),
+                          _kv('Object Type', obj.objectTypeName),
+                          _kv('Class', obj.classTypeName),
+                          _kv('Version', obj.versionId.toString()),
+                          _kv('Created', _fmt(obj.createdUtc)),
+                          _kv('Last modified', _fmt(obj.lastModifiedUtc)),
+                        ],
+                      ),
+                    ),
+                    crossFadeState: _headerDetailsExpanded
+                        ? CrossFadeState.showSecond
+                        : CrossFadeState.showFirst,
+                    duration: const Duration(milliseconds: 180),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '${obj.classTypeName} • ID ${obj.displayId} • v${obj.versionId}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: GestureDetector(
-                  onTap: _showPermissionsSheet,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF0F6FF),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: AppColors.primary.withOpacity(0.25),
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(
-                          Icons.lock_outline_rounded,
-                          size: 13,
-                          color: AppColors.primary,
-                        ),
-                        const SizedBox(width: 5),
-                        const Text(
-                          'Permissions',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              AnimatedCrossFade(
-                firstChild: const SizedBox.shrink(),
-                secondChild: Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Column(
-                    children: [
-                      _kv('Object ID', obj.id.toString()),
-                      _kv('Object Type', obj.objectTypeName),
-                      _kv('Class', obj.classTypeName),
-                      _kv('Version', obj.versionId.toString()),
-                      _kv('Created', _fmt(obj.createdUtc)),
-                      _kv('Last modified', _fmt(obj.lastModifiedUtc)),
-                    ],
-                  ),
-                ),
-                crossFadeState:
-                    _headerDetailsExpanded
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                duration: const Duration(milliseconds: 180),
-              ),
-            ],
-          ),
+            );
+          },
         );
-      },
-    );
-  }
+      }
 
   Widget _metadataCard(List<_PropVm> props) {
     final hasMore = props.length > _metaPreviewCount;
@@ -3282,9 +3284,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: context.colors.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3292,10 +3294,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           // ── Header ────────────────────────────────────────────────────────
           Row(
             children: [
-              const Icon(
+              Icon(
                 Icons.tune_rounded,
                 size: 15,
-                color: AppColors.primary,
+                color: context.colors.brand,
               ),
               const SizedBox(width: 6),
               const Text(
@@ -3306,15 +3308,15 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.08),
+                  color: context.colors.brandTint,
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
                   '${props.length} fields',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+                    color: context.colors.brand,
                   ),
                 ),
               ),
@@ -3328,7 +3330,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
                 'No metadata fields to display',
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                style: TextStyle(fontSize: 13, color: context.colors.textTertiary),
               ),
             )
           else
@@ -3339,12 +3341,12 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               child: Column(
                 children: List.generate(visibleProps.length * 2 - 1, (index) {
                   if (index.isOdd) {
-                    return const Padding(
+                    return Padding(
                       padding: EdgeInsets.symmetric(vertical: 10),
                       child: Divider(
                         height: 1,
                         thickness: 1.5,
-                        color: Color(0xFFCBD5E1),
+                        color: context.colors.divider,
                       ),
                     );
                   }
@@ -3356,7 +3358,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           // ── Show more / less toggle ────────────────────────────────────────
           if (hasMore) ...[
             const SizedBox(height: 12),
-            Divider(height: 1, color: Colors.grey.shade100),
+            Divider(height: 1, color: context.colors.divider),
             const SizedBox(height: 8),
             Center(
               child: GestureDetector(
@@ -3369,10 +3371,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     vertical: 8,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.06),
+                    color: context.colors.brandTint,
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: AppColors.primary.withOpacity(0.15),
+                      color: context.colors.brand.withOpacity(0.25),
                     ),
                   ),
                   child: Row(
@@ -3382,20 +3384,20 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         _metadataExpanded
                             ? 'Show less'
                             : 'Show all ${props.length} fields',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12.5,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                         ),
                       ),
                       const SizedBox(width: 6),
                       AnimatedRotation(
                         turns: _metadataExpanded ? 0.5 : 0.0,
                         duration: const Duration(milliseconds: 250),
-                        child: const Icon(
+                        child: Icon(
                           Icons.keyboard_arrow_down_rounded,
                           size: 16,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                         ),
                       ),
                     ],
@@ -3408,7 +3410,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           // ── Assignment approval section (always visible) ───────────────────
           if (_isAssignment) ...[
             const SizedBox(height: 16),
-            Divider(height: 1, color: Colors.grey.shade100),
+            Divider(height: 1, color: context.colors.divider),
             const SizedBox(height: 12),
             _buildAssignmentApprovalSection(props),
           ],
@@ -3424,9 +3426,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   Widget _previewCard(ViewObject obj) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
+        border: Border.all(color: context.colors.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3434,27 +3436,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.04),
+              color: context.colors.brandTint.withOpacity(0.04),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
-              border: Border(bottom: BorderSide(color: Colors.grey.shade100)),
+              border: Border(bottom: BorderSide(color: context.colors.divider)),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.insert_drive_file_outlined,
                   size: 16,
-                  color: AppColors.primary,
+                  color: context.colors.brand,
                 ),
                 const SizedBox(width: 6),
-                const Expanded(
+                Expanded(
                   child: Text(
                     'Preview file',
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: context.colors.brand,
                     ),
                   ),
                 ),
@@ -3485,7 +3487,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       humanizeError(snap.error.toString()),
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.red.shade700,
+                        color: context.colors.dangerText,
                       ),
                     ),
                   );
@@ -3504,13 +3506,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             children: [
                               Icon(
                                 Icons.insert_drive_file_outlined,
-                                color: Colors.grey.shade400,
+                                color: context.colors.textTertiary,
                                 size: 36,
                               ),
                               const SizedBox(height: 8),
                               Text(
                                 'There are no files attached to this item yet.',
-                                style: TextStyle(color: Colors.grey.shade600),
+                                style: TextStyle(color: context.colors.textSecondary),
                                 textAlign: TextAlign.center,
                               ),
                             ],
@@ -3524,9 +3526,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       return Container(
                         margin: const EdgeInsets.only(bottom: 8),
                         decoration: BoxDecoration(
-                          color: AppColors.surfaceLight,
+                          color: context.colors.surfaceSunken,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
+                          border: Border.all(color: context.colors.border),
                         ),
                         child: Material(
                           color: Colors.transparent,
@@ -3596,7 +3598,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                         SnackBar(
                                           content: Text('Saved to: $savedPath'),
                                           backgroundColor:
-                                              Colors.green.shade600,
+                                              context.colors.successText,
                                           duration: const Duration(seconds: 4),
                                         ),
                                       );
@@ -3610,7 +3612,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text('Action failed: $e'),
-                                        backgroundColor: Colors.red.shade600,
+                                        backgroundColor: context.colors.dangerText,
                                       ),
                                     );
                                   } finally {
@@ -3701,7 +3703,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Invalid object display ID: ${obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
       return;
@@ -3735,6 +3737,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
+        final c = ctx.colors;
         return StatefulBuilder(
           builder: (ctx, setSheet) {
             return Padding(
@@ -3750,7 +3753,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       height: 4,
                       margin: const EdgeInsets.only(bottom: 20),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
+                        color: c.divider,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -3761,17 +3764,17 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.10),
+                          color: c.brandTint,
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(
+                        child: Icon(
                           Icons.picture_as_pdf_rounded,
-                          color: AppColors.primary,
+                          color: c.brand,
                           size: 20,
                         ),
                       ),
                       const SizedBox(width: 12),
-                      const Expanded(
+                      Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -3780,6 +3783,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               style: TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
+                                color: c.textPrimary,
                               ),
                             ),
                             SizedBox(height: 2),
@@ -3787,7 +3791,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               'Choose conversion options',
                               style: TextStyle(
                                 fontSize: 12,
-                                color: Color(0xFF64748B),
+                                color: c.textSecondary,
                               ),
                             ),
                           ],
@@ -3796,29 +3800,29 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     ],
                   ),
                   const SizedBox(height: 24),
-                  Divider(height: 1, color: Colors.grey.shade100),
+                  Divider(height: 1, color: c.divider),
                   const SizedBox(height: 8),
 
                   // Toggle: Overwrite original
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text(
+                    title: Text(
                       'Overwrite original file',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E293B),
+                        color: c.textPrimary,
                       ),
                     ),
                     subtitle: Text(
                       'Replace the existing file with the PDF version',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade500,
+                        color: c.textSecondary,
                       ),
                     ),
                     value: overwrite,
-                    activeColor: AppColors.primary,
+                    activeColor: c.brand,
                     onChanged:
                         (v) => setSheet(() {
                           overwrite = v;
@@ -3828,28 +3832,28 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           }
                         }),
                   ),
-                  Divider(height: 1, color: Colors.grey.shade100),
+                  Divider(height: 1, color: c.divider),
 
                   // Toggle: Save as separate file
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text(
+                    title: Text(
                       'Save as separate file',
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFF1E293B),
+                        color: c.textPrimary,
                       ),
                     ),
                     subtitle: Text(
                       'Keep the original and add the PDF alongside it',
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade500,
+                        color: c.textSecondary,
                       ),
                     ),
                     value: separate,
-                    activeColor: AppColors.primary,
+                    activeColor: c.brand,
                     onChanged:
                         (v) => setSheet(() {
                           separate = v;
@@ -3864,7 +3868,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     child: ElevatedButton.icon(
                       onPressed: () => Navigator.pop(ctx, true),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: c.brand,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
@@ -4041,149 +4045,147 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     return '${local.day}/${local.month}/${local.year} $h:$m';
   }
 
-  Widget _commentRow(ObjectComment c, {bool isPreview = false}) {
-    final dateText = _fmtCommentDate(c.modifiedDate);
-    final authorName = c.author.trim();
-    final hasAuthor = authorName.isNotEmpty;
-    final initials = hasAuthor ? _initialsFor(authorName) : '?';
+ Widget _commentRow(ObjectComment c, {bool isPreview = false}) {
+  final colors = context.colors;
+  final dateText = _fmtCommentDate(c.modifiedDate);
+  final authorName = c.author.trim();
+  final hasAuthor = authorName.isNotEmpty;
+  final initials = hasAuthor ? _initialsFor(authorName) : '?';
 
-    // Consistent per-author accent color
-    const avatarColors = [
-      Color(0xFF6366F1),
-      Color(0xFF0EA5E9),
-      Color(0xFF10B981),
-      Color(0xFFF59E0B),
-      Color(0xFFEF4444),
-      Color(0xFF8B5CF6),
-      Color(0xFF14B8A6),
-    ];
-    final avatarColor =
-        avatarColors[authorName.hashCode.abs() % avatarColors.length];
+  const avatarColors = [
+    Color(0xFF6366F1),
+    Color(0xFF0EA5E9),
+    Color(0xFF10B981),
+    Color(0xFFF59E0B),
+    Color(0xFFEF4444),
+    Color(0xFF8B5CF6),
+    Color(0xFF14B8A6),
+  ];
+  final avatarColor =
+      avatarColors[authorName.hashCode.abs() % avatarColors.length];
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Avatar ────────────────────────────────────────────────────
-          Container(
-            width: 30,
-            height: 30,
-            decoration: BoxDecoration(
-              color: hasAuthor ? avatarColor : Colors.grey.shade300,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Text(
-                initials,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                  letterSpacing: 0.2,
-                ),
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: hasAuthor ? avatarColor : colors.surfaceSunken,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              initials,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: Colors.white,
+                letterSpacing: 0.2,
               ),
             ),
           ),
-          const SizedBox(width: 10),
-
-          // ── Content ───────────────────────────────────────────────────
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    if (hasAuthor)
-                      Flexible(
-                        child: Text(
-                          authorName,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E293B),
-                            letterSpacing: -0.1,
-                          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  if (hasAuthor)
+                    Flexible(
+                      child: Text(
+                        authorName,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: colors.textPrimary,
+                          letterSpacing: -0.1,
                         ),
                       ),
-                    if (hasAuthor && dateText.isNotEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 6),
-                        child: Text(
-                          '·',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Color(0xFFCBD5E1),
-                          ),
+                    ),
+                  if (hasAuthor && dateText.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Text(
+                        '·',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colors.divider,
                         ),
                       ),
-                    if (dateText.isNotEmpty)
-                      Text(
-                        dateText,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Color(0xFF94A3B8),
-                          fontWeight: FontWeight.w400,
-                        ),
+                    ),
+                  if (dateText.isNotEmpty)
+                    Text(
+                      dateText,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: colors.textTertiary,
+                        fontWeight: FontWeight.w400,
                       ),
-                  ],
+                    ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(
+                c.text,
+                style: TextStyle(
+                  fontSize: 13.5,
+                  height: 1.45,
+                  color: colors.textPrimary,
+                  letterSpacing: -0.05,
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  c.text,
-                  style: const TextStyle(
-                    fontSize: 13.5,
-                    height: 1.45,
-                    color: Color(0xFF334155),
-                    letterSpacing: -0.05,
-                  ),
-                  maxLines: isPreview ? 2 : null,
-                  overflow:
-                      isPreview ? TextOverflow.ellipsis : TextOverflow.visible,
-                ),
-              ],
-            ),
+                maxLines: isPreview ? 2 : null,
+                overflow:
+                    isPreview ? TextOverflow.ellipsis : TextOverflow.visible,
+              ),
+            ],
           ),
-        ],
-      ),
-    );
-  }
+        ),
+      ],
+    ),
+  );
+}
 
   // ─────────────────────────────────────────────────────────────────────────
   // DATE SEPARATOR CHIP
   // ─────────────────────────────────────────────────────────────────────────
   Widget _dateSeparator(String label) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Expanded(child: Divider(height: 1, color: Colors.grey.shade200)),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade500,
-                letterSpacing: 0.3,
-              ),
+  final c = context.colors;
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: Row(
+      children: [
+        Expanded(child: Divider(height: 1, color: c.divider)),
+        const SizedBox(width: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+          decoration: BoxDecoration(
+            color: c.surfaceSunken,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w600,
+              color: c.textSecondary,
+              letterSpacing: 0.3,
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(child: Divider(height: 1, color: Colors.grey.shade200)),
-        ],
-      ),
-    );
-  }
+        ),
+        const SizedBox(width: 10),
+        Expanded(child: Divider(height: 1, color: c.divider)),
+      ],
+    ),
+  );
+}
 
   String _dateGroupLabel(DateTime? dt) {
     if (dt == null) return '';
@@ -4217,9 +4219,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
         return Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.colors.surfaceElevated,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
+            border: Border.all(color: context.colors.divider),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -4247,18 +4249,18 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     ),
                     child: Row(
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.chat_bubble_outline_rounded,
                           size: 15,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           count > 0 ? 'Comments ($count)' : 'Comments',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.primary,
+                            color: context.colors.brand,
                           ),
                         ),
                         const Spacer(),
@@ -4277,7 +4279,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           child: Icon(
                             Icons.keyboard_arrow_down_rounded,
                             size: 20,
-                            color: Colors.grey.shade500,
+                            color: context.colors.textSecondary,
                           ),
                         ),
                       ],
@@ -4288,7 +4290,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
               // ── Collapsed preview ─────────────────────────────────────
               if (!_commentsExpanded) ...[
-                Divider(height: 1, color: Colors.grey.shade100),
+                Divider(height: 1, color: context.colors.divider),
                 if (isLoading)
                   Padding(
                     padding: const EdgeInsets.symmetric(
@@ -4297,9 +4299,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     ),
                     child: LinearProgressIndicator(
                       minHeight: 2,
-                      backgroundColor: Colors.grey.shade100,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        AppColors.primary,
+                      backgroundColor: context.colors.surfaceSunken,
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        context.colors.brand,
                       ),
                     ),
                   )
@@ -4319,14 +4321,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           Icon(
                             Icons.add_comment_outlined,
                             size: 14,
-                            color: Colors.grey.shade400,
+                            color: context.colors.textTertiary,
                           ),
                           const SizedBox(width: 8),
                           Text(
                             'No comments yet — tap to add one',
                             style: TextStyle(
                               fontSize: 12.5,
-                              color: Colors.grey.shade400,
+                              color: context.colors.textTertiary,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -4355,10 +4357,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   vertical: 5,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: AppColors.primary.withOpacity(0.06),
+                                  color: context.colors.brandTint,
                                   borderRadius: BorderRadius.circular(20),
                                   border: Border.all(
-                                    color: AppColors.primary.withOpacity(0.15),
+                                    color: context.colors.brand.withOpacity(0.25),
                                   ),
                                 ),
                                 child: Row(
@@ -4366,17 +4368,17 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                                   children: [
                                     Text(
                                       '+${count - 1} more comment${count - 1 == 1 ? '' : 's'}',
-                                      style: const TextStyle(
+                                      style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600,
-                                        color: AppColors.primary,
+                                        color: context.colors.brand,
                                       ),
                                     ),
                                     const SizedBox(width: 4),
-                                    const Icon(
+                                    Icon(
                                       Icons.arrow_forward_rounded,
                                       size: 12,
-                                      color: AppColors.primary,
+                                      color: context.colors.brand,
                                     ),
                                   ],
                                 ),
@@ -4391,7 +4393,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
               // ── Expanded: list + input ────────────────────────────────
               if (_commentsExpanded) ...[
-                Divider(height: 1, color: Colors.grey.shade100),
+                Divider(height: 1, color: context.colors.divider),
 
                 if (isLoading)
                   const Padding(
@@ -4407,7 +4409,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       humanizeError(snap.error.toString()),
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.red.shade600,
+                        color: context.colors.dangerText,
                       ),
                     ),
                   )
@@ -4420,7 +4422,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           Icon(
                             Icons.chat_bubble_outline_rounded,
                             size: 30,
-                            color: Colors.grey.shade300,
+                            color: context.colors.textTertiary,
                           ),
                           const SizedBox(height: 8),
                           Text(
@@ -4428,7 +4430,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 12.5,
-                              color: Colors.grey.shade400,
+                              color: context.colors.textSecondary,
                               height: 1.5,
                             ),
                           ),
@@ -4443,7 +4445,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   ),
 
                 // ── Docked composer ────────────────────────────────────
-                Divider(height: 1, color: Colors.grey.shade100),
+                Divider(height: 1, color: context.colors.divider),
                 Padding(
                   key: _commentInputKey,
                   padding: EdgeInsets.fromLTRB(
@@ -4464,6 +4466,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
   // ── Apple-grade expanding comment composer ──────────────────────────────
   Widget _commentComposer(bool disabled) {
+    final c = context.colors;
     const int minLines = 1;
     const int maxLines = 6;
 
@@ -4472,20 +4475,20 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
+        color: c.surfaceSunken,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
           color:
               _commentInputFocused
-                  ? AppColors.primary.withOpacity(0.5)
-                  : const Color(0xFFE2E8F0),
+                  ? c.brand.withOpacity(0.5)
+                  : c.divider,
           width: _commentInputFocused ? 1.5 : 1,
         ),
         boxShadow:
             _commentInputFocused
                 ? [
                   BoxShadow(
-                    color: AppColors.primary.withOpacity(0.08),
+                    color: c.brand.withOpacity(0.08),
                     blurRadius: 12,
                     offset: const Offset(0, 2),
                   ),
@@ -4506,8 +4509,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             child: Container(
               width: 30,
               height: 30,
-              decoration: const BoxDecoration(
-                color: AppColors.primary,
+              decoration: BoxDecoration(
+                color: c.brand,
                 shape: BoxShape.circle,
               ),
               child: Center(
@@ -4558,20 +4561,22 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       setState(() {});
                     }
                   },
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     height: 1.4,
-                    color: Color(0xFF0F172A),
+                    color: c.textPrimary,
                     letterSpacing: -0.1,
                   ),
                   decoration: InputDecoration(
                     hintText: 'Add a comment…',
                     hintStyle: TextStyle(
-                      color: Colors.grey.shade400,
+                      color: c.textTertiary,
                       fontSize: 14,
                       letterSpacing: -0.1,
                     ),
                     border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
                     isDense: true,
                     contentPadding: const EdgeInsets.symmetric(
                       horizontal: 4,
@@ -4606,8 +4611,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           decoration: BoxDecoration(
                             color:
                                 canSend
-                                    ? AppColors.primary
-                                    : AppColors.primary.withOpacity(0.35),
+                                    ? c.brand
+                                    : c.brand.withOpacity(0.35),
                             shape: BoxShape.circle,
                           ),
                           child:
@@ -4665,6 +4670,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   Widget _kv(String k, String v) {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -4673,13 +4679,17 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             width: 110,
             child: Text(
               k,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+              style: TextStyle(fontSize: 12, color: c.textSecondary),
             ),
           ),
           Expanded(
             child: Text(
               v.isEmpty ? '-' : v,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
             ),
           ),
         ],
@@ -4740,11 +4750,14 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               decoration: BoxDecoration(
-                color: hasDirtySelection ? _filledFill : AppColors.surfaceLight,
+                color: hasDirtySelection
+                    ? context.colors.brandTint
+                    : context.colors.surfaceSunken,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color:
-                      hasDirtySelection ? _filledBorder : Colors.grey.shade300,
+                  color: hasDirtySelection
+                      ? context.colors.brand
+                      : context.colors.border,
                   width: hasDirtySelection ? 1.5 : 1,
                 ),
               ),
@@ -4796,11 +4809,11 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     ),
                   ),
                   if (hasDirtySelection)
-                    const Padding(
-                      padding: EdgeInsets.only(right: 12),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 12),
                       child: Icon(
                         Icons.check_circle_rounded,
-                        color: _filledBorder,
+                        color: context.colors.brand,
                         size: 18,
                       ),
                     ),
@@ -4819,9 +4832,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
+                      color: context.colors.brandTint,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                      border: Border.all(color: context.colors.brand.withOpacity(0.35)),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
@@ -4829,10 +4842,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                         Flexible(
                           child: Text(
                             dirtyLabels[index],
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
-                              color: Color(0xFF1E40AF),
+                              color: context.colors.brand,
                             ),
                           ),
                         ),
@@ -4863,13 +4876,13 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                             width: 16,
                             height: 16,
                             decoration: BoxDecoration(
-                              color: const Color(0xFF3B82F6).withOpacity(0.2),
+                              color: context.colors.brand.withOpacity(0.2),
                               shape: BoxShape.circle,
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.close,
                               size: 10,
-                              color: Color(0xFF1E40AF),
+                              color: context.colors.brand,
                             ),
                           ),
                         ),
@@ -4910,6 +4923,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
       // ── Read-only tile — pencil icon is the only way into edit mode ────
       if (!isThisFieldEditing) {
+        final c = context.colors;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -4918,29 +4932,25 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                 Expanded(
                   child: Text(
                     label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF475569),
+                      color: c.textSecondary,
                     ),
                   ),
                 ),
                 GestureDetector(
-                  onTap:
-                      busy ? null : () => setState(() => _editingPropId = p.id),
+                  onTap: busy ? null : () => setState(() => _editingPropId = p.id),
                   child: Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color:
-                          busy
-                              ? Colors.grey.shade100
-                              : AppColors.primary.withOpacity(0.07),
+                      color: busy ? c.surfaceSunken : c.brandTint,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
                       Icons.edit_outlined,
                       size: 14,
-                      color: busy ? Colors.grey.shade400 : AppColors.primary,
+                      color: busy ? c.textTertiary : c.brand,
                     ),
                   ),
                 ),
@@ -4951,16 +4961,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: c.surfaceSunken,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
+                border: Border.all(color: c.border),
               ),
               child: Text(
                 currentBool ? 'Yes' : 'No',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF334155),
+                  color: c.textPrimary,
                 ),
               ),
             ),
@@ -4973,20 +4983,20 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
 
       Widget pill(String pillLabel, bool value) {
         final selected = currentBool == value;
+        final c = context.colors;
         return Expanded(
           child: GestureDetector(
-            onTap:
-                selected
-                    ? null
-                    : () => setState(() {
-                      _dirty[p.id] = p.copyWith(editedValue: value);
-                    }),
+            onTap: selected
+                ? null
+                : () => setState(() {
+                    _dirty[p.id] = p.copyWith(editedValue: value);
+                  }),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               margin: const EdgeInsets.all(4),
               padding: const EdgeInsets.symmetric(vertical: 10),
               decoration: BoxDecoration(
-                color: selected ? AppColors.primary : Colors.transparent,
+                color: selected ? c.brand : Colors.transparent,
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Center(
@@ -4995,7 +5005,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
-                    color: selected ? Colors.white : Colors.grey.shade600,
+                    color: selected ? Colors.white : c.textSecondary,
                   ),
                 ),
               ),
@@ -5011,17 +5021,21 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           const SizedBox(height: 8),
           Container(
             decoration: BoxDecoration(
-              color: isDirty ? _filledFill : AppColors.surfaceLight,
+              color: isDirty ? context.colors.brandTint : context.colors.surfaceSunken,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: isDirty ? _filledBorder : Colors.grey.shade200,
+                color: isDirty ? context.colors.brand : context.colors.border,
                 width: isDirty ? 1.5 : 1,
               ),
             ),
             child: Row(
               children: [
                 pill('Yes', true),
-                Container(width: 1, height: 36, color: Colors.grey.shade200),
+                Container(
+                  width: 1,
+                  height: 36,
+                  color: context.colors.divider,
+                ),
                 pill('No', false),
               ],
             ),
@@ -5055,9 +5069,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   vertical: 14,
                 ),
                 decoration: BoxDecoration(
-                  color: _filledFill,
+                  color: context.colors.brandTint,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _filledBorder, width: 1.5),
+                  border: Border.all(color: context.colors.brand, width: 1.5),
                 ),
                 child: Row(
                   children: [
@@ -5066,7 +5080,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           ? Icons.schedule_rounded
                           : Icons.calendar_today_rounded,
                       size: 16,
-                      color: AppColors.primary,
+                      color: context.colors.brand,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
@@ -5079,15 +5093,15 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                           fontWeight: FontWeight.w500,
                           color:
                               displayText.isEmpty
-                                  ? Colors.grey.shade400
-                                  : const Color(0xFF111827),
+                                  ? context.colors.textTertiary
+                                  : context.colors.textPrimary,
                         ),
                       ),
                     ),
                     Icon(
                       Icons.edit_calendar_rounded,
                       size: 16,
-                      color: AppColors.primary.withOpacity(0.6),
+                      color: context.colors.brand.withOpacity(0.6),
                     ),
                   ],
                 ),
@@ -5106,10 +5120,10 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               Expanded(
                 child: Text(
                   label,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: Color(0xFF475569),
+                    color: context.colors.textSecondary,
                   ),
                 ),
               ),
@@ -5128,8 +5142,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   decoration: BoxDecoration(
                     color:
                         (_saving || _downloading || _changingWorkflow)
-                            ? Colors.grey.shade100
-                            : AppColors.primary.withOpacity(0.07),
+                            ? context.colors.surfaceSunken
+                            : context.colors.brandTint,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
@@ -5137,8 +5151,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     size: 14,
                     color:
                         (_saving || _downloading || _changingWorkflow)
-                            ? Colors.grey.shade400
-                            : AppColors.primary,
+                            ? context.colors.textTertiary
+                            : context.colors.brand,
                   ),
                 ),
               ),
@@ -5149,9 +5163,9 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             width: double.infinity,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: context.colors.surfaceSunken,
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: context.colors.border),
             ),
             child: Row(
               children: [
@@ -5162,8 +5176,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   size: 15,
                   color:
                       displayText.isNotEmpty
-                          ? Colors.grey.shade500
-                          : Colors.grey.shade300,
+                          ? context.colors.textSecondary
+                          : context.colors.textTertiary,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -5177,8 +5191,8 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                               : FontWeight.w400,
                       color:
                           displayText.isNotEmpty
-                              ? Colors.grey.shade700
-                              : Colors.grey.shade400,
+                              ? context.colors.textPrimary
+                              : context.colors.textTertiary,
                     ),
                   ),
                 ),
@@ -5197,30 +5211,35 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
         children: [
           _fieldLabelRow(label, p, isDirty: isDirty),
           const SizedBox(height: 8),
-          Container(
-            decoration: BoxDecoration(
-              color: isDirty ? _filledFill : AppColors.surfaceLight,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: isDirty ? _filledBorder : Colors.grey.shade300,
-                width: isDirty ? 1.5 : 1,
+          // 👇 REPLACE THE CONTAINER WRAPPER WITH THIS:
+          TextField(
+            controller: ctrl,
+            maxLines: p.datatype == 'MFDatatypeMultiLineText' ? null : 1,
+            style: TextStyle(color: context.colors.textPrimary),
+            cursorColor: context.colors.brand,
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: isDirty ? context.colors.brandTint : context.colors.inputFill,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: context.colors.border),
               ),
-            ),
-            child: TextField(
-              controller: ctrl,
-              maxLines: p.datatype == 'MFDatatypeMultiLineText' ? null : 1,
-              decoration: const InputDecoration(
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 12,
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(
+                  color: isDirty ? context.colors.brand : context.colors.border,
+                  width: isDirty ? 1.5 : 1,
                 ),
-                border: InputBorder.none,
               ),
-              onChanged:
-                  (v) => setState(() {
-                    _dirty[p.id] = p.copyWith(editedValue: v);
-                  }),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: context.colors.brand, width: 2),
+              ),
             ),
+            onChanged: (v) => setState(() {
+              _dirty[p.id] = p.copyWith(editedValue: v);
+            }),
           ),
         ],
       );
@@ -5230,15 +5249,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   }
 
   Widget _fieldLabelRow(String label, _PropVm p, {required bool isDirty}) {
+    final c = context.colors;
     return Row(
       children: [
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w600,
-              color: Color(0xFF475569),
+              color: c.textSecondary,
             ),
           ),
         ),
@@ -5247,7 +5267,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
+              color: c.surfaceSunken,
               borderRadius: BorderRadius.circular(8),
             ),
             child: Text(
@@ -5255,7 +5275,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
               style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade600,
+                color: c.textSecondary,
               ),
             ),
           ),
@@ -5267,33 +5287,28 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             duration: const Duration(milliseconds: 150),
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
             decoration: BoxDecoration(
-              color:
-                  (isDirty && !_saving)
-                      ? AppColors.primary
-                      : Colors.grey.shade200,
+              color: (isDirty && !_saving) ? c.brand : c.surfaceSunken,
               borderRadius: BorderRadius.circular(8),
             ),
-            child:
-                _saving && _editingPropId == p.id
-                    ? const SizedBox(
-                      width: 12,
-                      height: 12,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                    : Text(
-                      'Save',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color:
-                            (isDirty && !_saving)
-                                ? Colors.white
-                                : Colors.grey.shade400,
-                      ),
+            child: _saving && _editingPropId == p.id
+                ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                     ),
+                  )
+                : Text(
+                    'Save',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: (isDirty && !_saving)
+                          ? Colors.white
+                          : c.textTertiary,
+                    ),
+                  ),
           ),
         ),
       ],
@@ -5305,6 +5320,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
     required String value,
     required _PropVm prop,
   }) {
+    final c = context.colors;
     final hasValue = value.trim().isNotEmpty;
     final busy = _saving || _downloading || _changingWorkflow;
 
@@ -5316,32 +5332,27 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF475569),
+                  color: c.textSecondary,
                 ),
               ),
             ),
             GestureDetector(
-              onTap:
-                  busy
-                      ? null
-                      : () =>
-                          _startEditingField(prop, _valueToText(prop.value)),
+              onTap: busy
+                  ? null
+                  : () => _startEditingField(prop, _valueToText(prop.value)),
               child: Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color:
-                      busy
-                          ? Colors.grey.shade100
-                          : AppColors.primary.withOpacity(0.07),
+                  color: busy ? c.surfaceSunken : c.brandTint,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Icon(
                   Icons.edit_outlined,
                   size: 14,
-                  color: busy ? Colors.grey.shade400 : AppColors.primary,
+                  color: busy ? c.textTertiary : c.brand,
                 ),
               ),
             ),
@@ -5352,16 +5363,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100,
+            color: c.surfaceSunken,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200, width: 1),
+            border: Border.all(color: c.border),
           ),
           child: Text(
             hasValue ? value : '—',
             style: TextStyle(
               fontSize: 14.5,
               fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
-              color: hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
+              color: hasValue ? c.textPrimary : c.textTertiary,
             ),
           ),
         ),
@@ -5373,6 +5384,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
   /// target, just a "Read only" tag so it's visually distinct from editable
   /// fields that simply haven't been tapped yet.
   Widget _readOnlyRow(String label, String value) {
+    final c = context.colors;                             
     final hasValue = value.trim().isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5382,19 +5394,19 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
             Expanded(
               child: Text(
                 label,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF475569),
+                  color: c.textSecondary,
                 ),
               ),
             ),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: c.surfaceSunken,
                 borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.grey.shade300),
+                border: Border.all(color: c.border),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -5402,7 +5414,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                   Icon(
                     Icons.lock_outline_rounded,
                     size: 11,
-                    color: Colors.grey.shade500,
+                    color: c.textTertiary,
                   ),
                   const SizedBox(width: 4),
                   Text(
@@ -5410,7 +5422,7 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
                     style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
-                      color: Colors.grey.shade600,
+                      color: c.textSecondary,
                     ),
                   ),
                 ],
@@ -5423,16 +5435,16 @@ class _ObjectDetailsScreenState extends State<ObjectDetailsScreen> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.grey.shade50,
+            color: c.surfaceSunken,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.grey.shade200),
+            border: Border.all(color: c.border),
           ),
           child: Text(
             hasValue ? value : '—',
             style: TextStyle(
               fontSize: 14.5,
               fontWeight: hasValue ? FontWeight.w500 : FontWeight.w400,
-              color: hasValue ? Colors.grey.shade700 : Colors.grey.shade400,
+              color: hasValue ? c.textPrimary : c.textTertiary,
             ),
           ),
         ),
@@ -5537,7 +5549,7 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 48),
-      backgroundColor: Colors.white,
+      backgroundColor: context.colors.surfaceElevated,
       surfaceTintColor: Colors.transparent,
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -5606,22 +5618,22 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                   children: [
                     // ── Already sent section ───────────────────────────
                     if (widget.alreadySent.isNotEmpty) ...[
-                      const Text(
+                      Text(
                         'ALREADY SENT',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
-                          color: Color(0xFF64748B),
+                          color: context.colors.textSecondary,
                           letterSpacing: 0.8,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Container(
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFF8E1),
+                          color: context.colors.warningSurface,
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: const Color(0xFFFFCC02).withOpacity(0.4),
+                            color: context.colors.warningBorder,
                           ),
                         ),
                         padding: const EdgeInsets.symmetric(
@@ -5637,20 +5649,20 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                   ),
                                   child: Row(
                                     children: [
-                                      const Icon(
+                                      Icon(
                                         Icons.hourglass_top_rounded,
                                         size: 15,
-                                        color: Color(0xFF92700A),
+                                        color: context.colors.warningText,
                                       ),
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
                                           email,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w600,
-                                            color: Color(0xFF5C4A00),
+                                            color: context.colors.warningText,
                                           ),
                                         ),
                                       ),
@@ -5660,19 +5672,17 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                           vertical: 3,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: const Color(
-                                            0xFFFFCC02,
-                                          ).withOpacity(0.25),
+                                          color: context.colors.warningBorder.withOpacity(0.3),
                                           borderRadius: BorderRadius.circular(
                                             20,
                                           ),
                                         ),
-                                        child: const Text(
+                                        child: Text(
                                           'Pending signature',
                                           style: TextStyle(
                                             fontSize: 10.5,
                                             fontWeight: FontWeight.w700,
-                                            color: Color(0xFF92700A),
+                                            color: context.colors.warningText,
                                           ),
                                         ),
                                       ),
@@ -5686,12 +5696,12 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                     ],
 
                     // ── New signees ─────────────────────────────────────
-                    const Text(
+                    Text(
                       'ADD SIGNEES',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
+                        color: context.colors.brand,
                         letterSpacing: 0.8,
                       ),
                     ),
@@ -5711,36 +5721,38 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                 controller: _controllers[i],
                                 keyboardType: TextInputType.emailAddress,
                                 onChanged: (_) => setState(() {}),
+                                style: TextStyle(color: context.colors.textPrimary),
+                                cursorColor: context.colors.brand,
                                 decoration: InputDecoration(
                                   hintText: 'name@example.com',
                                   hintStyle: TextStyle(
-                                    color: Colors.grey.shade400,
+                                    color: context.colors.textTertiary,
                                     fontSize: 14,
                                   ),
                                   prefixIcon: Icon(
                                     Icons.email_outlined,
-                                    color: Colors.grey.shade400,
+                                    color: context.colors.textTertiary,
                                     size: 18,
                                   ),
                                   suffixIcon:
                                       isValid
-                                          ? const Icon(
+                                          ? Icon(
                                             Icons.check_circle_rounded,
-                                            color: Color(0xFF2563EB),
+                                            color: context.colors.brand,
                                             size: 18,
                                           )
                                           : null,
                                   filled: true,
                                   fillColor:
                                       isValid
-                                          ? const Color(0xFFF0F6FF)
-                                          : const Color(0xFFF8FAFC),
+                                          ? context.colors.brandTint
+                                          : context.colors.surfaceSunken,
                                   errorText: error,
                                   errorStyle: const TextStyle(fontSize: 11.5),
                                   border: OutlineInputBorder(
                                     borderRadius: BorderRadius.circular(12),
                                     borderSide: BorderSide(
-                                      color: Colors.grey.shade200,
+                                      color: context.colors.inputBorder,
                                     ),
                                   ),
                                   enabledBorder: OutlineInputBorder(
@@ -5748,10 +5760,10 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                     borderSide: BorderSide(
                                       color:
                                           error != null
-                                              ? Colors.red.shade300
+                                              ? context.colors.dangerText.withOpacity(0.5)
                                               : isValid
-                                              ? const Color(0xFF2563EB)
-                                              : Colors.grey.shade200,
+                                              ? context.colors.brand
+                                              : context.colors.inputBorder,
                                       width: isValid ? 1.5 : 1,
                                     ),
                                   ),
@@ -5760,8 +5772,8 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                     borderSide: BorderSide(
                                       color:
                                           error != null
-                                              ? Colors.red.shade400
-                                              : AppColors.primary,
+                                              ? context.colors.dangerText
+                                              : context.colors.brand,
                                       width: 2,
                                     ),
                                   ),
@@ -5782,13 +5794,13 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                                   height: 32,
                                   margin: const EdgeInsets.only(top: 2),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.shade50,
+                                    color: context.colors.dangerSurface,
                                     borderRadius: BorderRadius.circular(8),
                                   ),
                                   child: Icon(
                                     Icons.remove,
                                     size: 16,
-                                    color: Colors.red.shade400,
+                                    color: context.colors.dangerText,
                                   ),
                                 ),
                               ),
@@ -5799,16 +5811,16 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                     }),
                     TextButton.icon(
                       onPressed: _sending ? null : _addEmail,
-                      icon: const Icon(
+                      icon: Icon(
                         Icons.add_circle_outline,
                         size: 16,
-                        color: AppColors.primary,
+                        color: context.colors.brand,
                       ),
-                      label: const Text(
+                      label: Text(
                         'Add another email',
                         style: TextStyle(
                           fontSize: 13,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -5828,7 +5840,7 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
             Container(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
               decoration: BoxDecoration(
-                border: Border(top: BorderSide(color: Colors.grey.shade100)),
+                border: Border(top: BorderSide(color: context.colors.divider)),
               ),
               child: Row(
                 children: [
@@ -5836,8 +5848,8 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                     child: OutlinedButton(
                       onPressed: _sending ? null : () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey.shade700,
-                        side: BorderSide(color: Colors.grey.shade300),
+                        foregroundColor: context.colors.textPrimary,
+                        side: BorderSide(color: context.colors.border),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -5854,9 +5866,9 @@ class _SendForSigningDialogState extends State<_SendForSigningDialog> {
                     child: ElevatedButton(
                       onPressed: _canSend ? _submit : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
+                        backgroundColor: context.colors.brand,
                         foregroundColor: Colors.white,
-                        disabledBackgroundColor: Colors.grey.shade200,
+                        disabledBackgroundColor: context.colors.surfaceSunken,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -6011,7 +6023,7 @@ class _ESignFabState extends State<_ESignFab>
       child: FloatingActionButton.extended(
         onPressed: widget.isBusy ? null : widget.onTap,
         backgroundColor:
-            widget.isBusy ? Colors.grey.shade400 : AppColors.primary,
+            widget.isBusy ? context.colors.surfaceSunken : context.colors.brand,
         foregroundColor: Colors.white,
         elevation: 4,
         icon:
@@ -6040,20 +6052,20 @@ class _PreparingCopyLoader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
             Text(
               'Preparing your copy…',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF64748B),
+                color: context.colors.textSecondary,
               ),
             ),
           ],
@@ -6168,8 +6180,8 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
         maxHeight: MediaQuery.of(context).size.height * 0.85,
       ),
       child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: context.colors.surfaceElevated,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -6190,7 +6202,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
+                      color: context.colors.divider,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -6200,13 +6212,13 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                 // ── Header ──
                 Row(
                   children: [
-                    const Expanded(
+                    Expanded(
                       child: Text(
                         'Permissions',
                         style: TextStyle(
                           fontSize: 20,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                         ),
                       ),
                     ),
@@ -6216,11 +6228,11 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                         width: 30,
                         height: 30,
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: context.colors.surfaceSunken,
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(Icons.close,
-                            size: 16, color: Colors.grey.shade600),
+                            size: 16, color: context.colors.textSecondary),
                       ),
                     ),
                   ],
@@ -6243,15 +6255,15 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                 if (myEntry.permission.isClassDeleted) _classDeletedBanner(),
                 Container(
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: context.colors.surfaceElevated,
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(
-                      color: AppColors.primary.withOpacity(0.3),
+                      color: context.colors.brand.withOpacity(0.35),
                       width: 1.5,
                     ),
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.primary.withOpacity(0.05),
+                        color: context.colors.shadow,
                         blurRadius: 10,
                         offset: const Offset(0, 4),
                       )
@@ -6272,28 +6284,35 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                   // ── Search Bar ──
                   Container(
                     key: _searchFieldKey,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
                     child: TextField(
                       controller: _searchCtrl,
                       focusNode: _searchFocusNode,
                       onChanged: (val) {
                         setState(() => _searchQuery = val.trim());
                       },
-                      style: const TextStyle(
-                          fontSize: 14, color: Color(0xFF1E293B)),
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: context.colors.textPrimary,
+                      ),
+                      cursorColor: context.colors.brand,
                       decoration: InputDecoration(
                         hintText: 'Search by name...',
                         hintStyle: TextStyle(
-                            fontSize: 14, color: Colors.grey.shade400),
-                        prefixIcon: Icon(Icons.search,
-                            size: 20, color: Colors.grey.shade500),
+                          fontSize: 14,
+                          color: context.colors.textTertiary,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          size: 20,
+                          color: context.colors.textSecondary,
+                        ),
                         suffixIcon: _searchQuery.isNotEmpty
                             ? IconButton(
-                                icon: Icon(Icons.clear,
-                                    size: 18, color: Colors.grey.shade500),
+                                icon: Icon(
+                                  Icons.clear,
+                                  size: 18,
+                                  color: context.colors.textSecondary,
+                                ),
                                 onPressed: () {
                                   _searchCtrl.clear();
                                   setState(() => _searchQuery = '');
@@ -6301,9 +6320,24 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                                 },
                               )
                             : null,
-                        border: InputBorder.none,
-                        contentPadding:
-                            const EdgeInsets.symmetric(vertical: 14),
+
+                        // Rounded fill is provided by the TextField itself, so the
+                        // OutlineInputBorder's borderRadius actually clips the fill.
+                        filled: true,
+                        fillColor: context.colors.surfaceSunken,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(vertical: 14),
                         isDense: true,
                       ),
                     ),
@@ -6313,9 +6347,9 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                   // ── List Container ──
                   Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: context.colors.surfaceElevated,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.grey.shade200),
+                      border: Border.all(color: context.colors.divider),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -6327,14 +6361,14 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                               child: Column(
                                 children: [
                                   Icon(Icons.person_off_outlined,
-                                      size: 28, color: Colors.grey.shade300),
+                                      size: 28, color: context.colors.textTertiary),
                                   const SizedBox(height: 8),
                                   Text(
                                     'No users found',
                                     style: TextStyle(
                                       fontSize: 13.5,
                                       fontWeight: FontWeight.w500,
-                                      color: Colors.grey.shade500,
+                                      color: context.colors.textSecondary,
                                     ),
                                   ),
                                 ],
@@ -6378,17 +6412,17 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                               decoration: BoxDecoration(
                                 border: Border(
                                     top: BorderSide(
-                                        color: Colors.grey.shade100)),
+                                        color: context.colors.divider)),
                               ),
                               child: Center(
                                 child: Text(
                                   _showAllUsers
                                       ? 'Show less'
                                       : 'Show all ${others.length} users',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 13.5,
                                     fontWeight: FontWeight.w600,
-                                    color: AppColors.primary,
+                                    color: context.colors.brand,
                                   ),
                                 ),
                               ),
@@ -6421,7 +6455,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
 
     return Container(
       decoration: BoxDecoration(
-        border: isLast ? null : Border(bottom: BorderSide(color: Colors.grey.shade100)),
+        border: isLast ? null : Border(bottom: BorderSide(color: context.colors.divider)),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       child: Row(
@@ -6431,7 +6465,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: isMe ? AppColors.primary : Colors.grey.shade200,
+              color: isMe ? context.colors.brand : context.colors.surfaceSunken,
               shape: BoxShape.circle,
             ),
             child: Center(
@@ -6440,7 +6474,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
-                  color: isMe ? Colors.white : Colors.grey.shade600,
+                  color: isMe ? Colors.white : context.colors.textSecondary,
                 ),
               ),
             ),
@@ -6454,7 +6488,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
               style: TextStyle(
                 fontSize: 13.5,
                 fontWeight: isMe ? FontWeight.w700 : FontWeight.w600,
-                color: const Color(0xFF1E293B),
+                color: context.colors.textPrimary,
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -6485,8 +6519,8 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
       height: 18,
       decoration: BoxDecoration(
         color: allowed
-            ? (isMe ? AppColors.primary : AppColors.primary.withOpacity(0.1))
-            : const Color(0xFFF1F5F9), // slate-100 – gives the letter a shape
+            ? (isMe ? context.colors.brand : context.colors.brand.withOpacity(0.1))
+            : context.colors.surfaceSunken, // slate-100 – gives the letter a shape
         borderRadius: BorderRadius.circular(4),
       ),
       child: Center(
@@ -6496,8 +6530,8 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
             fontSize: 10,
             fontWeight: FontWeight.w700,
             color: allowed
-                ? (isMe ? Colors.white : AppColors.primary)
-                : const Color(0xFF94A3B8), // slate-400 – legible on white
+                ? (isMe ? Colors.white : context.colors.brand)
+                : context.colors.textTertiary, // slate-400 – legible on white
           ),
         ),
       ),
@@ -6522,22 +6556,22 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF8E1),
+          color: context.colors.warningSurface,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFFFCC02).withOpacity(0.5)),
+          border: Border.all(color: context.colors.warningBorder),
         ),
-        child: const Row(
+        child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(Icons.warning_amber_rounded, size: 15, color: Color(0xFF92700A)),
-            SizedBox(width: 8),
+            Icon(Icons.warning_amber_rounded, size: 15, color: context.colors.warningText),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'The class for this object has been deleted.',
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
-                  color: Color(0xFF5C4A00),
+                  color: context.colors.warningText,
                 ),
               ),
             ),
@@ -6547,10 +6581,10 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
 
   Widget _sectionLabel(String text) => Text(
         text,
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w800,
-          color: Color(0xFF0F172A),
+          color: context.colors.textPrimary,
           letterSpacing: 0.8,
         ),
       );
@@ -6566,7 +6600,7 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
                 label,
                 style: TextStyle(
                   fontSize: 13,
-                  color: Colors.grey.shade500,
+                  color: context.colors.textSecondary,
                   fontWeight: FontWeight.w500,
                 ),
               ),
@@ -6574,10 +6608,10 @@ class _PermissionsSheetState extends State<_PermissionsSheet> {
             Expanded(
               child: Text(
                 value.isEmpty ? '-' : value,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF1E293B),
+                  color: context.colors.textPrimary,
                 ),
               ),
             ),
@@ -6607,16 +6641,16 @@ class _LegendItem extends StatelessWidget {
             width: 18,
             height: 18,
             decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.10),
+              color: context.colors.brandTint,
               borderRadius: BorderRadius.circular(4),
             ),
             child: Center(
               child: Text(
                 letter,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  color: context.colors.brand,
                 ),
               ),
             ),
@@ -6624,10 +6658,10 @@ class _LegendItem extends StatelessWidget {
           const SizedBox(width: 6),
           Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11.5,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF64748B), // slate-500
+              color: context.colors.textSecondary,
             ),
           ),
         ],

@@ -70,7 +70,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Invalid object display ID: ${widget.obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
       return;
@@ -99,7 +99,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Invalid object display ID: ${widget.obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
       return;
@@ -121,7 +121,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Open failed: $e'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
     } finally {
@@ -136,7 +136,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Invalid object display ID: ${widget.obj.displayId}'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
       return;
@@ -158,7 +158,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Saved to: $savedPath'),
-          backgroundColor: Colors.green.shade600,
+          backgroundColor: context.colors.successText,
           duration: const Duration(seconds: 4),
         ),
       );
@@ -167,7 +167,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Download failed: $e'),
-          backgroundColor: Colors.red.shade600,
+          backgroundColor: context.colors.dangerText,
         ),
       );
     } finally {
@@ -229,7 +229,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
       builder: (context, scrollController) {
         return Container(
           decoration: BoxDecoration(
-            color: AppColors.surfaceLight,
+            color: context.colors.surface,
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           ),
           child: Column(
@@ -240,7 +240,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
+                  color: context.colors.textTertiary,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -256,9 +256,10 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                         children: [
                           Text(
                             widget.obj.title,
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 18,
                               fontWeight: FontWeight.bold,
+                              color: context.colors.textPrimary,
                             ),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
@@ -268,21 +269,21 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                             '${widget.obj.classTypeName} • ID ${widget.obj.displayId}',
                             style: TextStyle(
                               fontSize: 13,
-                              color: Colors.grey.shade600,
+                              color: context.colors.textSecondary,
                             ),
                           ),
                         ],
                       ),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.close),
+                      icon: Icon(Icons.close, color: context.colors.textSecondary),
                       onPressed: () => Navigator.pop(context),
                     ),
                   ],
                 ),
               ),
 
-              const Divider(height: 1),
+              Divider(height: 1, color: context.colors.divider),
 
               // Content
               Expanded(
@@ -299,7 +300,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                           padding: const EdgeInsets.all(20),
                           child: Text(
                             'Error loading info: ${snap.error}',
-                            style: TextStyle(color: Colors.red.shade700),
+                            style: TextStyle(color: context.colors.dangerText),
                             textAlign: TextAlign.center,
                           ),
                         ),
@@ -367,7 +368,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                             icon: const Icon(Icons.open_in_full, size: 18),
                             label: const Text('View Full Details'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
+                              backgroundColor: context.colors.brand,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                               shape: RoundedRectangleBorder(
@@ -394,10 +395,10 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
   Widget _buildSectionTitle(String title) {
     return Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w700,
-        color: AppColors.primary,
+        color: context.colors.brand,
       ),
     );
   }
@@ -406,11 +407,11 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: context.colors.shadow,
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -434,16 +435,17 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
               label,
               style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey.shade600,
+                color: context.colors.textSecondary,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value.isEmpty ? '-' : value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
+                color: context.colors.textPrimary,
               ),
             ),
           ),
@@ -480,7 +482,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
         ),
         subtitle: Text(
           'v${file.fileVersion}${ext.isEmpty ? '' : ' • $ext'}',
-          style: const TextStyle(fontSize: 12),
+          style: TextStyle(fontSize: 12, color: context.colors.textSecondary),
         ),
         trailing: _downloading
             ? const SizedBox(
@@ -489,7 +491,7 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, size: 18, color: Colors.grey.shade600),
+                icon: Icon(Icons.more_vert, size: 18, color: context.colors.textSecondary),
                 onSelected: (action) async {
                   if (action == 'preview') {
                     await _previewFile(file);
@@ -541,11 +543,11 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: context.colors.shadow,
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -555,11 +557,11 @@ class _ObjectInfoBottomSheetState extends State<ObjectInfoBottomSheet> {
         children: [
           Icon(Icons.insert_drive_file_outlined, 
                size: 48, 
-               color: Colors.grey.shade300),
+               color: context.colors.textTertiary),
           const SizedBox(height: 8),
           Text(
             'No files attached',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 14),
+            style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
           ),
         ],
       ),

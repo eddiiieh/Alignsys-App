@@ -591,6 +591,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildInViewSearchBar() {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
       child: Container(
@@ -598,7 +599,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: c.shadow,
               blurRadius: 12,
               offset: const Offset(0, 3),
             ),
@@ -606,7 +607,6 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         ),
         child: GestureDetector(
           onTap: () async {
-            // Only navigate to SearchResultsScreen in normal mode
             if (!_selectionMode) {
               await Navigator.push(
                 context,
@@ -620,10 +620,11 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             absorbing: !_selectionMode,
             child: TextField(
               controller: _searchController,
+              style: TextStyle(color: c.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Search repository...',
                 hintStyle: TextStyle(
-                  color: Colors.grey.shade400,
+                  color: c.textTertiary,
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
                 ),
@@ -637,38 +638,29 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(
-                    color: AppColors.primary,
-                    width: 2,
-                  ),
+                  borderSide: BorderSide(color: c.brand, width: 2),
                 ),
                 filled: true,
-                fillColor: Colors.white,
-                contentPadding: const EdgeInsets.symmetric(
-                  vertical: 14,
-                  horizontal: 16,
-                ),
+                fillColor: c.surfaceElevated,
+                contentPadding:
+                    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
                 prefixIcon: Icon(
                   Icons.search_rounded,
-                  color: AppColors.primary.withOpacity(0.6),
+                  color: c.brand.withOpacity(0.6),
                   size: 20,
                 ),
-                suffixIcon:
-                    _filter.isNotEmpty
-                        ? IconButton(
-                          icon: Icon(
-                            Icons.close_rounded,
-                            size: 18,
-                            color: Colors.grey.shade400,
-                          ),
-                          onPressed: () {
-                            setState(() {
-                              _filter = '';
-                              _searchController.clear();
-                            });
-                          },
-                        )
-                        : null,
+                suffixIcon: _filter.isNotEmpty
+                    ? IconButton(
+                        icon: Icon(Icons.close_rounded,
+                            size: 18, color: c.textTertiary),
+                        onPressed: () {
+                          setState(() {
+                            _filter = '';
+                            _searchController.clear();
+                          });
+                        },
+                      )
+                    : null,
               ),
               onChanged: (v) => setState(() => _filter = v),
             ),
@@ -737,32 +729,30 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
         Container(
           // 1. Moved background color and added custom BoxShadow here
           decoration: BoxDecoration(
-            color:
-                _isSelected(item.id)
-                    ? AppColors.primary.withOpacity(0.12)
-                    : Colors.white,
+            color: _isSelected(item.id)
+                ? context.colors.brandTintStrong
+                : context.colors.surfaceElevated,
             borderRadius: radius,
-            boxShadow:
-                (infoExpanded || relationshipsExpanded)
-                    ? [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.18),
-                        blurRadius: 40,
-                        offset: const Offset(0, 12),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.10),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ]
-                    : [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+            boxShadow: (infoExpanded || relationshipsExpanded)
+                ? [
+                    BoxShadow(
+                      color: context.colors.shadow,
+                      blurRadius: 40,
+                      offset: const Offset(0, 12),
+                    ),
+                    BoxShadow(
+                      color: context.colors.shadow,
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: context.colors.shadow,
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: Material(
             // 2. Material is now transparent and has no elevation
@@ -823,7 +813,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                     ? Icons.expand_more
                                     : Icons.chevron_right,
                                 size: 18,
-                                color: AppColors.primary,
+                                color: context.colors.brand,
                               ),
                             ),
                           ),
@@ -894,12 +884,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                 item.title,
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14.5,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: -0.1,
                                   height: 1.2,
-                                  color: Color(0xFF1A1A1A),
+                                  color: context.colors.textPrimary,
                                 ),
                               ),
                               if (subtitle != null &&
@@ -912,7 +902,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w400,
-                                    color: Colors.grey.shade500,
+                                    color: context.colors.textSecondary,
                                     letterSpacing: -0.05,
                                   ),
                                 ),
@@ -930,7 +920,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: Colors.blueGrey.withOpacity(0.08),
+                                color: context.colors.brandTint,
                                 shape: BoxShape.circle,
                               ),
                               child:
@@ -942,14 +932,14 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                           strokeWidth: 2,
                                           valueColor:
                                               AlwaysStoppedAnimation<Color>(
-                                                Colors.blueGrey.shade400,
+                                                context.colors.brand,
                                               ),
                                         ),
                                       )
                                       : Icon(
                                         Icons.remove_red_eye_outlined,
                                         size: 18,
-                                        color: Colors.blueGrey.shade400,
+                                        color: context.colors.brand,
                                       ),
                             ),
                           ),
@@ -969,8 +959,8 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                               decoration: BoxDecoration(
                                 color:
                                     infoExpanded
-                                        ? AppColors.primary.withOpacity(0.15)
-                                        : AppColors.primary.withOpacity(0.08),
+                                        ? context.colors.brandTintStrong
+                                        : context.colors.brandTint,
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -978,7 +968,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                     ? Icons.keyboard_arrow_up_rounded
                                     : Icons.info_outline,
                                 size: 18,
-                                color: AppColors.primary,
+                                color: context.colors.brand,
                               ),
                             ),
                           ),
@@ -986,19 +976,19 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                           Icon(
                             Icons.chevron_right_rounded,
                             size: 18,
-                            color: Colors.grey.shade300,
+                            color: context.colors.textTertiary,
                           ),
                       ],
                     ),
                   ),
 
                   if (infoExpanded && isObject) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
+                    Divider(height: 1, color: context.colors.divider),
                     ObjectInfoDropdown(obj: asViewObj!),
                   ],
 
                   if (relationshipsExpanded && hasRelationships) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
+                    Divider(height: 1, color: context.colors.divider),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                       child: RelationshipsDropdown(
@@ -1017,7 +1007,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             height: 0.5,
             thickness: 0.5,
             indent: 64,
-            color: Colors.black.withOpacity(0.06),
+            color: context.colors.divider,
           ),
       ],
     );
@@ -1467,8 +1457,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildSelectAllBar(List<ViewContentItem> items) {
+    final c = context.colors;
     return Material(
-      color: Colors.white,
+      color: c.surfaceElevated,
       child: Column(
         children: [
           InkWell(
@@ -1484,7 +1475,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                           ? Icons.check_box
                           : Icons.check_box_outline_blank,
                       key: ValueKey(_allSelected(items)),
-                      color: AppColors.primary,
+                      color: c.brand,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1493,9 +1484,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                       _allSelected(items)
                           ? 'Deselect All'
                           : 'Select All (${items.length})',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
                       ),
                     ),
                   ),
@@ -1503,7 +1495,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               ),
             ),
           ),
-          Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+          Divider(height: 1, thickness: 1, color: c.divider),
         ],
       ),
     );
@@ -1528,7 +1520,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               }
             },
             child: Scaffold(
-              backgroundColor: AppColors.surfaceLight,
+              backgroundColor: context.colors.surface,
               appBar: _buildAppBar(),
               body: NetworkBanner(
                 child: Column(
@@ -1605,17 +1597,12 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                         children: [
                                           Container(
                                             decoration: BoxDecoration(
-                                              color: Colors.white,
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              border: Border.all(
-                                                color: Colors.grey.shade100,
-                                                width: 0.5,
-                                              ),
+                                              color: context.colors.surfaceElevated,
+                                              borderRadius: BorderRadius.circular(14),
+                                              border: Border.all(color: context.colors.divider, width: 0.5),
                                               boxShadow: [
                                                 BoxShadow(
-                                                  color: Colors.black
-                                                      .withOpacity(0.03),
+                                                  color: context.colors.shadow,
                                                   blurRadius: 10,
                                                   offset: const Offset(0, 1),
                                                 ),
@@ -1650,7 +1637,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
           if (_isProcessing)
             Positioned.fill(
               child: ColoredBox(
-                color: Colors.black45,
+                color: context.colors.scrim,
                 child: Center(
                   child: ProcessingDialog(operation: _processingText),
                 ),
@@ -1662,6 +1649,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildEmptyState() {
+    final c = context.colors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -1671,14 +1659,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: c.surfaceSunken,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                Icons.inbox_outlined,
-                size: 64,
-                color: Colors.grey.shade400,
-              ),
+              child: Icon(Icons.inbox_outlined, size: 64, color: c.textTertiary),
             ),
             const SizedBox(height: 24),
             Text(
@@ -1686,13 +1670,13 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
+                color: c.textPrimary,
               ),
             ),
             const SizedBox(height: 8),
             Text(
               'This view is currently empty',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 14, color: c.textSecondary),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 24),
@@ -1701,12 +1685,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: const Text('Refresh'),
               style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                side: BorderSide(color: AppColors.primary.withOpacity(0.3)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 24,
-                  vertical: 12,
-                ),
+                foregroundColor: c.brand,
+                side: BorderSide(color: c.brand.withOpacity(0.3)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10),
                 ),
@@ -1719,183 +1701,179 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
   }
 
   Widget _buildErrorState(String error) {
-    String msg = 'Unable to load this view';
-    if (error.contains('cannot be used to define a grouping level')) {
-      msg = 'This view has a configuration issue';
-    } else if (error.contains('400')) {
-      msg = 'Unable to access this view';
-    } else if (error.contains('403') || error.contains('Forbidden')) {
-      msg = "You don't have permission to view this";
-    } else if (error.contains('404')) {
-      msg = 'This view was not found';
-    }
-
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 360),
-          padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.grey.shade100),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.05),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Colors.orange.shade100, Colors.orange.shade50],
-                  ),
-                ),
-                child: Icon(
-                  Icons.warning_amber_rounded,
-                  size: 34,
-                  color: Colors.orange.shade600,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                msg,
-                style: const TextStyle(
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xFF1A1A1A),
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Please contact your administrator if this issue persists',
-                style: TextStyle(
-                  fontSize: 13.5,
-                  color: Colors.grey.shade500,
-                  height: 1.4,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: ElevatedButton.icon(
-                  onPressed: _refreshThisView,
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text(
-                    'Try Again',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                height: 46,
-                child: TextButton.icon(
-                  onPressed: () => Navigator.pop(context),
-                  icon: Icon(
-                    Icons.arrow_back_rounded,
-                    size: 18,
-                    color: Colors.grey.shade600,
-                  ),
-                  label: Text(
-                    'Go Back',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  String msg = 'Unable to load this view';
+  if (error.contains('cannot be used to define a grouping level')) {
+    msg = 'This view has a configuration issue';
+  } else if (error.contains('400')) {
+    msg = 'Unable to access this view';
+  } else if (error.contains('403') || error.contains('Forbidden')) {
+    msg = "You don't have permission to view this";
+  } else if (error.contains('404')) {
+    msg = 'This view was not found';
   }
 
-  Widget _buildNoMatchesState() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
+  final c = context.colors;
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 360),
+        padding: const EdgeInsets.fromLTRB(28, 32, 28, 24),
+        decoration: BoxDecoration(
+          color: c.surfaceElevated,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: c.divider),
+          boxShadow: [
+            BoxShadow(
+              color: c.shadow,
+              blurRadius: 24,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              width: 72,
+              height: 72,
               decoration: BoxDecoration(
-                color: Colors.blue.shade50,
                 shape: BoxShape.circle,
+                color: c.warningSurface,
+                border: Border.all(color: c.warningBorder),
               ),
               child: Icon(
-                Icons.search_off_rounded,
-                size: 56,
-                color: Colors.blue.shade300,
+                Icons.warning_amber_rounded,
+                size: 34,
+                color: c.warningText,
               ),
             ),
             const SizedBox(height: 20),
             Text(
-              'No Matches Found',
+              msg,
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade800,
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: c.textPrimary,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Please contact your administrator if this issue persists',
+              style: TextStyle(
+                fontSize: 13.5,
+                color: c.textSecondary,
+                height: 1.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: ElevatedButton.icon(
+                onPressed: _refreshThisView,
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text(
+                  'Try Again',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: c.brand,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Try adjusting your search',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 20),
-            TextButton.icon(
-              onPressed:
-                  () => setState(() {
-                    _filter = '';
-                    _searchController.clear();
-                  }),
-              icon: const Icon(Icons.clear_rounded, size: 18),
-              label: const Text('Clear Search'),
-              style: TextButton.styleFrom(
-                foregroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 12,
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 46,
+              child: TextButton.icon(
+                onPressed: () => Navigator.pop(context),
+                icon: Icon(
+                  Icons.arrow_back_rounded,
+                  size: 18,
+                  color: c.textSecondary,
+                ),
+                label: Text(
+                  'Go Back',
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                style: TextButton.styleFrom(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
+
+  Widget _buildNoMatchesState() {
+  final c = context.colors;
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: c.brandTint,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.search_off_rounded,
+              size: 56,
+              color: c.brand,
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'No Matches Found',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: c.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Try adjusting your search',
+            style: TextStyle(fontSize: 14, color: c.textSecondary),
+          ),
+          const SizedBox(height: 20),
+          TextButton.icon(
+            onPressed: () => setState(() {
+              _filter = '';
+              _searchController.clear();
+            }),
+            icon: const Icon(Icons.clear_rounded, size: 18),
+            label: const Text('Clear Search'),
+            style: TextButton.styleFrom(
+              foregroundColor: c.brand,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
 
   // ───────────────────── SORT SHEET ─────────────────────────────────────────────────────────
   void _showSortSheet() {
@@ -1959,11 +1937,9 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   child: SizedBox(
                     width: sheetWidth,
                     child: Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.vertical(
-                          top: Radius.circular(20),
-                        ),
+                      decoration: BoxDecoration(
+                        color: context.colors.surfaceElevated,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                       ),
                       child: Column(
                         children: [
@@ -1972,7 +1948,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                             width: 40,
                             height: 4,
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade300,
+                              color: context.colors.divider,
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
@@ -2076,13 +2052,10 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                         expanded[groups[gi].field]!
                                             ? Container(
                                               decoration: BoxDecoration(
-                                                color: Colors.grey.shade50,
-                                                borderRadius:
-                                                    BorderRadius.circular(14),
-                                                border: Border.all(
-                                                  color: Colors.grey.shade200,
-                                                ),
-                                              ),
+  color: context.colors.surfaceSunken,
+  borderRadius: BorderRadius.circular(14),
+  border: Border.all(color: context.colors.border),
+),
                                               child: Column(
                                                 children: [
                                                   _buildSortRow(
@@ -2102,7 +2075,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                                                   ),
                                                   Divider(
                                                     height: 1,
-                                                    color: Colors.grey.shade200,
+                                                    color: context.colors.divider,
                                                     indent: 16,
                                                   ),
                                                   _buildSortRow(
@@ -2151,6 +2124,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     required bool expanded,
     required VoidCallback onToggle,
   }) {
+    final c = context.colors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2166,26 +2140,24 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
-                  color: Colors.grey.shade500,
+                  color: c.textSecondary,
                 ),
               ),
               if (isActive) ...[
                 const SizedBox(width: 6),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: c.brandTintStrong,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     activeLabel ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: c.brand,
                     ),
                   ),
                 ),
@@ -2196,7 +2168,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
                 size: 20,
-                color: Colors.grey.shade500,
+                color: c.textSecondary,
               ),
             ],
           ),
@@ -2210,6 +2182,7 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
+    final c = context.colors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2226,18 +2199,13 @@ class _ViewDetailsScreenState extends State<ViewDetailsScreen> {
                   style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color:
-                        selected ? AppColors.primary : const Color(0xFF1E293B),
+                    color: selected ? c.brand : c.textPrimary,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               selected
-                  ? const Icon(
-                    Icons.check_rounded,
-                    size: 20,
-                    color: AppColors.primary,
-                  )
+                  ? Icon(Icons.check_rounded, size: 20, color: c.brand)
                   : const SizedBox(width: 20),
             ],
           ),

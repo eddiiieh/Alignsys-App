@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mfiles_app/models/linked_object_item.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
+import 'package:mfiles_app/theme/app_colors.dart';
 import 'package:provider/provider.dart';
 import '../models/view_object.dart';
 import '../services/mfiles_service.dart';
@@ -62,7 +63,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
         padding: EdgeInsets.fromLTRB(left, 6, 12, 6),
         child: Text(
           widget.isRoot ? 'No relationships.' : 'No linked items.',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          style: TextStyle(fontSize: 12, color: context.colors.textSecondary),
         ),
       );
     }
@@ -76,7 +77,7 @@ class _RelationshipsDropdownState extends State<RelationshipsDropdown> {
             padding: EdgeInsets.fromLTRB(left, 8, 12, 4),
             child: Text(
               'Relationships',
-              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+              style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: context.colors.textPrimary),
             ),
           ),
           _GroupsBody(
@@ -144,7 +145,7 @@ class _RootRelationshipsSectionState extends State<_RootRelationshipsSection> {
                 ),
                 Icon(
                   _open ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
-                  color: Colors.grey.shade700,
+                  color: context.colors.textSecondary,
                 ),
               ],
             ),
@@ -208,7 +209,7 @@ class _GroupsBody extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(left, 6, 12, 10),
             child: Text(
               'Failed to load relationships.',
-              style: TextStyle(fontSize: 12, color: Colors.red.shade700),
+              style: TextStyle(fontSize: 12, color: context.colors.dangerText),
             ),
           );
         }
@@ -219,7 +220,7 @@ class _GroupsBody extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(left, 6, 12, 10),
             child: Text(
               'No relationships found.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 12, color: context.colors.textSecondary),
             ),
           );
         }
@@ -284,23 +285,24 @@ class _RelationshipGroupTileModern extends StatelessWidget {
           childrenPadding: const EdgeInsets.fromLTRB(left, 0, 8, 6),
           title: Row(
             children: [
-              Icon(Icons.link, size: 18, color: Colors.grey.shade700),
+              Icon(Icons.link, size: 18, color: context.colors.textSecondary),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   propertyName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
+                    color: context.colors.textPrimary,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               Text(
                 '${items.length}',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                style: TextStyle(fontSize: 12, color: context.colors.textSecondary),
               ),
             ],
           ),
@@ -354,16 +356,16 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
         leadingIcon = FileTypeBadge(extension: ext, size: 18);
       } else {
         // same placeholder HomeScreen uses, or kick off the fetch and rebuild
-        leadingIcon = const Icon(Icons.insert_drive_file_outlined,
-            size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+        leadingIcon = Icon(Icons.insert_drive_file_outlined,
+            size: 18, color: context.colors.brand);
       }
     } else if (isMultiFileObj) {
-      leadingIcon = const Icon(Icons.folder_copy_rounded,
-          size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+      leadingIcon = Icon(Icons.folder_copy_rounded,
+          size: 18, color: context.colors.brand);
     } else {
       // ← replace iconForObjectTypeName with the service method
       leadingIcon = Icon(svc.iconForViewObject(obj),
-          size: 18, color: Color.fromRGBO(25, 76, 129, 1));
+          size: 18, color: context.colors.brand);
     }
 
     return Theme(
@@ -403,9 +405,10 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
                         obj.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w600,
+                          color: context.colors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 2),
@@ -415,7 +418,7 @@ class _LinkedObjectNodeTileModern extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade700,
+                          color: context.colors.textSecondary,
                         ),
                       ),
                     ],

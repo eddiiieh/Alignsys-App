@@ -28,15 +28,16 @@ Future<T?> showGroupedPickerSheet<T>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _GroupedPickerSheet<T>(
-      title: title,
-      headerIcon: headerIcon,
-      groups: groups,
-      labelOf: labelOf,
-      subtitleOf: subtitleOf,
-      selected: selected,
-      isSame: isSame,
-    ),
+    builder:
+        (_) => _GroupedPickerSheet<T>(
+          title: title,
+          headerIcon: headerIcon,
+          groups: groups,
+          labelOf: labelOf,
+          subtitleOf: subtitleOf,
+          selected: selected,
+          isSame: isSame,
+        ),
   );
 }
 
@@ -134,8 +135,8 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
           width: sheetW,
           height: sheetH,
           child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
+            decoration: BoxDecoration(
+              color: context.colors.surfaceElevated,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             child: SafeArea(
@@ -147,7 +148,7 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                     width: 36,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
+                      color: context.colors.divider,
                       borderRadius: BorderRadius.circular(2.5),
                     ),
                   ),
@@ -157,14 +158,15 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                   _searchField(),
                   const SizedBox(height: 4),
                   Expanded(
-                    child: shown == 0
-                        ? _empty()
-                        : ListView(
-                            keyboardDismissBehavior:
-                                ScrollViewKeyboardDismissBehavior.onDrag,
-                            padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
-                            children: sections,
-                          ),
+                    child:
+                        shown == 0
+                            ? _empty()
+                            : ListView(
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+                              children: sections,
+                            ),
                   ),
                 ],
               ),
@@ -231,11 +233,18 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
     child: TextField(
       controller: _q,
       onChanged: (_) => setState(() {}),
-      style: const TextStyle(fontSize: 14.5, color: Color(0xFF111827)),
+      style: TextStyle(fontSize: 14.5, color: context.colors.textPrimary),
       decoration: InputDecoration(
         hintText: 'Search...',
-        hintStyle: TextStyle(color: Colors.grey.shade400, fontSize: 14.5),
-        prefixIcon: Icon(Icons.search, color: Colors.grey.shade400, size: 20),
+        hintStyle: TextStyle(
+          color: context.colors.textTertiary,
+          fontSize: 14.5,
+        ),
+        prefixIcon: Icon(
+          Icons.search,
+          color: context.colors.textTertiary,
+          size: 20,
+        ),
         suffixIcon:
             _q.text.isEmpty
                 ? null
@@ -243,12 +252,12 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                   icon: Icon(
                     Icons.close,
                     size: 18,
-                    color: Colors.grey.shade400,
+                    color: context.colors.textTertiary,
                   ),
                   onPressed: () => setState(_q.clear),
                 ),
         filled: true,
-        fillColor: const Color(0xFFF5F8FC),
+        fillColor: context.colors.surfaceSunken,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 14,
@@ -264,7 +273,7 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
+          borderSide: BorderSide(color: context.colors.brand, width: 1.6),
         ),
       ),
     ),
@@ -275,20 +284,20 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.search_off, size: 40, color: Colors.grey.shade300),
+        Icon(Icons.search_off, size: 40, color: context.colors.textTertiary),
         const SizedBox(height: 12),
         Text(
           'No matches found',
           style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w600,
-            color: Colors.grey.shade600,
+            color: context.colors.textSecondary,
           ),
         ),
         const SizedBox(height: 4),
         Text(
           'Try a different search term',
-          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
+          style: TextStyle(fontSize: 12.5, color: context.colors.textTertiary),
         ),
       ],
     ),
@@ -315,29 +324,27 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                   searching
                       ? null
                       : () => setState(
-                        () => _open.contains(index)
-                            ? _open.remove(index)
-                            : _open.add(index),
+                        () =>
+                            _open.contains(index)
+                                ? _open.remove(index)
+                                : _open.add(index),
                       ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  vertical: 8,
-                  horizontal: 4,
-                ),
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                 child: Row(
                   children: [
-                    Icon(g.icon, size: 17, color: AppColors.primary),
+                    Icon(g.icon, size: 17, color: context.colors.brand),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         g.title!.toUpperCase(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.6,
-                          color: Color(0xFF64748B),
+                          color: context.colors.textSecondary,
                         ),
                       ),
                     ),
@@ -347,15 +354,15 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.10),
+                        color: context.colors.brandTint,
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
                         '${items.length}',
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
+                          color: context.colors.brand,
                         ),
                       ),
                     ),
@@ -367,7 +374,7 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                         child: Icon(
                           Icons.keyboard_arrow_down_rounded,
                           size: 22,
-                          color: Colors.grey.shade400,
+                          color: context.colors.textTertiary,
                         ),
                       ),
                     ],
@@ -396,7 +403,7 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                             thickness: 1,
                             indent: 4,
                             endIndent: 4,
-                            color: Colors.grey.shade100,
+                            color: context.colors.divider,
                           ),
                       ],
                     ],
@@ -413,10 +420,7 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
     final sub = widget.subtitleOf?.call(item);
 
     return Material(
-      color:
-          sel
-              ? AppColors.primary.withOpacity(0.06)
-              : Colors.transparent,
+      color: sel ? context.colors.brandTint : Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: () => Navigator.pop(context, item),
@@ -439,8 +443,8 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                         fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
                         color:
                             sel
-                                ? AppColors.primary
-                                : const Color(0xFF1E293B),
+                                ? context.colors.brand
+                                : context.colors.textPrimary,
                       ),
                     ),
                     if (sub != null && sub.isNotEmpty) ...[
@@ -450,7 +454,7 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w400,
-                          color: Colors.grey.shade500,
+                          color: context.colors.textSecondary,
                           height: 1.25,
                         ),
                       ),
@@ -460,11 +464,7 @@ class _GroupedPickerSheetState<T> extends State<_GroupedPickerSheet<T>> {
               ),
               const SizedBox(width: 10),
               if (sel)
-                const Icon(
-                  Icons.check_rounded,
-                  size: 22,
-                  color: AppColors.primary,
-                )
+                Icon(Icons.check_rounded, size: 22, color: context.colors.brand)
               else
                 const SizedBox(width: 22),
             ],

@@ -35,8 +35,8 @@ class DynamicFormScreen extends StatefulWidget {
     this.isQuickCreate = false,
     this.scannedFile,
     this.linkTarget,
-    this.copyFrom, 
-    this.copyFromPrefetchedProps, 
+    this.copyFrom,
+    this.copyFromPrefetchedProps,
     this.templateId,
   });
 
@@ -112,20 +112,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   static final DateFormat _uiDateFmt = DateFormat('dd MMM yyyy');
   static final DateFormat _uiTimeFmt = DateFormat('HH:mm');
 
-  static const _primaryBlue = AppColors.primary;
-  static const _filledBorder = Color(0xFF2563EB);
-  static const _filledFill = Color(0xFFF0F6FF);
-
-  static const TextStyle _labelStyle = TextStyle(
+  TextStyle get _labelStyle => TextStyle(
     fontSize: 13,
     fontWeight: FontWeight.w600,
-    color: Color(0xFF475569),
+    color: context.colors.textSecondary,
   );
 
-  static const TextStyle _inputStyle = TextStyle(
+  TextStyle get _inputStyle => TextStyle(
     fontSize: 14.5,
     fontWeight: FontWeight.w500,
-    color: Color(0xFF111827),
+    color: context.colors.textPrimary,
   );
 
   /// Returns true if the property is visible based on conditional rules.
@@ -143,7 +139,6 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   //
   final ScrollController _scroll = ScrollController();
 
-
   @override
   void initState() {
     super.initState();
@@ -156,8 +151,8 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       // Defer assignment until after fetchObjectClasses() returns.
     }
 
-     // ── Make-a-copy: block the form until the first prefill finishes.
-      _copyPrefillPending = widget.copyFrom != null;
+    // ── Make-a-copy: block the form until the first prefill finishes.
+    _copyPrefillPending = widget.copyFrom != null;
 
     // Pre-populate file section when launched from the scan flow.
     if (widget.scannedFile != null) {
@@ -178,11 +173,14 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       //    actually exists under the target object type (defensive against
       //    mismatched data).
       if (_selectedClass == null && widget.copyFrom != null) {
-        final match = service.objectClasses
-            .where((c) =>
-                c.id == widget.copyFrom!.classId &&
-                c.objectTypeId == widget.objectType.id)
-            .firstOrNull;
+        final match =
+            service.objectClasses
+                .where(
+                  (c) =>
+                      c.id == widget.copyFrom!.classId &&
+                      c.objectTypeId == widget.objectType.id,
+                )
+                .firstOrNull;
         if (match != null) _selectedClass = match;
       }
 
@@ -221,15 +219,16 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
 
   // ---------- UI helpers ----------
   Widget _card({required Widget child}) {
+    final c = context.colors;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: c.surfaceElevated,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE7EAF0), width: 1),
+        border: Border.all(color: c.divider, width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: c.shadow,
             blurRadius: 14,
             offset: const Offset(0, 6),
           ),
@@ -245,10 +244,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w800,
-            color: Color(0xFF0F172A),
+            color: context.colors.textPrimary,
             letterSpacing: 0.2,
           ),
         ),
@@ -256,10 +255,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           const SizedBox(height: 4),
           Text(
             subtitle,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12.5,
               fontWeight: FontWeight.w500,
-              color: Color(0xFF64748B),
+              color: context.colors.textSecondary,
             ),
           ),
         ],
@@ -276,11 +275,11 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
           style: _labelStyle,
           children:
               required
-                  ? const [
+                  ? [
                     TextSpan(
                       text: ' *',
                       style: TextStyle(
-                        color: Colors.red,
+                        color: context.colors.dangerText,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
@@ -296,59 +295,57 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     String? helper,
     bool filled = false,
   }) {
+    final c = context.colors;
     return InputDecoration(
       hintText: hint,
       helperText: helper,
-      helperStyle: const TextStyle(fontSize: 12),
+      helperStyle: TextStyle(fontSize: 12, color: c.textSecondary),
       isDense: true,
       filled: true,
-      fillColor: filled ? _filledFill : AppColors.surfaceLight,
+      fillColor: filled ? c.brandTint : c.inputFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide:
             filled
-                ? const BorderSide(color: _filledBorder, width: 1.5)
-                : BorderSide(color: Colors.grey.shade200),
+                ? BorderSide(color: c.brand, width: 1.5)
+                : BorderSide(color: c.inputBorder),
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.grey.shade200),
+        borderSide: BorderSide(color: c.inputBorder),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: _primaryBlue, width: 2),
+        borderSide: BorderSide(color: c.brand, width: 2),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(color: Colors.red.shade300),
+        borderSide: BorderSide(color: c.dangerText.withOpacity(0.5)),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: Colors.red, width: 2),
+        borderSide: BorderSide(color: c.dangerText, width: 2),
       ),
       suffixIcon:
           filled
-              ? const Icon(
-                Icons.check_circle_rounded,
-                color: _filledBorder,
-                size: 18,
-              )
+              ? Icon(Icons.check_circle_rounded, color: c.brand, size: 18)
               : null,
     );
   }
 
   Widget _requiredHint(bool show) {
     if (!show) return const SizedBox.shrink();
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Row(
         children: [
-          Icon(Icons.error_outline, size: 14, color: Colors.red.shade600),
+          Icon(Icons.error_outline, size: 14, color: c.dangerText),
           const SizedBox(width: 4),
           Text(
             'This field is required',
-            style: TextStyle(color: Colors.red.shade600, fontSize: 12),
+            style: TextStyle(color: c.dangerText, fontSize: 12),
           ),
         ],
       ),
@@ -384,6 +381,7 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   }) {
     final showMulti = (selectedTexts != null && selectedTexts.isNotEmpty);
     final isFilled = hasValue;
+    final c = context.colors;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -397,10 +395,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
-                  color: isFilled ? _filledFill : AppColors.surfaceLight,
+                  color: isFilled ? c.brandTint : c.surfaceSunken,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isFilled ? _filledBorder : Colors.grey.shade200,
+                    color: isFilled ? c.brand : c.border,
                     width: isFilled ? 1.5 : 1,
                   ),
                 ),
@@ -413,11 +411,11 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                       ),
                     ),
                     if (isFilled)
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.only(right: 12),
                         child: Icon(
                           Icons.check_circle_rounded,
-                          color: _filledBorder,
+                          color: c.brand,
                           size: 18,
                         ),
                       ),
@@ -446,9 +444,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                     vertical: 6,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEFF6FF),
+                    color: c.brandTint,
                     borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                    border: Border.all(color: c.brand.withOpacity(0.35)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -458,10 +456,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           selectedTexts[index],
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E40AF),
+                            color: c.brand,
                           ),
                         ),
                       ),
@@ -482,14 +480,10 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
                           width: 16,
                           height: 16,
                           decoration: BoxDecoration(
-                            color: const Color(0xFF3B82F6).withOpacity(0.2),
+                            color: c.brand.withOpacity(0.2),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(
-                            Icons.close,
-                            size: 10,
-                            color: Color(0xFF1E40AF),
-                          ),
+                          child: Icon(Icons.close, size: 10, color: c.brand),
                         ),
                       ),
                     ],
@@ -508,8 +502,9 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
   /// The blue "+" button rendered next to lookup fields, matching the web
   /// app's inline quick-create affordance.
   Widget _quickCreateButton(VoidCallback onTap) {
+    final c = context.colors;
     return Material(
-      color: _primaryBlue,
+      color: c.brand,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -523,47 +518,74 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
     );
   }
 
-  //
+  /// The bottom bar with the "Create Object" button.
   Widget _buildSubmitBar() => Consumer<MFilesService>(
-    builder: (context, service, _) => Container(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade200)),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05),
-            blurRadius: 12, offset: const Offset(0, -2))],
-      ),
-      child: SizedBox(
-        width: double.infinity, height: 52,
-        child: ElevatedButton.icon(
-          onPressed: service.isLoading ? null : _submitForm,
-          icon: service.isLoading
-              ? const SizedBox(width: 20, height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2.5,
-                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white)))
-              : const Icon(Icons.check_circle_rounded, size: 20),
-          label: Text(
-            service.isLoading ? 'Creating...'
-                : widget.copyFrom != null ? 'Make a Copy' : 'Create Object',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, letterSpacing: 0.3),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _primaryBlue, foregroundColor: Colors.white, elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            disabledBackgroundColor: Colors.grey.shade300,
-            disabledForegroundColor: Colors.grey.shade600,
+    builder: (context, service, _) {
+      final c = context.colors;
+      return Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+        decoration: BoxDecoration(
+          color: c.surfaceElevated,
+          border: Border(top: BorderSide(color: c.divider)),
+          boxShadow: [
+            BoxShadow(
+              color: c.shadow,
+              blurRadius: 12,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton.icon(
+            onPressed: service.isLoading ? null : _submitForm,
+            icon:
+                service.isLoading
+                    ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                    : const Icon(Icons.check_circle_rounded, size: 20),
+            label: Text(
+              service.isLoading
+                  ? 'Creating...'
+                  : widget.copyFrom != null
+                  ? 'Make a Copy'
+                  : 'Create Object',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.3,
+              ),
+            ),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: c.brand,
+              foregroundColor: Colors.white,
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              disabledBackgroundColor: c.surfaceSunken,
+              disabledForegroundColor: c.textTertiary,
+            ),
           ),
         ),
-      ),
-    ),
+      );
+    },
   );
 
-  //
+  /// Picks an object class from the available options.
   Future<ObjectClass?> _pickClass(MFilesService service) {
     final typeId = _currentObjectType.id;
     final ungrouped = service.getUngroupedClassesForType(typeId);
     final grouped = service.getClassGroupsForType(typeId);
-    final flat = service.objectClasses.where((c) => c.objectTypeId == typeId).toList();
+    final flat =
+        service.objectClasses.where((c) => c.objectTypeId == typeId).toList();
 
     return showGroupedPickerSheet<ObjectClass>(
       context,
@@ -572,37 +594,39 @@ class _DynamicFormScreenState extends State<DynamicFormScreen> {
       selected: _selectedClass,
       isSame: (a, b) => a.id == b.id,
       labelOf: (c) => c.displayName,
-      groups: (ungrouped.isEmpty && grouped.isEmpty)
-          ? [PickerGroup(items: flat)] // defensive fallback
-          : [
-              if (ungrouped.isNotEmpty)
-                PickerGroup(
-                  title: grouped.isEmpty ? null : 'General',
-                  icon: Icons.folder_open_rounded,
-                  items: ungrouped,
-                  initiallyOpen: true,
-                ),
-              for (final g in grouped) PickerGroup(title: g.classGroupName, items: g.members),
-            ],
+      groups:
+          (ungrouped.isEmpty && grouped.isEmpty)
+              ? [PickerGroup(items: flat)] // defensive fallback
+              : [
+                if (ungrouped.isNotEmpty)
+                  PickerGroup(
+                    title: grouped.isEmpty ? null : 'General',
+                    icon: Icons.folder_open_rounded,
+                    items: ungrouped,
+                    initiallyOpen: true,
+                  ),
+                for (final g in grouped)
+                  PickerGroup(title: g.classGroupName, items: g.members),
+              ],
     );
   }
 
   /// All classes for [typeId], de-duplicated, across flat + grouped sources
-/// (same sources _pickClass uses).
-List<ObjectClass> _classesForType(MFilesService s, int typeId) {
-  final seen = <int>{};
-  final out = <ObjectClass>[];
-  void add(ObjectClass c) {
-    if (c.objectTypeId == typeId && seen.add(c.id)) out.add(c);
-  }
+  /// (same sources _pickClass uses).
+  List<ObjectClass> _classesForType(MFilesService s, int typeId) {
+    final seen = <int>{};
+    final out = <ObjectClass>[];
+    void add(ObjectClass c) {
+      if (c.objectTypeId == typeId && seen.add(c.id)) out.add(c);
+    }
 
-  s.objectClasses.forEach(add);
-  s.getUngroupedClassesForType(typeId).forEach(add);
-  for (final g in s.getClassGroupsForType(typeId)) {
-    g.members.forEach(add);
+    s.objectClasses.forEach(add);
+    s.getUngroupedClassesForType(typeId).forEach(add);
+    for (final g in s.getClassGroupsForType(typeId)) {
+      g.members.forEach(add);
+    }
+    return out;
   }
-  return out;
-}
 
   // ---------- Object type switcher ----------
   Future<void> _onObjectTypeChanged(VaultObjectType newType) async {
@@ -716,9 +740,10 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
       builder:
           (context, child) => Theme(
             data: Theme.of(context).copyWith(
-              colorScheme: Theme.of(
-                context,
-              ).colorScheme.copyWith(primary: _primaryBlue),
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: context.colors.brand,
+                brightness: Theme.of(context).brightness,
+              ),
             ),
             child: child!,
           ),
@@ -744,9 +769,10 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
       builder:
           (context, child) => Theme(
             data: Theme.of(context).copyWith(
-              colorScheme: Theme.of(
-                context,
-              ).colorScheme.copyWith(primary: _primaryBlue),
+              colorScheme: ColorScheme.fromSeed(
+                seedColor: context.colors.brand,
+                brightness: Theme.of(context).brightness,
+              ),
             ),
             child: child!,
           ),
@@ -796,7 +822,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
     final result = await showDialog<T>(
       context: context,
       builder: (ctx) {
-
+        final c = context.colors;
         return StatefulBuilder(
           builder: (ctx, setInner) {
             return Dialog(
@@ -807,7 +833,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                 horizontal: 20,
                 vertical: 40,
               ),
-              backgroundColor: Colors.white,
+              backgroundColor: c.surfaceElevated,
               surfaceTintColor: Colors.transparent,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
@@ -820,7 +846,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                     Container(
                       padding: const EdgeInsets.fromLTRB(20, 20, 12, 16),
                       decoration: const BoxDecoration(
-                        color: _primaryBlue,
+                        color: AppColors.primary,
                         borderRadius: BorderRadius.vertical(
                           top: Radius.circular(20),
                         ),
@@ -854,33 +880,32 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                       child: TextField(
                         controller: controller,
                         focusNode: focusNode,
+                        style: TextStyle(color: c.textPrimary),
+                        cursorColor: c.brand,
                         decoration: InputDecoration(
                           hintText: 'Search...',
                           hintStyle: TextStyle(
-                            color: Colors.grey.shade400,
+                            color: c.textTertiary,
                             fontSize: 14,
                           ),
                           prefixIcon: Icon(
                             Icons.search,
-                            color: Colors.grey.shade400,
+                            color: c.textTertiary,
                             size: 20,
                           ),
                           filled: true,
-                          fillColor: AppColors.surfaceLight,
+                          fillColor: c.surfaceSunken,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
+                            borderSide: BorderSide(color: c.border),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide(color: Colors.grey.shade200),
+                            borderSide: BorderSide(color: c.border),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(12),
-                            borderSide: const BorderSide(
-                              color: _primaryBlue,
-                              width: 2,
-                            ),
+                            borderSide: BorderSide(color: c.brand, width: 2),
                           ),
                           contentPadding: const EdgeInsets.symmetric(
                             horizontal: 14,
@@ -893,7 +918,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                                     icon: Icon(
                                       Icons.close,
                                       size: 16,
-                                      color: Colors.grey.shade400,
+                                      color: c.textTertiary,
                                     ),
                                     onPressed: () {
                                       controller.clear();
@@ -930,7 +955,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                             '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
                             style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade500,
+                              color: c.textSecondary,
                             ),
                           ),
                         ],
@@ -948,13 +973,13 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                                     Icon(
                                       Icons.search_off,
                                       size: 36,
-                                      color: Colors.grey.shade300,
+                                      color: c.textTertiary,
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
                                       'No matches found',
                                       style: TextStyle(
-                                        color: AppColors.surfaceLight,
+                                        color: c.textTertiary,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -968,10 +993,8 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                                 ),
                                 itemCount: filtered.length,
                                 separatorBuilder:
-                                    (_, __) => Divider(
-                                      height: 1,
-                                      color: Colors.grey.shade100,
-                                    ),
+                                    (_, __) =>
+                                        Divider(height: 1, color: c.divider),
                                 itemBuilder: (_, index) {
                                   final item = filtered[index];
                                   final label = labelOf(item);
@@ -981,7 +1004,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                                   return Material(
                                     color:
                                         isSelected
-                                            ? const Color(0xFFEFF6FF)
+                                            ? c.brandTint
                                             : Colors.transparent,
                                     child: InkWell(
                                       onTap: () => Navigator.pop(ctx, item),
@@ -1003,20 +1026,16 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                                                           : FontWeight.w500,
                                                   color:
                                                       isSelected
-                                                          ? const Color(
-                                                            0xFF1E40AF,
-                                                          )
-                                                          : const Color(
-                                                            0xFF1A1A1A,
-                                                          ),
+                                                          ? c.brand
+                                                          : c.textPrimary,
                                                 ),
                                               ),
                                             ),
                                             if (isSelected)
-                                              const Icon(
+                                              Icon(
                                                 Icons.check_rounded,
                                                 size: 18,
-                                                color: Color(0xFF2563EB),
+                                                color: c.brand,
                                               ),
                                           ],
                                         ),
@@ -1041,6 +1060,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
 
   // ---------- Field builders ----------
   Widget _dateField(ClassProperty p) {
+    final c = context.colors;
     final v = _formValues[p.id];
     final has = v is String && v.isNotEmpty;
 
@@ -1055,10 +1075,10 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              color: has ? _filledFill : AppColors.surfaceLight,
+              color: has ? c.brandTint : c.surfaceSunken,
               borderRadius: BorderRadius.circular(12),
               border: Border.all(
-                color: has ? _filledBorder : Colors.grey.shade200,
+                color: has ? c.brand : c.border,
                 width: has ? 1.5 : 1,
               ),
             ),
@@ -1067,16 +1087,13 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color:
-                        has
-                            ? _primaryBlue.withOpacity(0.1)
-                            : Colors.grey.shade100,
+                    color: has ? c.brand.withOpacity(0.1) : c.surfaceElevated,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
                     Icons.calendar_today_rounded,
                     size: 18,
-                    color: has ? _primaryBlue : Colors.grey.shade600,
+                    color: has ? c.brand : c.textTertiary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1084,24 +1101,17 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                   child: Text(
                     has ? _formatDateForUi(v) : 'Tap to select date',
                     style: _inputStyle.copyWith(
-                      color:
-                          has
-                              ? const Color(0xFF111827)
-                              : AppColors.surfaceLight,
+                      color: has ? c.textPrimary : c.textTertiary,
                       fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
                 if (has)
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: _filledBorder,
-                    size: 18,
-                  )
+                  Icon(Icons.check_circle_rounded, color: c.brand, size: 18)
                 else
                   Icon(
                     Icons.keyboard_arrow_down,
-                    color: Colors.grey.shade600,
+                    color: c.textTertiary,
                     size: 20,
                   ),
               ],
@@ -1114,6 +1124,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
   }
 
   Widget _timeField(ClassProperty p) {
+    final c = context.colors;
     final v = _formValues[p.id];
     final has = v is String && v.isNotEmpty;
 
@@ -1128,10 +1139,10 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
             decoration: BoxDecoration(
-              color: has ? _filledFill : AppColors.surfaceLight,
+              color: has ? c.brandTint : c.surfaceSunken,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: has ? _filledBorder : Colors.grey.shade200,
+                color: has ? c.brand : c.border,
                 width: has ? 1.5 : 1,
               ),
             ),
@@ -1140,16 +1151,13 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                 Container(
                   padding: const EdgeInsets.all(6),
                   decoration: BoxDecoration(
-                    color:
-                        has
-                            ? _primaryBlue.withOpacity(0.1)
-                            : Colors.grey.shade100,
+                    color: has ? c.brand.withOpacity(0.1) : c.surfaceElevated,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Icon(
                     Icons.access_time_rounded,
                     size: 18,
-                    color: has ? _primaryBlue : Colors.grey.shade600,
+                    color: has ? c.brand : c.textTertiary,
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -1157,24 +1165,17 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                   child: Text(
                     has ? _formatTimeForUi(v) : 'Tap to select time',
                     style: _inputStyle.copyWith(
-                      color:
-                          has
-                              ? const Color(0xFF111827)
-                              : AppColors.surfaceLight,
+                      color: has ? c.textPrimary : c.textTertiary,
                       fontWeight: has ? FontWeight.w500 : FontWeight.w400,
                     ),
                   ),
                 ),
                 if (has)
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: _filledBorder,
-                    size: 18,
-                  )
+                  Icon(Icons.check_circle_rounded, color: c.brand, size: 18)
                 else
                   Icon(
                     Icons.keyboard_arrow_down,
-                    color: Colors.grey.shade600,
+                    color: c.textTertiary,
                     size: 20,
                   ),
               ],
@@ -1192,44 +1193,46 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
     }
     switch (property.propertyType) {
       case 'MFDatatypeLookup':
-      final hasValue = _formValues[property.id] != null;
-      final selectedId = _formValues[property.id] is int
-          ? _formValues[property.id] as int
-          : null;
+        final hasValue = _formValues[property.id] != null;
+        final selectedId =
+            _formValues[property.id] is int
+                ? _formValues[property.id] as int
+                : null;
 
-      return _lookupShell(
-        label: property.title,
-        required: property.isRequired,
-        hasValue: hasValue,
-        isSingleSelect: true,
-        onCreateNew: _resolveLookupCreateCallback(property),
-        field: LookupField(
-          title: property.title,
-          propertyId: property.id,
-          isMultiSelect: false,
-          preSelectedIds: selectedId == null ? const [] : [selectedId],
-          injectedItems:
-              (_selectedLookupItems[property.id])?.cast<LookupItem>(),
-          onSelected: (items) {
-            setState(() {
+        return _lookupShell(
+          label: property.title,
+          required: property.isRequired,
+          hasValue: hasValue,
+          isSingleSelect: true,
+          onCreateNew: _resolveLookupCreateCallback(property),
+          field: LookupField(
+            key: ValueKey('lookup_${property.id}_${selectedId ?? "none"}'),
+            title: property.title,
+            propertyId: property.id,
+            isMultiSelect: false,
+            preSelectedIds: selectedId == null ? const [] : [selectedId],
+            injectedItems:
+                (_selectedLookupItems[property.id])?.cast<LookupItem>(),
+            onSelected: (items) {
+              setState(() {
+                if (items.isNotEmpty) {
+                  _formValues[property.id] = items.first.id;
+                  _selectedLookupItems[property.id] = items;
+                } else {
+                  _formValues[property.id] = null;
+                  _selectedLookupItems.remove(property.id);
+                }
+              });
               if (items.isNotEmpty) {
-                _formValues[property.id] = items.first.id;
-                _selectedLookupItems[property.id] = items;
-              } else {
-                _formValues[property.id] = null;
-                _selectedLookupItems.remove(property.id);
+                _triggerAutoSuggest(
+                  selectedObjectId: items.first.id,
+                  selectedObjectTypeId: property.typeId,
+                  displayLabel: items.first.displayValue,
+                );
               }
-            });
-            if (items.isNotEmpty) {
-              _triggerAutoSuggest(
-                selectedObjectId: items.first.id,
-                selectedObjectTypeId: property.typeId,
-                displayLabel: items.first.displayValue,
-              );
-            }
-          },
-        ),
-      );
+            },
+          ),
+        );
 
       case 'MFDatatypeMultiSelectLookup':
         {
@@ -1251,6 +1254,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
             propertyId: property.id,
             onCreateNew: _resolveLookupCreateCallback(property),
             field: LookupField(
+              key: ValueKey('lookup_${property.id}_${selectedIds.join(",")}'),
               title: property.title,
               propertyId: property.id,
               isMultiSelect: true,
@@ -1290,6 +1294,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
               filled: isFilled,
             ),
             style: _inputStyle,
+            cursorColor: context.colors.brand,
             validator: (value) {
               if (property.isRequired &&
                   (value == null || value.trim().isEmpty)) {
@@ -1320,6 +1325,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
               filled: isFilled,
             ),
             style: _inputStyle,
+            cursorColor: context.colors.brand,
             validator: (value) {
               if (property.isRequired &&
                   (value == null || value.trim().isEmpty)) {
@@ -1350,6 +1356,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
               filled: isFilled,
             ),
             style: _inputStyle,
+            cursorColor: context.colors.brand,
             validator: (value) {
               if (property.isRequired &&
                   (value == null || value.trim().isEmpty)) {
@@ -1377,6 +1384,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
           final current = _formValues[property.id];
           final bool? currentBool = current is bool ? current : null;
           final isFilled = currentBool != null;
+          final c = context.colors;
 
           return _fieldShell(
             label: property.title,
@@ -1400,10 +1408,10 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                   vertical: 14,
                 ),
                 decoration: BoxDecoration(
-                  color: isFilled ? _filledFill : AppColors.surfaceLight,
+                  color: isFilled ? c.brandTint : c.surfaceSunken,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: isFilled ? _filledBorder : Colors.grey.shade200,
+                    color: isFilled ? c.brand : c.border,
                     width: isFilled ? 1.5 : 1,
                   ),
                 ),
@@ -1417,8 +1425,8 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                         style: _inputStyle.copyWith(
                           color:
                               currentBool == null
-                                  ? AppColors.surfaceLight
-                                  : const Color(0xFF111827),
+                                  ? c.textTertiary
+                                  : c.textPrimary,
                           fontWeight:
                               currentBool == null
                                   ? FontWeight.w400
@@ -1427,15 +1435,11 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                       ),
                     ),
                     if (isFilled)
-                      const Icon(
-                        Icons.check_circle_rounded,
-                        color: _filledBorder,
-                        size: 18,
-                      )
+                      Icon(Icons.check_circle_rounded, color: c.brand, size: 18)
                     else
                       Icon(
                         Icons.keyboard_arrow_down,
-                        color: Colors.grey.shade600,
+                        color: c.textTertiary,
                         size: 20,
                       ),
                   ],
@@ -1479,6 +1483,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
 
   // ---------- Automatic field tile ----------
   Widget _automaticFieldTile(ClassProperty property) {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -1491,10 +1496,10 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
               children: [
                 TextSpan(text: property.title),
                 if (property.isRequired)
-                  const TextSpan(
+                  TextSpan(
                     text: ' *',
                     style: TextStyle(
-                      color: Colors.red,
+                      color: c.dangerText,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -1511,7 +1516,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                 fontSize: 13.5,
                 fontStyle: FontStyle.italic,
                 fontWeight: FontWeight.w400,
-                color: Colors.grey.shade400,
+                color: c.textTertiary,
               ),
             ),
           ),
@@ -1565,7 +1570,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
             id: property.typeId,
             displayName: property.title,
             isDocument: false,
-            name: property.title, 
+            name: property.title,
             alias: '',
           ),
     );
@@ -1634,95 +1639,101 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
 
     final name = await showDialog<String>(
       context: context,
-      builder:
-          (dialogContext) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            insetPadding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 40,
-            ),
-            backgroundColor: Colors.white,
-            surfaceTintColor: Colors.transparent,
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Add new ${property.title}',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF0F172A),
+      builder: (dialogContext) {
+        final c = context.colors;
+        return Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 24,
+            vertical: 40,
+          ),
+          backgroundColor: c.surfaceElevated,
+          surfaceTintColor: Colors.transparent,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add new ${property.title}',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: c.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  style: TextStyle(color: c.textPrimary),
+                  cursorColor: c.brand,
+                  decoration: InputDecoration(
+                    hintText: 'Enter ${property.title.toLowerCase()}',
+                    hintStyle: TextStyle(color: c.textTertiary),
+                    filled: true,
+                    fillColor: c.inputFill,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.inputBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.inputBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide(color: c.brand, width: 2),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: controller,
-                    autofocus: true,
-                    decoration: InputDecoration(
-                      hintText: 'Enter ${property.title.toLowerCase()}',
-                      filled: true,
-                      fillColor: AppColors.surfaceLight,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey.shade200),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: const BorderSide(
-                          color: _primaryBlue,
-                          width: 2,
-                        ),
+                  onSubmitted: (v) => Navigator.pop(dialogContext, v.trim()),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: Text(
+                        'Cancel',
+                        style: TextStyle(color: c.textSecondary),
                       ),
                     ),
-                    onSubmitted: (v) => Navigator.pop(dialogContext, v.trim()),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(dialogContext),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(color: Colors.grey.shade700),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed:
+                          () => Navigator.pop(
+                            dialogContext,
+                            controller.text.trim(),
+                          ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: c.brand,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 20,
+                          vertical: 12,
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed:
-                            () => Navigator.pop(
-                              dialogContext,
-                              controller.text.trim(),
-                            ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _primaryBlue,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                            vertical: 12,
-                          ),
-                        ),
-                        child: const Text('Add'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                      child: const Text('Add'),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
+        );
+      },
     );
 
     if (name == null || name.isEmpty || !mounted) return;
@@ -2009,11 +2020,13 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
   /// Translates one source entry into the form's internal state for [prop].
   /// Handles every datatype the form renders; unknown types are stored raw.
   void _prefillOneProperty(ClassProperty prop, Map<String, dynamic> entry) {
-    debugPrint('    🔍 _prefillOneProperty: ${prop.id} (${prop.title}) '
+    debugPrint(
+      '    🔍 _prefillOneProperty: ${prop.id} (${prop.title}) '
       'type=${prop.propertyType} '
       'entryKeys=${entry.keys.toList()} '
       'lookupId=${entry['lookupId']} (${entry['lookupId'].runtimeType}) '
-      'value=${entry['value']} (${entry['value'].runtimeType})');
+      'value=${entry['value']} (${entry['value'].runtimeType})',
+    );
 
     final rawValue = entry['value'];
     final display = (entry['displayValue'] as String).trim();
@@ -2141,8 +2154,8 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
     if (x is num) return x.toInt();
     if (x is String) return int.tryParse(x.trim());
     if (x is List) {
-    if (x.isEmpty) return null;
-      return _coerceInt(x.first);   // ← unwrap single-element list
+      if (x.isEmpty) return null;
+      return _coerceInt(x.first); // ← unwrap single-element list
     }
     if (x is Map) {
       return _coerceInt(x['id'] ?? x['itemId'] ?? x['value']);
@@ -2181,14 +2194,17 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
 
       // Build a safe filename: "<title>.<ext>"
       final ext = f.extension.trim().toLowerCase().replaceFirst('.', '');
-      var base = f.fileTitle.trim().isEmpty ? 'file_${f.fileId}' : f.fileTitle.trim();
+      var base =
+          f.fileTitle.trim().isEmpty ? 'file_${f.fileId}' : f.fileTitle.trim();
       base = base.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-      final name = (ext.isEmpty || base.toLowerCase().endsWith('.$ext'))
-          ? base
-          : '$base.$ext';
+      final name =
+          (ext.isEmpty || base.toLowerCase().endsWith('.$ext'))
+              ? base
+              : '$base.$ext';
 
       final dir = await getTemporaryDirectory();
-      final path = '${dir.path}/copy_${DateTime.now().millisecondsSinceEpoch}_$name';
+      final path =
+          '${dir.path}/copy_${DateTime.now().millisecondsSinceEpoch}_$name';
       final file = File(path);
       await file.writeAsBytes(result.bytes, flush: true);
 
@@ -2393,27 +2409,96 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
         return;
       }
 
+      // ── QUICK CREATE ─────────────────────────────────────────────────────
+      if (widget.isQuickCreate) {
+        // When Title is an automatic field, _formValues[0] is empty and
+        // _resolveQuickCreateDisplayValue() falls back to the class/type name,
+        // which is NOT what the user expects to see in the lookup field.
+        // Fetch the real Title from the server instead.
+        String displayValue = _resolveQuickCreateDisplayValue();
+
+        if (result.objectId != null) {
+        // Give the backend a moment to index the new object, then retry a
+        // couple of times — creating and immediately fetching can return an
+        // empty list while M-Files is still catching up.
+        List<Map<String, dynamic>> fetched = [];
+        for (int attempt = 0; attempt < 3; attempt++) {
+          if (attempt > 0) {
+            await Future.delayed(Duration(milliseconds: 400 + attempt * 300));
+            if (!mounted) return;
+          }
+          try {
+            fetched = await service.fetchObjectViewProps(
+              objectId: result.objectId!,
+              objectTypeId: _currentObjectType.id,
+            );
+            if (fetched.isNotEmpty) break;
+          } catch (e) {
+            debugPrint('⚠️ Quick-create fetch attempt ${attempt + 1} failed: $e');
+          }
+        }
+
+        if (fetched.isNotEmpty) {
+          // Title is id 0. Tolerate different key spellings across endpoints.
+          Map<String, dynamic> titleEntry = {};
+          for (final m in fetched) {
+            final id =
+                (m['id'] as num?)?.toInt() ??
+                (m['propId'] as num?)?.toInt() ??
+                (m['propertyId'] as num?)?.toInt() ??
+                (m['PropertyId'] as num?)?.toInt();
+            if (id == 0) {
+              titleEntry = m;
+              break;
+            }
+          }
+
+          final actualTitle =
+              (titleEntry['displayValue'] ??
+                      titleEntry['value'] ??
+                      titleEntry['title'] ??
+                      titleEntry['name'] ??
+                      '')
+                  .toString()
+                  .trim();
+
+          debugPrint(
+            '🔍 Quick-create: fetched ${fetched.length} props, '
+            'titleEntry=$titleEntry, actualTitle="$actualTitle"',
+          );
+
+          if (actualTitle.isNotEmpty) displayValue = actualTitle;
+        } else {
+          debugPrint(
+            '⚠️ Quick-create: all fetch attempts returned empty for '
+            'objectId=${result.objectId}, '
+            'objectTypeId=${_currentObjectType.id}',
+          );
+        }
+      }
+
+        if (!mounted) return;
+        Navigator.pop(
+          context,
+          QuickCreateResult(
+            objectId: result.objectId,
+            displayValue: displayValue,
+          ),
+        );
+        return;
+      }
+
+      // ── NORMAL CREATE / COPY ─────────────────────────────────────────────
       _showSnackBar(
         widget.copyFrom != null
             ? 'Copy created successfully!'
             : 'Object created successfully!',
       );
-
-      if (widget.isQuickCreate) {
-        Navigator.pop(
-          context,
-          QuickCreateResult(
-            objectId: result.objectId,
-            displayValue: _resolveQuickCreateDisplayValue(),
-          ),
-        );
-      } else {
-        Navigator.pop(context);
-      }
+      Navigator.pop(context);
     } else {
       _showSnackBar('Failed to create object: ${service.error}', isError: true);
     }
-  } // end _submitForm
+  }
 
   /// Best label for the object just created, used to populate the lookup
   /// field that launched this quick-create screen. Prefers the Title
@@ -2436,7 +2521,7 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
       child: Scaffold(
         floatingActionButton: ScrollJumpFab(controller: _scroll),
         bottomNavigationBar: _selectedClass == null ? null : _buildSubmitBar(),
-        backgroundColor: AppColors.surfaceLight,
+        backgroundColor: context.colors.surface,
         appBar: AppBar(
           backgroundColor: AppColors.primary,
           elevation: 0,
@@ -2455,6 +2540,8 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
                     : widget.copyFrom != null
                     ? 'Copy ${_currentObjectType.displayName}'
                     : 'Create ${_currentObjectType.displayName}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
@@ -2484,490 +2571,574 @@ List<ObjectClass> _classesForType(MFilesService s, int typeId) {
           ),
         ),
         body: NetworkBanner(
-          child: _copyPrefillPending
-              ? const _CopyPrefillLoader()
-              : GestureDetector(
-                  onTap: () => FocusScope.of(context).unfocus(),
-                  child: Consumer<MFilesService>(
-              builder: (context, service, _) {
-                service.objectClasses
-                        .where(
-                          (cls) => cls.objectTypeId == _currentObjectType.id,
-                        )
-                        .toList();
+          child:
+              _copyPrefillPending
+                  ? const _CopyPrefillLoader()
+                  : GestureDetector(
+                    onTap: () => FocusScope.of(context).unfocus(),
+                    child: Consumer<MFilesService>(
+                      builder: (context, service, _) {
+                        service.objectClasses
+                            .where(
+                              (cls) =>
+                                  cls.objectTypeId == _currentObjectType.id,
+                            )
+                            .toList();
 
-                final visibleProperties =
-                    _localProperties
-                        .where(
-                          (p) => !p.isHidden && _isPropVisible(p),
-                        ) // ← added _isPropVisible check
-                        .toList()
-                      ..sort((a, b) {
-                        if (a.id == 0) return -1;
-                        if (b.id == 0) return 1;
-                        return 0;
-                      });
+                        final visibleProperties =
+                            _localProperties
+                                .where(
+                                  (p) => !p.isHidden && _isPropVisible(p),
+                                ) // ← added _isPropVisible check
+                                .toList()
+                              ..sort((a, b) {
+                                if (a.id == 0) return -1;
+                                if (b.id == 0) return 1;
+                                return 0;
+                              });
 
-                return ListView(
-                  controller: _scroll,
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  children: [
-                    // ── Header card with object type switcher ──
-                    _card(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Object Type',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: Color(0xFF94A3B8),
-                                        letterSpacing: 0.8,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    GestureDetector(
-                                      onTap:
-                                          widget.isQuickCreate
-                                              ? null
-                                              : () async {
-                                                final result =
-                                                    await _showSearchableDropdown<
-                                                      VaultObjectType
-                                                    >(
-                                                      title:
-                                                          'Select Object Type',
-                                                      items:
-                                                          service.objectTypes,
-                                                      labelOf:
-                                                          (t) => t.displayName,
-                                                      selected:
-                                                          _currentObjectType,
-                                                    );
-                                                if (result != null &&
-                                                    result.id !=
-                                                        _currentObjectType.id) {
-                                                  await _onObjectTypeChanged(
-                                                    result,
-                                                  );
-                                                }
-                                              },
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            'Create ${_currentObjectType.displayName}',
-                                            style: const TextStyle(
-                                              fontSize: 16,
-                                              fontWeight: FontWeight.w800,
-                                              color: Color(0xFF0F172A),
-                                              letterSpacing: 0.2,
-                                            ),
-                                          ),
-                                          if (!widget.isQuickCreate) ...[
-                                            const SizedBox(width: 6),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 3,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: _primaryBlue.withOpacity(
-                                                  0.1,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
+                        return ListView(
+                          controller: _scroll,
+                          padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          children: [
+                            // ── Header card with object type switcher ──
+                            _card(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Object Type',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color:
+                                                    context.colors.textTertiary,
+                                                letterSpacing: 0.8,
                                               ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
+                                            ),
+                                            const SizedBox(height: 4),
+                                            GestureDetector(
+                                              onTap:
+                                                  widget.isQuickCreate
+                                                      ? null
+                                                      : () async {
+                                                        final result = await _showSearchableDropdown<
+                                                          VaultObjectType
+                                                        >(
+                                                          title:
+                                                              'Select Object Type',
+                                                          items:
+                                                              service
+                                                                  .objectTypes,
+                                                          labelOf:
+                                                              (t) =>
+                                                                  t.displayName,
+                                                          selected:
+                                                              _currentObjectType,
+                                                        );
+                                                        if (result != null &&
+                                                            result.id !=
+                                                                _currentObjectType
+                                                                    .id) {
+                                                          await _onObjectTypeChanged(
+                                                            result,
+                                                          );
+                                                        }
+                                                      },
+                                              child: Row(
                                                 children: [
-                                                  Text(
-                                                    'Change',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      color: _primaryBlue,
+                                                  Expanded( // 2. Wrap the Text in Expanded
+                                                    child: Text(
+                                                      'Create ${_currentObjectType.displayName}',
+                                                      maxLines: 1, // 3. Restrict to one line
+                                                      overflow: TextOverflow.ellipsis, // 4. Add ellipsis
+                                                      style: TextStyle(
+                                                        fontSize: 16,
+                                                        fontWeight: FontWeight.w800,
+                                                        color: context.colors.textPrimary,
+                                                        letterSpacing: 0.2,
+                                                      ),
                                                     ),
                                                   ),
-                                                  SizedBox(width: 2),
-                                                  Icon(
-                                                    Icons.swap_horiz_rounded,
-                                                    size: 12,
-                                                    color: _primaryBlue,
-                                                  ),
+                                                  if (!widget
+                                                      .isQuickCreate) ...[
+                                                    const SizedBox(width: 6),
+                                                    Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 6,
+                                                            vertical: 3,
+                                                          ),
+                                                      decoration: BoxDecoration(
+                                                        color:
+                                                            context
+                                                                .colors
+                                                                .brandTint,
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              6,
+                                                            ),
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children: [
+                                                          Text(
+                                                            'Change',
+                                                            style: TextStyle(
+                                                              fontSize: 10,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                              color:
+                                                                  context
+                                                                      .colors
+                                                                      .brand,
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 2,
+                                                          ),
+                                                          Icon(
+                                                            Icons
+                                                                .swap_horiz_rounded,
+                                                            size: 12,
+                                                            color:
+                                                                context
+                                                                    .colors
+                                                                    .brand,
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ],
                                               ),
                                             ),
                                           ],
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            _selectedClass != null
-                                ? 'Class: ${_selectedClass!.displayName}'
-                                : 'Select a class to continue',
-                            style: const TextStyle(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF64748B),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ── Class selector ──
-                    _card(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (_isLoadingClasses)
-                            Column(
-                              children: [
-                                const LinearProgressIndicator(
-                                  minHeight: 3,
-                                  backgroundColor: Color(0xFFE8EEF5),
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    _primaryBlue,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Loading classes...',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
-                                  ),
-                                ),
-                              ],
-                            )
-                          else
-                            _fieldShell(
-                              label: 'Class',
-                              required: false,
-                              field: GestureDetector(
-                                onTap: () async {
-                                  final result = await _pickClass(service);
-                                  if (result != null) _onClassSelected(result);
-                                },
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 14,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color:
-                                        _selectedClass != null
-                                            ? _filledFill
-                                            : AppColors.surfaceLight,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color:
-                                          _selectedClass != null
-                                              ? _filledBorder
-                                              : Colors.grey.shade200,
-                                      width: _selectedClass != null ? 1.5 : 1,
-                                    ),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          _selectedClass?.displayName ??
-                                              'Tap to select class',
-                                          style: _inputStyle.copyWith(
-                                            color:
-                                                _selectedClass != null
-                                                    ? const Color(0xFF111827)
-                                                    : AppColors.surfaceLight,
-                                            fontWeight:
-                                                _selectedClass != null
-                                                    ? FontWeight.w500
-                                                    : FontWeight.w400,
-                                          ),
                                         ),
                                       ),
-                                      if (_selectedClass != null)
-                                        const Icon(
-                                          Icons.check_circle_rounded,
-                                          color: _filledBorder,
-                                          size: 18,
-                                        )
-                                      else
-                                        Icon(
-                                          Icons.keyboard_arrow_down,
-                                          color: Colors.grey.shade600,
-                                          size: 20,
-                                        ),
                                     ],
                                   ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // ── File upload (documents only) ──
-                    if (_selectedClass != null &&
-                        _currentObjectType.isDocument) ...[
-                      _card(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _sectionHeader(
-                              'File Upload',
-                              subtitle:
-                                  isScannedDocument
-                                      ? 'Scanned document attached.'
-                                      : 'Attach the document file.',
-                            ),
-                            const SizedBox(height: 14),
-                            _topLabel('File', required: true),
-                            AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              padding: const EdgeInsets.all(14),
-                              decoration: BoxDecoration(
-                                color:
-                                    _selectedFile != null
-                                        ? _filledFill
-                                        : AppColors.surfaceLight,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color:
-                                      _selectedFile != null
-                                          ? _filledBorder
-                                          : Colors.grey.shade200,
-                                  width: _selectedFile != null ? 1.5 : 1,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _selectedFile != null
-                                        ? Icons.insert_drive_file_rounded
-                                        : Icons.cloud_upload_outlined,
-                                    color:
-                                        _selectedFile != null
-                                            ? _primaryBlue
-                                            : Colors.grey.shade400,
-                                    size: 22,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          _selectedFileName ??
-                                              'No file selected',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: _inputStyle.copyWith(
-                                            color:
-                                                _selectedFile != null
-                                                    ? const Color(0xFF111827)
-                                                    : AppColors.surfaceLight,
-                                            fontWeight:
-                                                _selectedFile != null
-                                                    ? FontWeight.w500
-                                                    : FontWeight.w400,
-                                          ),
-                                        ),
-                                        if (_selectedFile != null) ...[
-                                          const SizedBox(height: 2),
-                                          Text(
-                                            isScannedDocument
-                                                ? "Scanned document ready"
-                                                : "Ready to upload",
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  ElevatedButton.icon(
-                                    onPressed: _pickFile,
-                                    icon: const Icon(
-                                      Icons.folder_open_rounded,
-                                      size: 16,
-                                    ),
-                                    label: const Text('Browse'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: _primaryBlue,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 12,
-                                      ),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      elevation: 0,
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    _selectedClass != null
+                                        ? 'Class: ${_selectedClass!.displayName}'
+                                        : 'Select a class to continue',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: context.colors.textSecondary,
                                     ),
                                   ),
                                 ],
                               ),
                             ),
-                            _requiredHint(
-                              _submitAttempted && _selectedFile == null,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
+                            const SizedBox(height: 16),
 
-                    // ── Properties ──
-                    if (_selectedClass != null) ...[
-                      _card(
-                        child: Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              _sectionHeader(
-                                'Properties',
-                                subtitle: 'Fill in the required details below.',
-                              ),
-                              const SizedBox(height: 14),
-
-                              // Show spinner while the fetch for this class
-                              // is still in flight (_localProperties is empty
-                              // but a class IS selected).
-                              if (service.isLoading && _localProperties.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 24,
-                                  ),
-                                  child: Center(
-                                    child: Column(
+                            // ── Class selector ──
+                            _card(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (_isLoadingClasses)
+                                    Column(
                                       children: [
-                                        const CircularProgressIndicator(),
-                                        const SizedBox(height: 16),
+                                        LinearProgressIndicator(
+                                          minHeight: 3,
+                                          backgroundColor: Color(0xFFE8EEF5),
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                context.colors.brand,
+                                              ),
+                                        ),
+                                        const SizedBox(height: 8),
                                         Text(
-                                          'Loading properties...',
+                                          'Loading classes...',
                                           style: TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey.shade600,
+                                            fontSize: 12,
+                                            color: context.colors.textSecondary,
                                           ),
                                         ),
                                       ],
-                                    ),
-                                  ),
-                                )
-                              else if (visibleProperties.isEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 24,
-                                  ),
-                                  child: Center(
-                                    child: Column(
-                                      children: [
-                                        Container(
-                                          padding: const EdgeInsets.all(16),
+                                    )
+                                  else
+                                    _fieldShell(
+                                      label: 'Class',
+                                      required: false,
+                                      field: GestureDetector(
+                                        onTap: () async {
+                                          final result = await _pickClass(
+                                            service,
+                                          );
+                                          if (result != null)
+                                            _onClassSelected(result);
+                                        },
+                                        child: AnimatedContainer(
+                                          duration: const Duration(
+                                            milliseconds: 200,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 14,
+                                          ),
                                           decoration: BoxDecoration(
-                                            color: Colors.grey.shade100,
-                                            shape: BoxShape.circle,
+                                            color:
+                                                _selectedClass != null
+                                                    ? context.colors.brandTint
+                                                    : context
+                                                        .colors
+                                                        .surfaceSunken,
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
+                                            border: Border.all(
+                                              color:
+                                                  _selectedClass != null
+                                                      ? context.colors.brand
+                                                      : context.colors.border,
+                                              width:
+                                                  _selectedClass != null
+                                                      ? 1.5
+                                                      : 1,
+                                            ),
                                           ),
-                                          child: Icon(
-                                            Icons.info_outline,
-                                            size: 32,
-                                            color: Colors.grey.shade400,
+                                          child: Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  _selectedClass?.displayName ??
+                                                      'Tap to select class',
+                                                  style: _inputStyle.copyWith(
+                                                    color:
+                                                        _selectedClass != null
+                                                            ? context
+                                                                .colors
+                                                                .textPrimary
+                                                            : context
+                                                                .colors
+                                                                .textTertiary,
+                                                    fontWeight:
+                                                        _selectedClass != null
+                                                            ? FontWeight.w500
+                                                            : FontWeight.w400,
+                                                  ),
+                                                ),
+                                              ),
+                                              if (_selectedClass != null)
+                                                Icon(
+                                                  Icons.check_circle_rounded,
+                                                  color: context.colors.brand,
+                                                  size: 18,
+                                                )
+                                              else
+                                                Icon(
+                                                  Icons.keyboard_arrow_down,
+                                                  color:
+                                                      context
+                                                          .colors
+                                                          .textTertiary,
+                                                  size: 20,
+                                                ),
+                                            ],
                                           ),
                                         ),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                          'No properties to configure',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
-                                )
-                              else
-                                Column(
-                                  children: List.generate(
-                                    visibleProperties.length * 2 - 1,
-                                    (index) {
-                                      if (index.isOdd) {
-                                        return const Padding(
-                                          padding: EdgeInsets.symmetric(
-                                            vertical: 12,
+                                ],
+                              ),
+                            ),
+
+                            const SizedBox(height: 16),
+
+                            // ── File upload (documents only) ──
+                            if (_selectedClass != null &&
+                                _currentObjectType.isDocument) ...[
+                              _card(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _sectionHeader(
+                                      'File Upload',
+                                      subtitle:
+                                          isScannedDocument
+                                              ? 'Scanned document attached.'
+                                              : 'Attach the document file.',
+                                    ),
+                                    const SizedBox(height: 14),
+                                    _topLabel('File', required: true),
+                                    AnimatedContainer(
+                                      duration: const Duration(
+                                        milliseconds: 200,
+                                      ),
+                                      padding: const EdgeInsets.all(14),
+                                      decoration: BoxDecoration(
+                                        color:
+                                            _selectedFile != null
+                                                ? context.colors.brandTint
+                                                : context.colors.surfaceSunken,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color:
+                                              _selectedFile != null
+                                                  ? context.colors.brand
+                                                  : context.colors.border,
+                                          width:
+                                              _selectedFile != null ? 1.5 : 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            _selectedFile != null
+                                                ? Icons
+                                                    .insert_drive_file_rounded
+                                                : Icons.cloud_upload_outlined,
+                                            color:
+                                                _selectedFile != null
+                                                    ? context.colors.brand
+                                                    : context
+                                                        .colors
+                                                        .textTertiary,
+                                            size: 22,
                                           ),
-                                          child: Divider(
-                                            height: 1,
-                                            thickness: 1,
-                                            color: Color(0xFFE2E8F0),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _selectedFileName ??
+                                                      'No file selected',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: _inputStyle.copyWith(
+                                                    color:
+                                                        _selectedFile != null
+                                                            ? context
+                                                                .colors
+                                                                .textPrimary
+                                                            : context
+                                                                .colors
+                                                                .textTertiary,
+                                                    fontWeight:
+                                                        _selectedFile != null
+                                                            ? FontWeight.w500
+                                                            : FontWeight.w400,
+                                                  ),
+                                                ),
+                                                if (_selectedFile != null) ...[
+                                                  const SizedBox(height: 2),
+                                                  Text(
+                                                    isScannedDocument
+                                                        ? "Scanned document ready"
+                                                        : "Ready to upload",
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color:
+                                                          context
+                                                              .colors
+                                                              .textSecondary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
                                           ),
-                                        );
-                                      }
-                                      final p = visibleProperties[index ~/ 2];
-                                      return _buildField(p);
-                                    },
+                                          const SizedBox(width: 12),
+                                          ElevatedButton.icon(
+                                            onPressed: _pickFile,
+                                            icon: const Icon(
+                                              Icons.folder_open_rounded,
+                                              size: 16,
+                                            ),
+                                            label: const Text('Browse'),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor:
+                                                  context.colors.brand,
+                                              foregroundColor: Colors.white,
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    horizontal: 16,
+                                                    vertical: 12,
+                                                  ),
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                              ),
+                                              elevation: 0,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    _requiredHint(
+                                      _submitAttempted && _selectedFile == null,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 16),
+                            ],
+
+                            // ── Properties ──
+                            if (_selectedClass != null) ...[
+                              _card(
+                                child: Form(
+                                  key: _formKey,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      _sectionHeader(
+                                        'Properties',
+                                        subtitle:
+                                            'Fill in the required details below.',
+                                      ),
+                                      const SizedBox(height: 14),
+
+                                      // Show spinner while the fetch for this class
+                                      // is still in flight (_localProperties is empty
+                                      // but a class IS selected).
+                                      if (service.isLoading &&
+                                          _localProperties.isEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 24,
+                                          ),
+                                          child: Center(
+                                            child: Column(
+                                              children: [
+                                                const CircularProgressIndicator(),
+                                                const SizedBox(height: 16),
+                                                Text(
+                                                  'Loading properties...',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    color:
+                                                        context
+                                                            .colors
+                                                            .textSecondary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      else if (visibleProperties.isEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 24,
+                                          ),
+                                          child: Center(
+                                            child: Column(
+                                              children: [
+                                                Container(
+                                                  padding: const EdgeInsets.all(
+                                                    16,
+                                                  ),
+                                                  decoration: BoxDecoration(
+                                                    color:
+                                                        context
+                                                            .colors
+                                                            .surfaceSunken,
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.info_outline,
+                                                    size: 32,
+                                                    color:
+                                                        context
+                                                            .colors
+                                                            .textTertiary,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 12),
+                                                Text(
+                                                  'No properties to configure',
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    color:
+                                                        context
+                                                            .colors
+                                                            .textSecondary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        )
+                                      else
+                                        Column(
+                                          children: List.generate(
+                                            visibleProperties.length * 2 - 1,
+                                            (index) {
+                                              if (index.isOdd) {
+                                                return Padding(
+                                                  padding: EdgeInsets.symmetric(
+                                                    vertical: 12,
+                                                  ),
+                                                  child: Divider(
+                                                    height: 1,
+                                                    thickness: 1,
+                                                    color:
+                                                        context.colors.divider,
+                                                  ),
+                                                );
+                                              }
+                                              final p =
+                                                  visibleProperties[index ~/ 2];
+                                              return _buildField(p);
+                                            },
+                                          ),
+                                        ),
+                                    ],
                                   ),
                                 ),
+                              ),
                             ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                );
-              },
-            ),
-          ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
         ),
       ),
     );
   }
 }
 
-//
+// ─────────────────────────── COPY PREFILL LOADER ─────────────────────────────────────
 class _CopyPrefillLoader extends StatelessWidget {
   const _CopyPrefillLoader();
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(height: 16),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
             Text(
               'Preparing your copy…',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF64748B),
+                color: context.colors.textSecondary,
               ),
             ),
           ],

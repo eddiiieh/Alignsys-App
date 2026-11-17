@@ -170,15 +170,21 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final future = _infoFuture;
+
     if (future == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 16),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
         child: Center(
           child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2)),
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(c.brand),
+            ),
+          ),
         ),
       );
     }
@@ -187,13 +193,17 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
       future: future,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Padding(
-            padding: EdgeInsets.symmetric(vertical: 16),
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
             child: Center(
               child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(c.brand),
+                ),
+              ),
             ),
           );
         }
@@ -203,12 +213,13 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                Icon(Icons.info_outline_rounded, size: 14, color: Colors.grey.shade400),
+                Icon(Icons.info_outline_rounded,
+                    size: 14, color: c.textTertiary),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     'Additional details aren\'t available for this item right now.',
-                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                    style: TextStyle(fontSize: 12, color: c.textSecondary),
                   ),
                 ),
               ],
@@ -238,7 +249,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               _buildInfoRow('Created', _formatDate(widget.obj.createdUtc)),
 
               const SizedBox(height: 16),
-              Divider(height: 1, color: Colors.grey.shade100),
+              Divider(height: 1, color: c.divider),
               const SizedBox(height: 16),
 
               _buildEyebrow('Metadata'),
@@ -246,7 +257,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               if (metaProps.isEmpty)
                 Text(
                   'No metadata available',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 12, color: c.textTertiary),
                 )
               else ...[
                 ...(_showAllProps
@@ -274,7 +285,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                                 ? Icons.keyboard_arrow_up_rounded
                                 : Icons.keyboard_arrow_down_rounded,
                             size: 16,
-                            color: Colors.grey.shade600,
+                            color: c.brand,
                           ),
                           const SizedBox(width: 4),
                           Text(
@@ -284,7 +295,7 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600,
+                              color: c.brand,
                             ),
                           ),
                         ],
@@ -307,12 +318,13 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
         fontSize: 11,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.8,
-        color: AppColors.primary,
+        color: context.colors.brand,
       ),
     );
   }
 
   Widget _buildInfoRow(String label, String value) {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -324,17 +336,17 @@ class _ObjectInfoDropdownState extends State<ObjectInfoDropdown> {
               label,
               style: TextStyle(
                 fontSize: 12,
-                color: Colors.grey.shade600,
+                color: c.textSecondary,
               ),
             ),
           ),
           Expanded(
             child: Text(
               value.isEmpty ? '-' : value,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
-                color: Color(0xFF1A1A1A),
+                color: c.textPrimary,
               ),
             ),
           ),

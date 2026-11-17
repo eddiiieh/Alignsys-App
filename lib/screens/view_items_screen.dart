@@ -650,33 +650,31 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
         Container(
           // 1. Moved background color and added custom BoxShadow here
           decoration: BoxDecoration(
-            color:
-                _isSelected(item.id)
-                    ? AppColors.primary.withValues(alpha: 0.12)
-                    : Colors.white,
-            borderRadius: radius,
-            boxShadow:
-                (infoExpanded || relationshipsExpanded)
-                    ? [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.18),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
-                      ),
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                    : [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+  color: _isSelected(item.id)
+      ? context.colors.brandTintStrong
+      : context.colors.surfaceElevated,
+  borderRadius: radius,
+  boxShadow: (infoExpanded || relationshipsExpanded)
+      ? [
+          BoxShadow(
+            color: context.colors.shadow,
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
+          BoxShadow(
+            color: context.colors.shadow,
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ]
+      : [
+          BoxShadow(
+            color: context.colors.shadow,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+),
           child: Material(
             // 2. Material is now transparent and has no elevation
             color: Colors.transparent,
@@ -731,7 +729,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                     ? Icons.expand_more
                                     : Icons.chevron_right,
                                 size: 18,
-                                color: AppColors.primary,
+                                color: context.colors.brand,
                               ),
                             ),
                           ),
@@ -800,12 +798,12 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                 item.title,
                                 maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontSize: 14.5,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: -0.1,
                                   height: 1.2,
-                                  color: Color(0xFF1A1A1A),
+                                  color: context.colors.textPrimary,
                                 ),
                               ),
                               if (subtitle != null &&
@@ -818,7 +816,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w400,
-                                    color: Colors.grey.shade500,
+                                    color: context.colors.textSecondary,
                                     letterSpacing: -0.05,
                                   ),
                                 ),
@@ -836,7 +834,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                             child: Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: Colors.blueGrey.withOpacity(0.08),
+                                color: context.colors.brandTint,
                                 shape: BoxShape.circle,
                               ),
                               child:
@@ -848,14 +846,14 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                           strokeWidth: 2,
                                           valueColor:
                                               AlwaysStoppedAnimation<Color>(
-                                                Colors.blueGrey.shade400,
+                                                context.colors.brand,
                                               ),
                                         ),
                                       )
                                       : Icon(
                                         Icons.remove_red_eye_outlined,
                                         size: 18,
-                                        color: Colors.blueGrey.shade400,
+                                        color: context.colors.brand,
                                       ),
                             ),
                           ),
@@ -875,8 +873,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                               decoration: BoxDecoration(
                                 color:
                                     infoExpanded
-                                        ? AppColors.primary.withOpacity(0.15)
-                                        : AppColors.primary.withOpacity(0.08),
+                                        ? context.colors.brand.withOpacity(0.15)
+                                        : context.colors.brand.withOpacity(0.08),
                                 shape: BoxShape.circle,
                               ),
                               child: Icon(
@@ -884,7 +882,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                     ? Icons.keyboard_arrow_up_rounded
                                     : Icons.info_outline,
                                 size: 18,
-                                color: AppColors.primary,
+                                color: context.colors.brand,
                               ),
                             ),
                           ),
@@ -892,19 +890,19 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           Icon(
                             Icons.chevron_right_rounded,
                             size: 18,
-                            color: Colors.grey.shade300,
+                            color: context.colors.textTertiary,
                           ),
                       ],
                     ),
                   ),
 
                   if (infoExpanded && isObject) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
+                    Divider(height: 1, color: context.colors.divider),
                     ObjectInfoDropdown(obj: asViewObj),
                   ],
 
                   if (relationshipsExpanded && hasRelationships) ...[
-                    Divider(height: 1, color: Colors.grey.shade200),
+                    Divider(height: 1, color: context.colors.divider),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
                       child: RelationshipsDropdown(
@@ -923,7 +921,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             height: 0.5,
             thickness: 0.5,
             indent: 64,
-            color: Colors.black.withOpacity(0.06),
+            color: context.colors.divider,
           ),
       ],
     );
@@ -1393,8 +1391,9 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   }
 
   Widget _buildSelectAllBar() {
+    final c = context.colors;
     return Material(
-      color: Colors.white,
+      color: c.surfaceElevated,
       child: Column(
         children: [
           InkWell(
@@ -1410,7 +1409,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           ? Icons.check_box
                           : Icons.check_box_outline_blank,
                       key: ValueKey(_allSelected),
-                      color: AppColors.primary,
+                      color: c.brand,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1419,9 +1418,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                       _allSelected
                           ? 'Deselect All'
                           : 'Select All (${_items.length})',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
+                        color: c.textPrimary,
                       ),
                     ),
                   ),
@@ -1429,7 +1429,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
               ),
             ),
           ),
-          Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+          Divider(height: 1, thickness: 1, color: c.divider),
         ],
       ),
     );
@@ -1445,7 +1445,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
       child: Stack(
         children: [
           Scaffold(
-            backgroundColor: AppColors.surfaceLight,
+            backgroundColor: context.colors.surface,
             appBar: _buildAppBar(),
             body: NetworkBanner(
               child: Column(
@@ -1462,7 +1462,12 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   Expanded(
                     child:
                         filtered.isEmpty
-                            ? const Center(child: Text('No items found'))
+    ? Center(
+        child: Text(
+          'No items found',
+          style: TextStyle(color: context.colors.textSecondary),
+        ),
+      )
                             // ✅ Dismiss expanded dropdowns when tapping empty list space.
                             : GestureDetector(
                               behavior: HitTestBehavior.translucent,
@@ -1488,22 +1493,17 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                   children: [
                                     Container(
                                       decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: Colors.grey.shade100,
-                                          width: 0.5,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: Colors.black.withOpacity(
-                                              0.03,
-                                            ),
-                                            blurRadius: 10,
-                                            offset: const Offset(0, 1),
-                                          ),
-                                        ],
-                                      ),
+  color: context.colors.surfaceElevated,
+  borderRadius: BorderRadius.circular(14),
+  border: Border.all(color: context.colors.divider, width: 0.5),
+  boxShadow: [
+    BoxShadow(
+      color: context.colors.shadow,
+      blurRadius: 10,
+      offset: const Offset(0, 1),
+    ),
+  ],
+),
                                       child: Column(
                                         children: List.generate(
                                           filtered.length,
@@ -1526,7 +1526,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           if (_isProcessing)
             Positioned.fill(
               child: ColoredBox(
-                color: Colors.black45,
+                color: context.colors.scrim,
                 child: Center(
                   child: ProcessingDialog(operation: _processingText),
                 ),
@@ -1538,6 +1538,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
   }
 
   Widget _buildSearchBar() {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
       child: Container(
@@ -1545,7 +1546,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
           borderRadius: BorderRadius.circular(14),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.06),
+              color: c.shadow,
               blurRadius: 12,
               offset: const Offset(0, 3),
             ),
@@ -1567,10 +1568,11 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
             absorbing: !_selectionMode,
             child: TextField(
               controller: _searchController,
+              style: TextStyle(color: context.colors.textPrimary),
               decoration: InputDecoration(
                 hintText: 'Search repository...',
                 hintStyle: TextStyle(
-                  color: Colors.grey.shade400,
+                  color: context.colors.textTertiary,
                   fontSize: 14,
                   fontWeight: FontWeight.w400,
                 ),
@@ -1584,20 +1586,20 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide: const BorderSide(
-                    color: AppColors.primary,
+                  borderSide: BorderSide(
+                    color: c.brand,
                     width: 2,
                   ),
                 ),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: c.surfaceElevated,
                 contentPadding: const EdgeInsets.symmetric(
                   vertical: 14,
                   horizontal: 16,
                 ),
                 prefixIcon: Icon(
                   Icons.search_rounded,
-                  color: AppColors.primary.withOpacity(0.6),
+                  color: c.brand.withOpacity(0.6),
                   size: 20,
                 ),
                 suffixIcon:
@@ -1606,7 +1608,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                           icon: Icon(
                             Icons.close_rounded,
                             size: 18,
-                            color: Colors.grey.shade400,
+                            color: context.colors.textTertiary,
                           ),
                           onPressed: () {
                             setState(() {
@@ -1687,8 +1689,8 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   child: SizedBox(
                     width: sheetWidth,
                     child: Container(
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
+                      decoration: BoxDecoration(
+                        color: context.colors.surfaceElevated,
                         borderRadius: BorderRadius.vertical(
                           top: Radius.circular(20),
                         ),
@@ -1700,7 +1702,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                             width: 40,
                             height: 4,
                             decoration: BoxDecoration(
-                              color: Colors.grey.shade300,
+                              color: context.colors.divider,
                               borderRadius: BorderRadius.circular(2),
                             ),
                           ),
@@ -1804,13 +1806,10 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                         expanded[groups[gi].field]!
                                             ? Container(
                                               decoration: BoxDecoration(
-                                                color: Colors.grey.shade50,
-                                                borderRadius:
-                                                    BorderRadius.circular(14),
-                                                border: Border.all(
-                                                  color: Colors.grey.shade200,
-                                                ),
-                                              ),
+  color: context.colors.surfaceSunken,
+  borderRadius: BorderRadius.circular(14),
+  border: Border.all(color: context.colors.border),
+),
                                               child: Column(
                                                 children: [
                                                   _buildSortRow(
@@ -1830,7 +1829,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                                                   ),
                                                   Divider(
                                                     height: 1,
-                                                    color: Colors.grey.shade200,
+                                                    color: context.colors.divider,
                                                     indent: 16,
                                                   ),
                                                   _buildSortRow(
@@ -1879,6 +1878,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     required bool expanded,
     required VoidCallback onToggle,
   }) {
+    final c = context.colors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1894,7 +1894,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
-                  color: Colors.grey.shade500,
+                  color: c.textSecondary,
                 ),
               ),
               if (isActive) ...[
@@ -1905,15 +1905,15 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     vertical: 1,
                   ),
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.12),
+                    color: c.brandTintStrong,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     activeLabel ?? '',
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 10.5,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      color: c.brand,
                     ),
                   ),
                 ),
@@ -1924,7 +1924,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
                 size: 20,
-                color: Colors.grey.shade500,
+                color: context.colors.textSecondary,
               ),
             ],
           ),
@@ -1938,6 +1938,7 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
     required bool selected,
     required VoidCallback onTap,
   }) {
+    final c = context.colors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1955,16 +1956,16 @@ class _ViewItemsScreenState extends State<ViewItemsScreen> {
                     fontSize: 14.5,
                     fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
                     color:
-                        selected ? AppColors.primary : const Color(0xFF1E293B),
+                        selected ? c.brand : c.textPrimary,
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               selected
-                  ? const Icon(
+                  ? Icon(
                     Icons.check_rounded,
                     size: 20,
-                    color: AppColors.primary,
+                    color: c.brand,
                   )
                   : const SizedBox(width: 20),
             ],

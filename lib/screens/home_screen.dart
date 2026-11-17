@@ -7,6 +7,7 @@ import 'package:mfiles_app/screens/dynamic_form_screen.dart';
 import 'package:mfiles_app/screens/object_details_screen.dart';
 import 'package:mfiles_app/screens/template_form_screen.dart';
 import 'package:mfiles_app/screens/view_details_screen.dart';
+import 'package:mfiles_app/theme/theme_service.dart';
 import 'package:mfiles_app/utils/snackbar_helper.dart';
 import 'package:mfiles_app/widgets/flashing_dots.dart';
 import 'package:mfiles_app/widgets/grouped_picker_sheet.dart';
@@ -191,9 +192,12 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  bool get _allSelected =>
-      _currentObjects.isNotEmpty &&
-      _selectedIds.length == _visibleObjects.length;
+  bool get _allSelected {
+    if (_visibleObjects.isEmpty) return false;
+    final visibleIds = _visibleObjects.map((o) => o.id).toSet();
+    return _selectedIds.length == visibleIds.length &&
+        _selectedIds.containsAll(visibleIds);
+  }
 
   void _toggleSelectAll() {
     if (_allSelected) {
@@ -436,19 +440,26 @@ class _HomeScreenState extends State<HomeScreen>
               width: 15,
               height: 15,
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: context.colors.surfaceElevated,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.red.shade700, width: 1.5),
+                border: Border.all(
+                  color: context.colors.dangerText,
+                  width: 1.5,
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
+                    color: context.colors.shadow,
                     blurRadius: 2,
                     offset: const Offset(0, 1),
                   ),
                 ],
               ),
               child: Center(
-                child: Icon(Icons.remove, size: 9, color: Colors.red.shade700),
+                child: Icon(
+                  Icons.remove,
+                  size: 9,
+                  color: context.colors.dangerText,
+                ),
               ),
             ),
           )
@@ -485,7 +496,7 @@ class _HomeScreenState extends State<HomeScreen>
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.10),
+            color: context.colors.brandTint,
             borderRadius: BorderRadius.circular(8),
           ),
           child: const Icon(
@@ -996,7 +1007,7 @@ class _HomeScreenState extends State<HomeScreen>
         child: Stack(
           children: [
             Scaffold(
-              backgroundColor: AppColors.surfaceLight,
+              backgroundColor: context.colors.surface,
               appBar:
                   _selectionMode ? _buildSelectionAppBar() : _buildHomeAppBar(),
               floatingActionButton:
@@ -1129,7 +1140,7 @@ class _HomeScreenState extends State<HomeScreen>
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
                 hintText: 'Search...',
-                hintStyle: TextStyle(color: Colors.grey.shade400),
+                hintStyle: TextStyle(color: context.colors.textTertiary),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -1140,18 +1151,18 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: Color.fromRGBO(25, 76, 129, 1),
+                  borderSide: BorderSide(
+                    color: context.colors.brand,
                     width: 2,
                   ),
                 ),
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: context.colors.surfaceElevated,
                 contentPadding: const EdgeInsets.symmetric(
                   vertical: 14,
                   horizontal: 16,
                 ),
-                prefixIcon: Icon(Icons.search, color: Colors.grey.shade400),
+                prefixIcon: Icon(Icons.search, color: context.colors.textTertiary),
                 suffixIconConstraints: BoxConstraints(
                   minHeight: 40,
                   minWidth: hasText ? 48 : 0,
@@ -1159,7 +1170,7 @@ class _HomeScreenState extends State<HomeScreen>
                 suffixIcon:
                     hasText
                         ? IconButton(
-                          icon: Icon(Icons.close, color: Colors.grey.shade400),
+                          icon: Icon(Icons.close, color: context.colors.textTertiary),
                           onPressed: () {
                             _searchController.clear();
                             setState(() => _searchQuery = '');
@@ -1219,7 +1230,7 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
             filled: true,
-            fillColor: Colors.white,
+            fillColor: context.colors.surfaceElevated,
             contentPadding: const EdgeInsets.symmetric(
               vertical: 14,
               horizontal: 16,
@@ -1252,7 +1263,7 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Select All bar ───────────────────────────────────────────────────────
   Widget _buildSelectAllBar() {
     return Material(
-      color: Colors.white,
+      color: context.colors.surfaceElevated,
       child: Column(
         children: [
           InkWell(
@@ -1268,7 +1279,7 @@ class _HomeScreenState extends State<HomeScreen>
                           ? Icons.check_box
                           : Icons.check_box_outline_blank,
                       key: ValueKey(_allSelected),
-                      color: AppColors.primary,
+                      color: context.colors.brand,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1277,9 +1288,10 @@ class _HomeScreenState extends State<HomeScreen>
                       _allSelected
                           ? 'Deselect All'
                           : 'Select All (${_currentObjects.length})',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
+                        color: context.colors.textPrimary,
                       ),
                     ),
                   ),
@@ -1287,7 +1299,7 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-          Divider(height: 1, thickness: 1, color: Colors.grey.shade200),
+          Divider(height: 1, thickness: 1, color: context.colors.divider),
         ],
       ),
     );
@@ -1300,7 +1312,7 @@ class _HomeScreenState extends State<HomeScreen>
       margin: const EdgeInsets.symmetric(horizontal: 12),
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -1323,7 +1335,7 @@ class _HomeScreenState extends State<HomeScreen>
           borderRadius: BorderRadius.circular(8),
         ),
         labelColor: Colors.white,
-        unselectedLabelColor: Colors.grey.shade600,
+        unselectedLabelColor: context.colors.textSecondary,
         labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
         unselectedLabelStyle: const TextStyle(
           fontWeight: FontWeight.w500,
@@ -1505,11 +1517,11 @@ class _HomeScreenState extends State<HomeScreen>
                       else
                         Container(
                           decoration: BoxDecoration(
-                            color: Colors.white,
+                            color: context.colors.surfaceElevated,
                             borderRadius: BorderRadius.circular(12),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
+                                color: context.colors.shadow,
                                 blurRadius: 10,
                                 offset: const Offset(0, 2),
                               ),
@@ -1540,40 +1552,39 @@ class _HomeScreenState extends State<HomeScreen>
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [
-                AppColors.primary.withOpacity(0.08),
-                AppColors.primary.withOpacity(0.03),
-              ],
-            ),
+            color: context.colors.brandTint,
             borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: context.colors.brand.withOpacity(0.15),
+              width: 1,
+            ),
           ),
           child: Row(
             children: [
-              Icon(icon, size: 20, color: AppColors.primary),
+              Icon(icon, size: 20, color: context.colors.brand),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: Color.fromRGBO(25, 76, 129, 1),
+                    color: context.colors.brand,
                   ),
                 ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
+                  color: context.colors.brandTintStrong,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '$count',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
+                    color: context.colors.brand,
                   ),
                 ),
               ),
@@ -1582,7 +1593,7 @@ class _HomeScreenState extends State<HomeScreen>
                 expanded
                     ? Icons.keyboard_arrow_up_rounded
                     : Icons.keyboard_arrow_down_rounded,
-                color: AppColors.primary,
+                color: context.colors.brand,
               ),
             ],
           ),
@@ -1595,7 +1606,7 @@ class _HomeScreenState extends State<HomeScreen>
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: context.colors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
@@ -1611,20 +1622,20 @@ class _HomeScreenState extends State<HomeScreen>
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: context.colors.surfaceSunken,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.folder_open_rounded,
                 size: 32,
-                color: Colors.grey.shade400,
+                color: context.colors.textTertiary,
               ),
             ),
             const SizedBox(height: 12),
             Text(
               text,
               style: TextStyle(
-                color: Colors.grey.shade600,
+                color: context.colors.textSecondary,
                 fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
@@ -1640,7 +1651,9 @@ class _HomeScreenState extends State<HomeScreen>
     for (int i = 0; i < views.length; i++) {
       rows.add(_buildFlatViewRow(views[i]));
       if (i != views.length - 1) {
-        rows.add(Divider(height: 1, thickness: 1, color: Colors.grey.shade100));
+        rows.add(
+          Divider(height: 1, thickness: 1, color: context.colors.divider),
+        );
       }
     }
     return rows;
@@ -1672,13 +1685,13 @@ class _HomeScreenState extends State<HomeScreen>
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.08),
+                  color: context.colors.brandTint,
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.grid_view_rounded,
                   size: 18,
-                  color: Color.fromRGBO(25, 76, 129, 1),
+                  color: context.colors.brand,
                 ),
               ),
               const SizedBox(width: 12),
@@ -1687,11 +1700,11 @@ class _HomeScreenState extends State<HomeScreen>
                   view.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 14.5,
                     fontWeight: FontWeight.w400,
                     letterSpacing: -0.1,
-                    color: Color(0xFF1A1A1A),
+                    color: context.colors.textPrimary,
                   ),
                 ),
               ),
@@ -1702,7 +1715,7 @@ class _HomeScreenState extends State<HomeScreen>
                   style: TextStyle(
                     fontSize: 12.5,
                     fontWeight: FontWeight.w400,
-                    color: Colors.grey.shade400,
+                    color: context.colors.textTertiary,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
@@ -1711,7 +1724,7 @@ class _HomeScreenState extends State<HomeScreen>
               Icon(
                 Icons.chevron_right_rounded,
                 size: 16,
-                color: Colors.grey.shade300,
+                color: context.colors.textTertiary,
               ),
             ],
           ),
@@ -1814,11 +1827,11 @@ class _HomeScreenState extends State<HomeScreen>
         return Container(
           padding: const EdgeInsets.all(4),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: context.colors.surfaceElevated,
             borderRadius: BorderRadius.circular(12),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.05),
+                color: context.colors.shadow,
                 blurRadius: 10,
                 offset: const Offset(0, 2),
               ),
@@ -1911,7 +1924,7 @@ class _HomeScreenState extends State<HomeScreen>
               Icon(
                 icon,
                 size: 16,
-                color: selected ? Colors.white : Colors.grey.shade600,
+                color: selected ? Colors.white : context.colors.textSecondary,
               ),
               const SizedBox(width: 6),
               Text(
@@ -1919,7 +1932,7 @@ class _HomeScreenState extends State<HomeScreen>
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
-                  color: selected ? Colors.white : Colors.grey.shade600,
+                  color: selected ? Colors.white : context.colors.textSecondary,
                 ),
               ),
               if (count > 0) ...[
@@ -2050,9 +2063,9 @@ class _HomeScreenState extends State<HomeScreen>
     final bool canExpand = obj.id != 0 && !isTrashTab;
 
     final bool infoExpanded =
-    canExpand && _expandedInfoItemIds.contains(obj.id);
-final bool relationshipsExpanded =
-    canExpand && _expandedRelationshipsItemIds.contains(obj.id);
+        canExpand && _expandedInfoItemIds.contains(obj.id);
+    final bool relationshipsExpanded =
+        canExpand && _expandedRelationshipsItemIds.contains(obj.id);
 
     if (canExpand && svc.cachedHasRelationships(obj.id) == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2067,77 +2080,77 @@ final bool relationshipsExpanded =
     }
 
     return Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color:
-              _isSelected(obj.id)
-                  ? AppColors.primary.withOpacity(0.12)
-                  : Colors.white,
-          borderRadius: BorderRadius.circular(12),
-         
-          //ADDED: Softer, multi-layered elevation for the expanded state
-          boxShadow:
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color:
+            _isSelected(obj.id)
+                ? context.colors.brandTintStrong
+                : context.colors.surfaceElevated,
+        borderRadius: BorderRadius.circular(12),
+
+        //ADDED: Softer, multi-layered elevation for the expanded state
+        boxShadow:
             (infoExpanded || relationshipsExpanded)
                 ? [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
+                    color: context.colors.shadow,
                     blurRadius: 24,
                     offset: const Offset(0, 8),
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: context.colors.shadow,
                     blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ]
                 : [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
+                    color: context.colors.shadow,
                     blurRadius: 10,
                     offset: const Offset(0, 2),
                   ),
                 ],
-          ),
-        child: Column(
-          children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () async {
-                  if (_selectionMode) {
-                    _toggleSelection(obj);
-                    return;
-                  }
-                  
-                  await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ObjectDetailsScreen(obj: obj),
-                    ),
-                  );
-                  if (mounted) {
-                    await context.read<MFilesService>().fetchRecentObjects();
-                  }
-                },
-                onLongPress:
-                    canLongPress(obj, context, _effectiveTabName)
-                        ? () => onLongPress(obj)
-                        : null,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+      ),
+      child: Column(
+        children: [
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () async {
+                if (_selectionMode) {
+                  _toggleSelection(obj);
+                  return;
+                }
+
+                await Navigator.push<bool>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ObjectDetailsScreen(obj: obj),
                   ),
-                  child: Row(
-                    children: [
-                      // Relationships chevron (non-trash only)
-                      if (canExpand &&
-                          svc.cachedHasRelationships(obj.id) == true) ...[
-                        Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap:
+                );
+                if (mounted) {
+                  await context.read<MFilesService>().fetchRecentObjects();
+                }
+              },
+              onLongPress:
+                  canLongPress(obj, context, _effectiveTabName)
+                      ? () => onLongPress(obj)
+                      : null,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+                child: Row(
+                  children: [
+                    // Relationships chevron (non-trash only)
+                    if (canExpand &&
+                        svc.cachedHasRelationships(obj.id) == true) ...[
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap:
                               () => setState(() {
                                 if (_expandedRelationshipsItemIds.contains(
                                   obj.id,
@@ -2150,148 +2163,146 @@ final bool relationshipsExpanded =
                                   ); // keep per-item mutual exclusion
                                 }
                               }),
-                            borderRadius: BorderRadius.circular(4),
-                            child: Padding(
-                              padding: const EdgeInsets.all(4),
-                              child: Icon(
-                                relationshipsExpanded
-                                    ? Icons.expand_more
-                                    : Icons.chevron_right,
-                                size: 18,
-                                color: AppColors.primary,
-                              ),
+                          borderRadius: BorderRadius.circular(4),
+                          child: Padding(
+                            padding: const EdgeInsets.all(4),
+                            child: Icon(
+                              relationshipsExpanded
+                                  ? Icons.expand_more
+                                  : Icons.chevron_right,
+                              size: 18,
+                              color: AppColors.primary,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
-                      ] else
-                        const SizedBox(width: 4),
+                      ),
+                      const SizedBox(width: 6),
+                    ] else
+                      const SizedBox(width: 4),
 
-                      // Badge / icon
-                      AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 180),
-                        child:
-                            _isSelected(obj.id)
-                                ? Container(
-                                  key: const ValueKey('selected'),
-                                  width: 42,
-                                  height: 42,
-                                  decoration: const BoxDecoration(
-                                    color: AppColors.primary,
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: const Icon(
-                                    Icons.check,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                                )
-                                : Container(
-                                  key: const ValueKey('normal'),
-                                  child:
-                                      isDocument
-                                          ? _buildDocumentBadge(svc, obj)
-                                          : isMultiFileObj
-                                          ? _buildMultiFileBadge(svc, obj)
-                                          : CheckoutBadge(
-                                            isCheckedOut:
-                                                svc.isCheckedOutLocally(
-                                                  obj.id,
-                                                ) ||
-                                                obj.isCheckedOut,
-                                            checkoutUserId:
-                                                svc.checkoutOwnerId(obj.id) ??
-                                                obj.checkoutUserId,
-                                            child: Container(
-                                              width: 28,
-                                              height: 28,
-                                              child: Icon(
-                                                objIcon,
-                                                size: 28,
-                                                color: AppColors.primary,
-                                              ),
+                    // Badge / icon
+                    AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 180),
+                      child:
+                          _isSelected(obj.id)
+                              ? Container(
+                                key: const ValueKey('selected'),
+                                width: 42,
+                                height: 42,
+                                decoration: const BoxDecoration(
+                                  color: AppColors.primary,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.check,
+                                  color: Colors.white,
+                                  size: 24,
+                                ),
+                              )
+                              : Container(
+                                key: const ValueKey('normal'),
+                                child:
+                                    isDocument
+                                        ? _buildDocumentBadge(svc, obj)
+                                        : isMultiFileObj
+                                        ? _buildMultiFileBadge(svc, obj)
+                                        : CheckoutBadge(
+                                          isCheckedOut:
+                                              svc.isCheckedOutLocally(obj.id) ||
+                                              obj.isCheckedOut,
+                                          checkoutUserId:
+                                              svc.checkoutOwnerId(obj.id) ??
+                                              obj.checkoutUserId,
+                                          child: Container(
+                                            width: 28,
+                                            height: 28,
+                                            child: Icon(
+                                              objIcon,
+                                              size: 28,
+                                              color: AppColors.primary,
                                             ),
                                           ),
-                                ),
-                      ),
-
-                      const SizedBox(width: 12),
-
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              obj.title,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF1A1A1A),
-                                height: 1.2,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      //if (!_selectionMode)
-                      if (isTrashTab) ...[
-                        const SizedBox(width: 8),
-                        _buildRestoreButton(obj, onLongPress),
-                      ] else ...[
-                        // Eye icon for document objects
-                        if (isDocument) ...[
-                          const SizedBox(width: 6),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: () => _openPreview(obj),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.blueGrey.withOpacity(0.08),
-                                shape: BoxShape.circle,
-                              ),
-                              child:
-                                  _previewLoading.contains(obj.id)
-                                      ? SizedBox(
-                                        width: 18,
-                                        height: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                                Colors.blueGrey.shade400,
-                                              ),
                                         ),
-                                      )
-                                      : Icon(
-                                        Icons.remove_red_eye_outlined,
-                                        size: 18,
-                                        color: Colors.blueGrey.shade400,
-                                      ),
+                              ),
+                    ),
+
+                    const SizedBox(width: 12),
+
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            obj.title,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: context.colors.textPrimary,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: context.colors.textSecondary,
                             ),
                           ),
                         ],
+                      ),
+                    ),
 
-                        // Info icon
-                        if (canExpand) ...[
-                          const SizedBox(width: 8),
-                          Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap:
+                    //if (!_selectionMode)
+                    if (isTrashTab) ...[
+                      const SizedBox(width: 8),
+                      _buildRestoreButton(obj, onLongPress),
+                    ] else ...[
+                      // Eye icon for document objects
+                      if (isDocument) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: () => _openPreview(obj),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: context.colors.brandTint,
+                              shape: BoxShape.circle,
+                            ),
+                            child:
+                                _previewLoading.contains(obj.id)
+                                    ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        valueColor:
+                                            AlwaysStoppedAnimation<Color>(
+                                              context.colors.brand,
+                                            ),
+                                      ),
+                                    )
+                                    : Icon(
+                                      Icons.remove_red_eye_outlined,
+                                      size: 18,
+                                      color: context.colors.brand,
+                                    ),
+                          ),
+                        ),
+                      ],
+
+                      // Info icon
+                      if (canExpand) ...[
+                        const SizedBox(width: 8),
+                        Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap:
                                 () => setState(() {
                                   if (_expandedInfoItemIds.contains(obj.id)) {
                                     _expandedInfoItemIds.remove(obj.id);
@@ -2302,56 +2313,56 @@ final bool relationshipsExpanded =
                                     );
                                   }
                                 }),
-                              borderRadius: BorderRadius.circular(20),
-                              child: Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color:
-                                      infoExpanded
-                                          ? AppColors.primary.withOpacity(0.15)
-                                          : AppColors.primary.withOpacity(0.08),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  infoExpanded
-                                      ? Icons.keyboard_arrow_up_rounded
-                                      : Icons.info_outline,
-                                  size: 18,
-                                  color: AppColors.primary,
-                                ),
+                            borderRadius: BorderRadius.circular(20),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color:
+                                    infoExpanded
+                                        ? context.colors.brandTintStrong
+                                        : context.colors.brandTint,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Icon(
+                                infoExpanded
+                                    ? Icons.keyboard_arrow_up_rounded
+                                    : Icons.info_outline,
+                                size: 18,
+                                color: context.colors.brand,
                               ),
                             ),
                           ),
-                        ] else
-                          Icon(
-                            Icons.chevron_right_rounded,
-                            size: 20,
-                            color: Colors.grey.shade400,
-                          ),
-                      ],
+                        ),
+                      ] else
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          size: 20,
+                          color: context.colors.textTertiary,
+                        ),
                     ],
-                  ),
+                  ],
                 ),
               ),
             ),
-            if (infoExpanded && canExpand) ...[
-              Divider(height: 1, color: Colors.grey.shade200),
-              ObjectInfoDropdown(obj: obj, isDeleted: isTrashTab),
-            ],
-            if (relationshipsExpanded && canExpand) ...[
-              Divider(height: 1, color: Colors.grey.shade200),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-                child: RelationshipsDropdown(
-                  key: ValueKey('rel_${obj.id}'),
-                  obj: obj,
-                  initiallyExpanded: true,
-                ),
-              ),
-            ],
+          ),
+          if (infoExpanded && canExpand) ...[
+            Divider(height: 1, color: context.colors.divider),
+            ObjectInfoDropdown(obj: obj, isDeleted: isTrashTab),
           ],
-        ),
-      );
+          if (relationshipsExpanded && canExpand) ...[
+            Divider(height: 1, color: context.colors.divider),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: RelationshipsDropdown(
+                key: ValueKey('rel_${obj.id}'),
+                obj: obj,
+                initiallyExpanded: true,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   // New: clear, tappable Restore pill for the Trash tab.
@@ -2359,6 +2370,7 @@ final bool relationshipsExpanded =
     ViewObject obj,
     Future<void> Function(ViewObject) onRestore,
   ) {
+    final c = context.colors;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2367,21 +2379,24 @@ final bool relationshipsExpanded =
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.10),
+            // Soft tinted background
+            color: c.brandTint,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+            border: Border.all(color: c.brand.withOpacity(0.35)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.restore_rounded, size: 16, color: AppColors.primary),
+              // Brand color for icon
+              Icon(Icons.restore_rounded, size: 16, color: c.brand),
               const SizedBox(width: 6),
               Text(
                 'Restore',
                 style: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.primary,
+                  // Brand color for text
+                  color: c.brand,
                 ),
               ),
             ],
@@ -2392,7 +2407,6 @@ final bool relationshipsExpanded =
   }
 
   // ── Empty / error states ──────────────────────────────────────────────────
-
   Widget _buildEmptyState(
     IconData icon,
     String text,
@@ -2408,25 +2422,28 @@ final bool relationshipsExpanded =
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.grey.shade100,
+                color: context.colors.surfaceSunken,
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 48, color: Colors.grey.shade400),
+              child: Icon(icon, size: 48, color: context.colors.textTertiary),
             ),
             const SizedBox(height: 20),
             Text(
               text,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A),
+                color: context.colors.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               subtext,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 14,
+                color: context.colors.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
             if (onRetry != null) ...[
@@ -2464,29 +2481,32 @@ final bool relationshipsExpanded =
             Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: Colors.red.shade50,
+                color: context.colors.dangerSurface,
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 Icons.error_outline_rounded,
                 size: 48,
-                color: Colors.red.shade400,
+                color: context.colors.dangerText,
               ),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               'Oops! Something went wrong',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1A1A1A),
+                color: context.colors.textPrimary,
               ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
             Text(
               error,
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              style: TextStyle(
+                fontSize: 14,
+                color: context.colors.textSecondary,
+              ),
               textAlign: TextAlign.center,
             ),
           ],
@@ -2603,8 +2623,8 @@ final bool relationshipsExpanded =
           (_) => StatefulBuilder(
             builder:
                 (ctx, setSheet) => Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
+                  decoration: BoxDecoration(
+                    color: context.colors.surfaceElevated,
                     borderRadius: BorderRadius.vertical(
                       top: Radius.circular(20),
                     ),
@@ -2706,17 +2726,17 @@ final bool relationshipsExpanded =
                                         size: 20,
                                       ),
                                       filled: true,
-                                      fillColor: AppColors.surfaceLight,
+                                      fillColor: context.colors.inputFill,
                                       border: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                         borderSide: BorderSide(
-                                          color: Colors.grey.shade200,
+                                          color: context.colors.inputBorder,
                                         ),
                                       ),
                                       enabledBorder: OutlineInputBorder(
                                         borderRadius: BorderRadius.circular(12),
                                         borderSide: BorderSide(
-                                          color: Colors.grey.shade200,
+                                          color: context.colors.inputBorder,
                                         ),
                                       ),
                                       focusedBorder: OutlineInputBorder(
@@ -2982,12 +3002,12 @@ final bool relationshipsExpanded =
                     title,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14.5,
                       fontWeight: FontWeight.w500,
                       letterSpacing: -0.1,
                       height: 1.25,
-                      color: Color(0xFF1A1A1A),
+                      color: context.colors.textPrimary,
                     ),
                   ),
                   if (subtitle != null && subtitle.trim().isNotEmpty) ...[
@@ -2999,7 +3019,7 @@ final bool relationshipsExpanded =
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
-                        color: Colors.grey.shade500,
+                        color: context.colors.textSecondary,
                         letterSpacing: -0.05,
                       ),
                     ),
@@ -3011,7 +3031,7 @@ final bool relationshipsExpanded =
             Icon(
               Icons.chevron_right_rounded,
               size: 18,
-              color: Colors.grey.shade300,
+              color: context.colors.textTertiary,
             ),
           ],
         ),
@@ -3433,11 +3453,11 @@ final bool relationshipsExpanded =
                     title,
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 14.5,
                       height: 1.3,
                       fontWeight: FontWeight.w500,
-                      color: Color(0xFF1E293B),
+                      color: context.colors.textPrimary,
                     ),
                   ),
                   if (dateStr != null) ...[
@@ -3446,7 +3466,7 @@ final bool relationshipsExpanded =
                       dateStr,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade500,
+                        color: context.colors.textSecondary,
                       ),
                     ),
                   ],
@@ -3454,10 +3474,10 @@ final bool relationshipsExpanded =
               ),
             ),
             const SizedBox(width: 10),
-            const Icon(
+            Icon(
               Icons.chevron_right_rounded,
               size: 20,
-              color: Color(0xFF94A3B8),
+              color: context.colors.textTertiary,
             ),
           ],
         ),
@@ -3496,8 +3516,8 @@ final bool relationshipsExpanded =
             expand: false,
             builder: (context, scrollController) {
               return Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceElevated,
                   borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
                 ),
                 child: Column(
@@ -3507,7 +3527,7 @@ final bool relationshipsExpanded =
                       width: 40,
                       height: 4,
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
+                        color: context.colors.divider,
                         borderRadius: BorderRadius.circular(2),
                       ),
                     ),
@@ -3617,7 +3637,7 @@ final bool relationshipsExpanded =
                             separatorBuilder:
                                 (_, __) => Divider(
                                   height: 1,
-                                  color: Colors.grey.shade200,
+                                  color: context.colors.divider,
                                 ),
                             itemBuilder: (context, index) {
                               final v = vaults[index];
@@ -3665,7 +3685,7 @@ final bool relationshipsExpanded =
                                           color:
                                               isSelected
                                                   ? AppColors.primary
-                                                  : Colors.grey.shade300,
+                                                  : context.colors.textTertiary,
                                         ),
                                       ),
                                       const SizedBox(width: 14),
@@ -3683,7 +3703,9 @@ final bool relationshipsExpanded =
                                             color:
                                                 isSelected
                                                     ? AppColors.primary
-                                                    : const Color(0xFF1E293B),
+                                                    : context
+                                                        .colors
+                                                        .textPrimary,
                                           ),
                                         ),
                                       ),
@@ -3697,7 +3719,7 @@ final bool relationshipsExpanded =
                                         Icon(
                                           Icons.chevron_right_rounded,
                                           size: 18,
-                                          color: Colors.grey.shade400,
+                                          color: context.colors.textTertiary,
                                         ),
                                     ],
                                   ),
@@ -3726,8 +3748,8 @@ final bool relationshipsExpanded =
       backgroundColor: Colors.transparent,
       builder:
           (_) => Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
+            decoration: BoxDecoration(
+              color: context.colors.surfaceElevated,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
@@ -3741,7 +3763,7 @@ final bool relationshipsExpanded =
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
+                      color: context.colors.divider,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -3806,6 +3828,53 @@ final bool relationshipsExpanded =
                             ],
                           ),
                         ),
+
+                        // ── Dark mode toggle — sun/moon ──
+                        Consumer<ThemeService>(
+                          builder: (context, themeService, _) {
+                            final isDark =
+                                Theme.of(context).brightness == Brightness.dark;
+                            return IconButton(
+                              tooltip:
+                                  isDark
+                                      ? 'Switch to light mode'
+                                      : 'Switch to dark mode',
+                              icon: AnimatedSwitcher(
+                                duration: const Duration(milliseconds: 220),
+                                switchInCurve: Curves.easeOutCubic,
+                                switchOutCurve: Curves.easeInCubic,
+                                transitionBuilder:
+                                    (child, anim) => RotationTransition(
+                                      turns: Tween<double>(
+                                        begin: 0.75,
+                                        end: 1.0,
+                                      ).animate(anim),
+                                      child: FadeTransition(
+                                        opacity: anim,
+                                        child: child,
+                                      ),
+                                    ),
+                                child: Icon(
+                                  isDark
+                                      ? Icons.light_mode_rounded
+                                      : Icons.dark_mode_rounded,
+                                  key: ValueKey(isDark),
+                                  color: Colors.white70,
+                                  size: 20,
+                                ),
+                              ),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                              onPressed: () {
+                                HapticFeedback.selectionClick();
+                                themeService.toggle(context);
+                              },
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Close
                         IconButton(
                           icon: const Icon(Icons.close, color: Colors.white70),
                           onPressed: () => Navigator.pop(context),
@@ -3827,12 +3896,8 @@ final bool relationshipsExpanded =
                       vertical: 12,
                     ),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.05),
+                      color: context.colors.brandTint,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.primary.withOpacity(0.2),
-                        width: 1.5,
-                      ),
                     ),
                     child: Row(
                       children: [
@@ -3840,7 +3905,7 @@ final bool relationshipsExpanded =
                           width: 34,
                           height: 34,
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.12),
+                            color: context.colors.brandTint,
                             shape: BoxShape.circle,
                           ),
                           child: const Center(
@@ -3870,7 +3935,7 @@ final bool relationshipsExpanded =
                             vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            color: AppColors.primary.withOpacity(0.10),
+                            color: context.colors.brandTintStrong,
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: const Text(
@@ -3903,9 +3968,8 @@ final bool relationshipsExpanded =
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
+                          color: context.colors.surfaceSunken,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade200),
                         ),
                         child: Row(
                           children: [
@@ -3913,14 +3977,14 @@ final bool relationshipsExpanded =
                               width: 34,
                               height: 34,
                               decoration: BoxDecoration(
-                                color: Colors.grey.shade100,
+                                color: context.colors.surfaceElevated,
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
                                 child: Icon(
                                   Icons.swap_horiz_rounded,
                                   size: 16,
-                                  color: Colors.grey.shade600,
+                                  color: context.colors.textSecondary,
                                 ),
                               ),
                             ),
@@ -3931,14 +3995,14 @@ final bool relationshipsExpanded =
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.grey.shade700,
+                                  color: context.colors.textPrimary,
                                 ),
                               ),
                             ),
                             Icon(
                               Icons.chevron_right_rounded,
                               size: 18,
-                              color: Colors.grey.shade400,
+                              color: context.colors.textTertiary,
                             ),
                           ],
                         ),
@@ -3947,7 +4011,7 @@ final bool relationshipsExpanded =
                   ),
 
                   const SizedBox(height: 16),
-                  Divider(height: 1, color: Colors.grey.shade100),
+                  Divider(height: 1, color: context.colors.divider),
                   const SizedBox(height: 8),
 
                   // ── Log out ──────────────────────────────────────────────────
@@ -3966,9 +4030,8 @@ final bool relationshipsExpanded =
                           vertical: 12,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.red.shade50,
+                          color: context.colors.dangerSurface,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.red.shade100),
                         ),
                         child: Row(
                           children: [
@@ -3976,14 +4039,14 @@ final bool relationshipsExpanded =
                               width: 34,
                               height: 34,
                               decoration: BoxDecoration(
-                                color: Colors.red.shade100,
+                                color: context.colors.dangerBorder,
                                 shape: BoxShape.circle,
                               ),
                               child: Center(
                                 child: Icon(
                                   Icons.logout_rounded,
                                   size: 16,
-                                  color: Colors.red.shade600,
+                                  color: context.colors.dangerText,
                                 ),
                               ),
                             ),
@@ -3994,14 +4057,14 @@ final bool relationshipsExpanded =
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w600,
-                                  color: Colors.red.shade700,
+                                  color: context.colors.dangerText,
                                 ),
                               ),
                             ),
                             Icon(
                               Icons.chevron_right_rounded,
                               size: 18,
-                              color: Colors.red.shade300,
+                              color: context.colors.dangerText.withOpacity(0.5),
                             ),
                           ],
                         ),
@@ -4023,7 +4086,7 @@ final bool relationshipsExpanded =
       barrierDismissible: false,
       builder:
           (context) => AlertDialog(
-            backgroundColor: Colors.white,
+            backgroundColor: context.colors.surfaceElevated,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
@@ -4035,7 +4098,7 @@ final bool relationshipsExpanded =
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: Colors.red.shade50,
+                    color: context.colors.dangerSurface,
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
@@ -4055,7 +4118,7 @@ final bool relationshipsExpanded =
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 13,
-                    color: Colors.grey.shade700,
+                    color: context.colors.textPrimary,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -4063,7 +4126,10 @@ final bool relationshipsExpanded =
                 Text(
                   "You'll need to sign in again to access your documents.",
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: context.colors.textSecondary,
+                  ),
                 ),
                 const SizedBox(height: 4),
               ],
@@ -4075,8 +4141,8 @@ final bool relationshipsExpanded =
                     child: OutlinedButton(
                       onPressed: () => Navigator.pop(context),
                       style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.grey.shade700,
-                        side: BorderSide(color: Colors.grey.shade300),
+                        foregroundColor: context.colors.textPrimary,
+                        side: BorderSide(color: context.colors.border),
                         padding: const EdgeInsets.symmetric(vertical: 11),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10),
